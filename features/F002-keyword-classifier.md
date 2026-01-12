@@ -2,7 +2,7 @@
 
 | Status | Priority | Crate |
 |--------|----------|-------|
-| `ready` | critical | aegis-core |
+| `complete` | critical | aegis-core |
 
 ## Description
 
@@ -15,12 +15,12 @@ Fast regex-based classifier for obvious safety violations. Tier 1 (<1ms).
 
 ## Acceptance Criteria
 
-- [ ] Patterns for: violence, self-harm, adult, jailbreak
-- [ ] Case-insensitive matching
-- [ ] Return matched categories with confidence
-- [ ] <1ms classification
-- [ ] No false positives on safe phrases
-- [ ] Comprehensive tests
+- [x] Patterns for: violence, self-harm, adult, jailbreak
+- [x] Case-insensitive matching
+- [x] Return matched categories with confidence
+- [x] <1ms classification
+- [x] No false positives on safe phrases
+- [x] Comprehensive tests
 
 ## Notes
 

@@ -2,7 +2,7 @@
 //!
 //! This is the main binary that integrates all Aegis components.
 
-use aegis_core::{auth::Auth, classifier::Classifier, rules::RuleEngine};
+use aegis_core::{auth::Auth, classifier::KeywordClassifier, rules::RuleEngine};
 use aegis_server::api::Server;
 use aegis_storage::db::Database;
 use aegis_tray::tray::SystemTray;
@@ -14,8 +14,8 @@ fn main() -> anyhow::Result<()> {
 
     tracing::info!("Starting Aegis...");
 
-    // Initialize all components (placeholders for now)
-    let _classifier = Classifier::new();
+    // Initialize all components
+    let _classifier = KeywordClassifier::new();
     let _rules = RuleEngine::new();
     let _auth = Auth::new();
     let _db = Database::new();

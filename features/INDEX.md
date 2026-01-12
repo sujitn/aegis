@@ -3,13 +3,13 @@
 | ID | Feature | Status | Priority | Crate | Requires |
 |----|---------|--------|----------|-------|----------|
 | [F001](F001-project-foundation.md) | Project Foundation | `complete` | critical | workspace | - |
-| [F002](F002-keyword-classifier.md) | Keyword Classifier | `ready` | critical | core | F001 |
+| [F002](F002-keyword-classifier.md) | Keyword Classifier | `complete` | critical | core | F001 |
 | [F003](F003-prompt-guard.md) | Prompt Guard ML | `ready` | high | core | F001 |
 | [F004](F004-tiered-classification.md) | Tiered Classification | `ready` | critical | core | F002, F003 |
 | [F005](F005-time-rules.md) | Time Rules | `ready` | high | core | F001 |
 | [F006](F006-content-rules.md) | Content Rules | `ready` | high | core | F002 |
 | [F007](F007-rule-engine.md) | Rule Engine | `ready` | critical | core | F004-F006 |
-| [F008](F008-sqlite-storage.md) | SQLite Storage | `ready` | critical | storage | F001 |
+| [F008](F008-sqlite-storage.md) | SQLite Storage | `complete` | critical | storage | F001 |
 | [F009](F009-http-api.md) | HTTP API | `ready` | critical | server | F007, F008 |
 | [F010](F010-browser-extension.md) | Browser Extension | `ready` | critical | extension | F009 |
 | [F011](F011-system-tray.md) | System Tray | `ready` | high | tray | F001 |

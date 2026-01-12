@@ -2,7 +2,7 @@
 
 | Status | Priority | Crate |
 |--------|----------|-------|
-| `ready` | critical | aegis-storage |
+| `complete` | critical | aegis-storage |
 
 ## Description
 
@@ -15,13 +15,13 @@ Database for events, rules, config. Privacy-preserving.
 
 ## Acceptance Criteria
 
-- [ ] Create DB in app data directory
-- [ ] Migrations on startup
-- [ ] Store events (hash + preview, not full prompt)
-- [ ] Store rules as JSON
-- [ ] Store password hash
-- [ ] Connection pooling
-- [ ] Daily stats aggregation
+- [x] Create DB in app data directory
+- [x] Migrations on startup
+- [x] Store events (hash + preview, not full prompt)
+- [x] Store rules as JSON
+- [x] Store password hash
+- [x] Connection pooling
+- [x] Daily stats aggregation
 
 ## Notes
 

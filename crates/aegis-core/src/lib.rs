@@ -2,24 +2,7 @@
 //!
 //! This crate provides the core functionality for the Aegis AI safety platform.
 
-/// Placeholder for classification module.
-pub mod classifier {
-    /// Placeholder type for classifier functionality.
-    pub struct Classifier;
-
-    impl Classifier {
-        /// Creates a new classifier instance.
-        pub fn new() -> Self {
-            Self
-        }
-    }
-
-    impl Default for Classifier {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-}
+pub mod classifier;
 
 /// Placeholder for rules module.
 pub mod rules {
@@ -62,11 +45,6 @@ pub mod auth {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn classifier_can_be_created() {
-        let _classifier = classifier::Classifier::new();
-    }
 
     #[test]
     fn rule_engine_can_be_created() {

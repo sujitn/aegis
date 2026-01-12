@@ -9,6 +9,7 @@ description = "Core classification, rules, and authentication logic for Aegis"
 [dependencies]
 thiserror.workspace = true
 serde.workspace = true
+regex.workspace = true
 
 [dev-dependencies]
 tokio-test.workspace = true
