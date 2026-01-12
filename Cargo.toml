@@ -1,0 +1,49 @@
+[workspace]
+members = [
+    "crates/aegis-core",
+    "crates/aegis-storage",
+    "crates/aegis-server",
+    "crates/aegis-ui",
+    "crates/aegis-tray",
+    "crates/aegis-app",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Aegis Team"]
+license = "MIT"
+repository = "https://github.com/aegis/aegis"
+
+[workspace.dependencies]
+# Internal crates
+aegis-core = { path = "crates/aegis-core" }
+aegis-storage = { path = "crates/aegis-storage" }
+aegis-server = { path = "crates/aegis-server" }
+aegis-ui = { path = "crates/aegis-ui" }
+aegis-tray = { path = "crates/aegis-tray" }
+
+# Async runtime
+tokio = { version = "1.43", features = ["full"] }
+
+# Web framework
+axum = "0.8"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Testing
+tokio-test = "0.4"

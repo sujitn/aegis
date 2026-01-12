@@ -1,0 +1,14 @@
+[package]
+name = "aegis-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Core classification, rules, and authentication logic for Aegis"
+
+[dependencies]
+thiserror.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true

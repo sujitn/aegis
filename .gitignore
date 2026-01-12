@@ -1,0 +1,26 @@
+# Rust
+/target/
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (browser extension)
+node_modules/
+dist/
+
+# Models
+*.onnx
+
+# Database
+*.db
+*.db-journal
+
+# Logs
+*.log

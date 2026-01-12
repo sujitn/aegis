@@ -1,0 +1,16 @@
+[package]
+name = "aegis-storage"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "SQLite persistence layer for Aegis"
+
+[dependencies]
+aegis-core.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true

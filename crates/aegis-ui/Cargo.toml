@@ -1,0 +1,16 @@
+[package]
+name = "aegis-ui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Settings GUI for Aegis"
+
+[dependencies]
+aegis-core.workspace = true
+aegis-storage.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true

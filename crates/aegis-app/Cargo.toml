@@ -1,0 +1,22 @@
+[package]
+name = "aegis-app"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Main binary for Aegis AI safety platform"
+
+[[bin]]
+name = "aegis"
+path = "src/main.rs"
+
+[dependencies]
+aegis-core.workspace = true
+aegis-storage.workspace = true
+aegis-server.workspace = true
+aegis-ui.workspace = true
+aegis-tray.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
