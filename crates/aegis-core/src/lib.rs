@@ -3,6 +3,8 @@
 //! This crate provides the core functionality for the Aegis AI safety platform.
 
 pub mod classifier;
+pub mod content_rules;
+pub mod time_rules;
 
 /// Placeholder for rules module.
 pub mod rules {

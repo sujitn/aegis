@@ -2,7 +2,7 @@
 
 | Status | Priority | Crate |
 |--------|----------|-------|
-| `ready` | high | aegis-core |
+| `complete` | high | aegis-core |
 
 ## Description
 
@@ -15,12 +15,12 @@ Block AI access based on time/day. Bedtime and school hours.
 
 ## Acceptance Criteria
 
-- [ ] Day-of-week selection
-- [ ] Time ranges (start/end)
-- [ ] Overnight ranges (9pm-7am)
-- [ ] Multiple rules coexist
-- [ ] Enable/disable per rule
-- [ ] Default presets
+- [x] Day-of-week selection
+- [x] Time ranges (start/end)
+- [x] Overnight ranges (9pm-7am)
+- [x] Multiple rules coexist
+- [x] Enable/disable per rule
+- [x] Default presets
 
 ## Notes
 

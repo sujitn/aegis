@@ -2,7 +2,7 @@
 
 | Status | Priority | Crate |
 |--------|----------|-------|
-| `ready` | high | aegis-core |
+| `complete` | high | aegis-core |
 
 ## Description
 
@@ -15,10 +15,10 @@ Map safety categories to actions with confidence thresholds.
 
 ## Acceptance Criteria
 
-- [ ] Map categories to actions (block/warn/allow)
-- [ ] Configurable thresholds
-- [ ] Enable/disable per rule
-- [ ] Default family-safe presets
+- [x] Map categories to actions (block/warn/allow)
+- [x] Configurable thresholds
+- [x] Enable/disable per rule
+- [x] Default family-safe presets
 
 ## Notes
 
