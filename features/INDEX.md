@@ -1,29 +1,103 @@
 # Feature Index
 
+## Core Features
+
 | ID | Feature | Status | Priority | Crate | Requires |
 |----|---------|--------|----------|-------|----------|
 | [F001](F001-project-foundation.md) | Project Foundation | `complete` | critical | workspace | - |
 | [F002](F002-keyword-classifier.md) | Keyword Classifier | `complete` | critical | core | F001 |
-| [F003](F003-prompt-guard.md) | Prompt Guard ML | `ready` | high | core | F001 |
+| [F003](F003-prompt-guard.md) | Prompt Guard ML | `complete` | medium | core | F001 |
 | [F004](F004-tiered-classification.md) | Tiered Classification | `ready` | critical | core | F002, F003 |
-| [F005](F005-time-rules.md) | Time Rules | `ready` | high | core | F001 |
-| [F006](F006-content-rules.md) | Content Rules | `ready` | high | core | F002 |
+| [F005](F005-time-rules.md) | Time Rules | `complete` | high | core | F001 |
+| [F006](F006-content-rules.md) | Content Rules | `complete` | high | core | F002 |
 | [F007](F007-rule-engine.md) | Rule Engine | `ready` | critical | core | F004-F006 |
 | [F008](F008-sqlite-storage.md) | SQLite Storage | `complete` | critical | storage | F001 |
-| [F009](F009-http-api.md) | HTTP API | `ready` | critical | server | F007, F008 |
-| [F010](F010-browser-extension.md) | Browser Extension | `ready` | critical | extension | F009 |
-| [F011](F011-system-tray.md) | System Tray | `ready` | high | tray | F001 |
-| [F012](F012-settings-ui.md) | Settings UI | `ready` | high | ui | F008, F011, F013 |
+
+## Interception
+
+| ID | Feature | Status | Priority | Crate | Requires |
+|----|---------|--------|----------|-------|----------|
+| [F009](F009-http-api.md) | HTTP API | `ready` | high | server | F007, F008 |
+| [F010](F010-browser-extension.md) | Browser Extension | `ready` | high | extension | F009 |
+| [F016](F016-mitm-proxy.md) | MITM Proxy | `ready` | high | proxy | F007 |
+| [F017](F017-interception-mode.md) | Interception Mode | `ready` | high | core | F010, F016 |
+
+## User Management
+
+| ID | Feature | Status | Priority | Crate | Requires |
+|----|---------|--------|----------|-------|----------|
 | [F013](F013-authentication.md) | Authentication | `ready` | critical | core | F008 |
+| [F018](F018-protection-toggle.md) | Protection Toggle | `ready` | high | core | F011, F013 |
+| [F019](F019-user-profiles.md) | User Profiles | `ready` | critical | core | F005, F006, F008 |
+
+## UI & Experience
+
+| ID | Feature | Status | Priority | Crate | Requires |
+|----|---------|--------|----------|-------|----------|
+| [F011](F011-system-tray.md) | System Tray | `ready` | high | tray | F001 |
+| [F012](F012-parent-dashboard.md) | Parent Dashboard | `ready` | high | ui | F008, F011, F013 |
 | [F014](F014-notifications.md) | Notifications | `ready` | medium | core | F007 |
-| [F015](F015-first-run-setup.md) | First-Run Setup | `ready` | high | ui | F012, F013 |
+| [F015](F015-first-run-setup.md) | First-Run Setup | `ready` | high | ui | F012, F013, F017, F019 |
+| [F020](F020-clean-uninstall.md) | Clean Uninstall | `ready` | high | app | F013, F016 |
+
+## Build & Distribution
+
+| ID | Feature | Status | Priority | Crate | Requires |
+|----|---------|--------|----------|-------|----------|
+| [F021](F021-build-pipeline.md) | Build Pipeline | `ready` | high | infrastructure | F001 |
+| [F022](F022-native-installers.md) | Native Installers | `ready` | high | infrastructure | F021 |
+| [F023](F023-auto-update.md) | Auto Update | `ready` | medium | app | F021, F022 |
 
 ## Implementation Order
 
+### Phase 1: Core 
 ```
-F001 → F002 → F008 → F005 → F006 → F004 → F007 → F013 → F009 → F010
-                                                    ↓
-                                         F011 → F012 → F015 → F014
+F001 → F002 → F008
+```
 
-F003 can be deferred (system works without ML)
+### Phase 2: Rules & Engine
+```
+F005 → F006 → F004 → F007
+```
+
+### Phase 3: Auth & Profiles
+```
+F013 → F019
+```
+
+### Phase 4: Interception
+```
+F009 → F010 (Extension)
+F016 (Proxy)
+F017 (Mode Switch)
+```
+
+### Phase 5: UI
+```
+F011 → F018 → F012 → F015 → F014
+```
+
+### Phase 6: Distribution
+```
+F021 → F022 → F023 → F020
+```
+
+## User Journey
+
+```
+1. INSTALL
+   Download → Run Installer → First-Run Wizard
+   
+2. SETUP (F015)
+   Password → Mode (Extension/Proxy) → Create Profile → Done
+   
+3. DAILY USE
+   App runs in background → Tray icon shows status
+   Child uses AI → Prompts filtered per profile rules
+   
+4. MANAGEMENT
+   Parent clicks tray → Opens Dashboard → View logs, edit rules
+   
+5. UPDATE
+   Notification → Download → Install → Preserved settings
 ```

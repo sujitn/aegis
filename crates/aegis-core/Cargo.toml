@@ -6,10 +6,21 @@ authors.workspace = true
 license.workspace = true
 description = "Core classification, rules, and authentication logic for Aegis"
 
+[features]
+default = []
+ml = ["dep:ort", "dep:ndarray", "dep:tokenizers"]
+
 [dependencies]
 thiserror.workspace = true
 serde.workspace = true
 regex.workspace = true
+chrono.workspace = true
+
+# Optional ML dependencies (for Prompt Guard)
+ort = { workspace = true, optional = true }
+ndarray = { workspace = true, optional = true }
+tokenizers = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio-test.workspace = true
+serde_json.workspace = true

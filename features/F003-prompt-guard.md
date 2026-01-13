@@ -2,7 +2,7 @@
 
 | Status | Priority | Crate |
 |--------|----------|-------|
-| `ready` | high | aegis-core |
+| `complete` | high | aegis-core |
 
 ## Description
 
@@ -15,12 +15,12 @@ ML classifier using Prompt Guard via ONNX. Tier 2 (<50ms).
 
 ## Acceptance Criteria
 
-- [ ] Load ONNX model from path
-- [ ] Tokenize input
-- [ ] Return safe/unsafe probabilities
-- [ ] <50ms on CPU
-- [ ] Graceful fallback if model missing
-- [ ] Works in keywords-only mode
+- [x] Load ONNX model from path
+- [x] Tokenize input
+- [x] Return safe/unsafe probabilities
+- [x] <50ms on CPU
+- [x] Graceful fallback if model missing
+- [x] Works in keywords-only mode
 
 ## Notes
 
