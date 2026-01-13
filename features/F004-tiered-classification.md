@@ -2,7 +2,7 @@
 
 | Status | Priority | Crate |
 |--------|----------|-------|
-| `ready` | critical | aegis-core |
+| `complete` | critical | aegis-core |
 
 ## Description
 
@@ -15,12 +15,12 @@ Orchestrate classifiers: keywords first, ML if needed. Short-circuit on match.
 
 ## Acceptance Criteria
 
-- [ ] Keywords checked first
-- [ ] Short-circuit on high-confidence match
-- [ ] Fall back to ML if no keyword match
-- [ ] Works without ML model
-- [ ] Track which tier produced result
-- [ ] <25ms typical latency
+- [x] Keywords checked first
+- [x] Short-circuit on high-confidence match
+- [x] Fall back to ML if no keyword match
+- [x] Works without ML model
+- [x] Track which tier produced result
+- [x] <25ms typical latency
 
 ## Notes
 

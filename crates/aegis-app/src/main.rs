@@ -2,13 +2,14 @@
 //!
 //! This is the main binary that integrates all Aegis components.
 
-use aegis_core::{auth::Auth, classifier::KeywordClassifier, rules::RuleEngine};
-use aegis_server::api::Server;
+use aegis_core::{auth::AuthManager, classifier::KeywordClassifier, rule_engine::RuleEngine};
+use aegis_server::{Server, ServerConfig};
 use aegis_storage::db::Database;
 use aegis_tray::tray::SystemTray;
 use aegis_ui::settings::SettingsUi;
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
@@ -17,9 +18,9 @@ fn main() -> anyhow::Result<()> {
     // Initialize all components
     let _classifier = KeywordClassifier::new();
     let _rules = RuleEngine::new();
-    let _auth = Auth::new();
+    let _auth = AuthManager::new();
     let _db = Database::new();
-    let _server = Server::new();
+    let _server = Server::new(ServerConfig::default()).await?;
     let _ui = SettingsUi::new();
     let _tray = SystemTray::new();
 

@@ -170,3 +170,39 @@ pub struct Auth {
     /// Last login timestamp.
     pub last_login: Option<DateTime<Utc>>,
 }
+
+/// A user profile stored in the database.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Profile {
+    /// Unique identifier.
+    pub id: i64,
+    /// Profile display name.
+    pub name: String,
+    /// OS username to match (optional, None = manual selection only).
+    pub os_username: Option<String>,
+    /// Time rules configuration (JSON).
+    pub time_rules: serde_json::Value,
+    /// Content rules configuration (JSON).
+    pub content_rules: serde_json::Value,
+    /// Whether this profile is enabled.
+    pub enabled: bool,
+    /// Created timestamp.
+    pub created_at: DateTime<Utc>,
+    /// Updated timestamp.
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Parameters for creating a new profile.
+#[derive(Debug, Clone)]
+pub struct NewProfile {
+    /// Profile display name.
+    pub name: String,
+    /// OS username to match (optional).
+    pub os_username: Option<String>,
+    /// Time rules configuration (JSON).
+    pub time_rules: serde_json::Value,
+    /// Content rules configuration (JSON).
+    pub content_rules: serde_json::Value,
+    /// Whether this profile is enabled.
+    pub enabled: bool,
+}

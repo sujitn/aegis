@@ -2,7 +2,7 @@
 
 | Status | Priority | Crate |
 |--------|----------|-------|
-| `ready` | critical | aegis-core |
+| `complete` | critical | aegis-core |
 
 ## Description
 
@@ -15,9 +15,19 @@ Password protection for settings and rules.
 
 ## Acceptance Criteria
 
-- [ ] Set password on first run
-- [ ] Required for settings
-- [ ] Required for API rule changes
-- [ ] Argon2 hashing
-- [ ] Min 6 characters
-- [ ] Session timeout 15min
+- [x] Set password on first run
+- [x] Required for settings
+- [x] Required for API rule changes
+- [x] Argon2 hashing
+- [x] Min 6 characters
+- [x] Session timeout 15min
+
+## Implementation
+
+- `AuthManager` - Main authentication manager combining hashing and sessions
+- `SessionToken` - Opaque session token for authenticated users
+- `SessionManager` - Thread-safe session management with automatic expiry
+- `AuthError` - Comprehensive error types for auth failures
+- Password validation enforces minimum 6 characters
+- Argon2id hashing with random salts via `rand` crate
+- Session timeout of 15 minutes with refresh on use

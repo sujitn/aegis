@@ -41,6 +41,8 @@ directories = "6.0"
 
 # Hashing
 sha2 = "0.10"
+argon2 = "0.5"
+rand = "0.8"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

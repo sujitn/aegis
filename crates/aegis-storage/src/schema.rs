@@ -6,7 +6,7 @@ use tracing::info;
 use crate::error::Result;
 
 /// Current schema version.
-pub const SCHEMA_VERSION: i32 = 1;
+pub const SCHEMA_VERSION: i32 = 2;
 
 /// Run all pending migrations.
 pub fn run_migrations(conn: &Connection) -> Result<()> {
@@ -20,6 +20,10 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
         if current_version < 1 {
             migrate_v1(conn)?;
+        }
+
+        if current_version < 2 {
+            migrate_v2(conn)?;
         }
 
         set_schema_version(conn, SCHEMA_VERSION)?;
@@ -139,6 +143,34 @@ fn migrate_v1(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Migration to version 2: User profiles.
+fn migrate_v2(conn: &Connection) -> Result<()> {
+    info!("Applying migration v2: User profiles");
+
+    // Profiles table - user profiles with rules
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            os_username TEXT UNIQUE,
+            time_rules TEXT NOT NULL DEFAULT '{}',
+            content_rules TEXT NOT NULL DEFAULT '{}',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )",
+        [],
+    )?;
+
+    // Index for looking up profiles by OS username
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_profiles_os_username ON profiles (os_username)",
+        [],
+    )?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,5 +199,6 @@ mod tests {
         conn.execute("SELECT * FROM rules LIMIT 1", []).ok();
         conn.execute("SELECT * FROM config LIMIT 1", []).ok();
         conn.execute("SELECT * FROM auth LIMIT 1", []).ok();
+        conn.execute("SELECT * FROM profiles LIMIT 1", []).ok();
     }
 }

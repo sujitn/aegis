@@ -2,6 +2,19 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Classification tier that produced the result.
+///
+/// Used to track which classifier in the tiered pipeline detected the match.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ClassificationTier {
+    /// Fast keyword/regex-based matching (Tier 1).
+    #[default]
+    Keyword,
+    /// ML-based classification using Prompt Guard (Tier 2).
+    Ml,
+}
+
 /// Safety categories that content can be classified into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -55,15 +68,34 @@ pub struct CategoryMatch {
     pub confidence: f32,
     /// The pattern or keyword that matched (if available).
     pub matched_pattern: Option<String>,
+    /// Which classification tier produced this match.
+    #[serde(default)]
+    pub tier: ClassificationTier,
 }
 
 impl CategoryMatch {
-    /// Creates a new category match.
+    /// Creates a new category match (defaults to Keyword tier for backwards compatibility).
     pub fn new(category: Category, confidence: f32, matched_pattern: Option<String>) -> Self {
         Self {
             category,
             confidence: confidence.clamp(0.0, 1.0),
             matched_pattern,
+            tier: ClassificationTier::Keyword,
+        }
+    }
+
+    /// Creates a new category match with a specified tier.
+    pub fn with_tier(
+        category: Category,
+        confidence: f32,
+        matched_pattern: Option<String>,
+        tier: ClassificationTier,
+    ) -> Self {
+        Self {
+            category,
+            confidence: confidence.clamp(0.0, 1.0),
+            matched_pattern,
+            tier,
         }
     }
 }

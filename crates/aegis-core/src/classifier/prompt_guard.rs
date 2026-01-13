@@ -8,7 +8,7 @@ use std::path::Path;
 #[cfg(feature = "ml")]
 use std::time::Instant;
 
-use super::{Category, CategoryMatch, ClassificationResult};
+use super::{Category, CategoryMatch, ClassificationResult, ClassificationTier};
 
 /// Result of Prompt Guard classification.
 #[derive(Debug, Clone)]
@@ -31,10 +31,11 @@ impl PromptGuardResult {
     pub fn to_classification_result(&self, threshold: f32) -> ClassificationResult {
         if self.is_unsafe(threshold) {
             ClassificationResult::with_matches(
-                vec![CategoryMatch::new(
+                vec![CategoryMatch::with_tier(
                     Category::Jailbreak,
                     self.unsafe_probability,
                     Some("prompt_guard_ml".to_string()),
+                    ClassificationTier::Ml,
                 )],
                 self.duration_us,
             )

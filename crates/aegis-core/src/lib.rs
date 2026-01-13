@@ -1,48 +1,22 @@
 //! Aegis Core - Classification, rules, and authentication logic.
 //!
 //! This crate provides the core functionality for the Aegis AI safety platform.
+//!
+//! ## Modules
+//!
+//! - [`auth`] - Parent authentication with password hashing and sessions (F013)
+//! - [`classifier`] - Content classification (keywords, ML, tiered pipeline)
+//! - [`time_rules`] - Time-based blocking rules (F005)
+//! - [`content_rules`] - Content-based filtering rules (F006)
+//! - [`rule_engine`] - Unified rule evaluation engine (F007)
+//! - [`profile`] - User profile management (F019)
 
+pub mod auth;
 pub mod classifier;
 pub mod content_rules;
+pub mod profile;
+pub mod rule_engine;
 pub mod time_rules;
-
-/// Placeholder for rules module.
-pub mod rules {
-    /// Placeholder type for rule engine functionality.
-    pub struct RuleEngine;
-
-    impl RuleEngine {
-        /// Creates a new rule engine instance.
-        pub fn new() -> Self {
-            Self
-        }
-    }
-
-    impl Default for RuleEngine {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-}
-
-/// Placeholder for authentication module.
-pub mod auth {
-    /// Placeholder type for authentication functionality.
-    pub struct Auth;
-
-    impl Auth {
-        /// Creates a new auth instance.
-        pub fn new() -> Self {
-            Self
-        }
-    }
-
-    impl Default for Auth {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -50,11 +24,45 @@ mod tests {
 
     #[test]
     fn rule_engine_can_be_created() {
-        let _engine = rules::RuleEngine::new();
+        let _engine = rule_engine::RuleEngine::new();
+    }
+
+    #[test]
+    fn rule_engine_with_defaults() {
+        let engine = rule_engine::RuleEngine::with_defaults();
+        assert!(!engine.time_rules.rules.is_empty());
+        assert!(!engine.content_rules.rules.is_empty());
     }
 
     #[test]
     fn auth_can_be_created() {
-        let _auth = auth::Auth::new();
+        let _auth = auth::AuthManager::new();
+    }
+
+    #[test]
+    fn auth_can_hash_and_verify_password() {
+        let auth = auth::AuthManager::new();
+        let hash = auth.hash_password("password123").unwrap();
+        assert!(auth.verify_password("password123", &hash).unwrap());
+    }
+
+    #[test]
+    fn profile_can_be_created() {
+        let profile = profile::UserProfile::with_child_defaults("Child", Some("child".to_string()));
+        assert_eq!(profile.name, "Child");
+        assert!(!profile.time_rules.rules.is_empty());
+    }
+
+    #[test]
+    fn profile_manager_can_lookup_by_os_username() {
+        let mut manager = profile::ProfileManager::new();
+        manager.add_profile(profile::UserProfile::with_child_defaults(
+            "Child",
+            Some("child".to_string()),
+        ));
+
+        let found = manager.get_by_os_username("child");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().name, "Child");
     }
 }
