@@ -20,7 +20,7 @@
 | [F009](F009-http-api.md) | HTTP API | `complete` | high | server | F007, F008 |
 | [F010](F010-browser-extension.md) | Browser Extension | `complete` | high | extension | F009 |
 | [F016](F016-mitm-proxy.md) | MITM Proxy | `complete` | high | proxy | F007 |
-| [F017](F017-interception-mode.md) | Interception Mode | `ready` | high | core | F010, F016 |
+| [F017](F017-interception-mode.md) | Interception Mode | `complete` | high | core | F010, F016 |
 
 ## User Management
 
@@ -37,8 +37,8 @@
 | [F011](F011-system-tray.md) | System Tray | `complete` | high | tray | F001 |
 | [F012](F012-parent-dashboard.md) | Parent Dashboard | `complete` | high | ui | F008, F011, F013 |
 | [F014](F014-notifications.md) | Notifications | `complete` | medium | core | F007 |
-| [F015](F015-first-run-setup.md) | First-Run Setup | `ready` | high | ui | F012, F013, F017, F019 |
-| [F020](F020-clean-uninstall.md) | Clean Uninstall | `ready` | high | app | F013, F016 |
+| [F015](F015-first-run-setup.md) | First-Run Setup | `complete` | high | ui | F012, F013, F017, F019 |
+| [F020](F020-clean-uninstall.md) | Clean Uninstall | `complete` | high | app | F013, F016 |
 
 ## Build & Distribution
 

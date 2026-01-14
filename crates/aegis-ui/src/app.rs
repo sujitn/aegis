@@ -6,7 +6,7 @@ use egui::{Color32, RichText, Vec2};
 use aegis_storage::Database;
 
 use crate::state::{AppState, View};
-use crate::views::{dashboard, login, logs, profiles, rules, settings};
+use crate::views::{dashboard, login, logs, profiles, rules, settings, setup};
 
 /// Main dashboard application.
 pub struct DashboardApp {
@@ -21,6 +21,9 @@ pub struct DashboardApp {
 
     /// Settings view state.
     settings_state: settings::SettingsState,
+
+    /// Setup wizard state.
+    setup_wizard: setup::SetupWizardState,
 }
 
 impl DashboardApp {
@@ -31,6 +34,7 @@ impl DashboardApp {
             profile_editor: profiles::ProfileEditor::default(),
             logs_state: logs::LogsState::new(),
             settings_state: settings::SettingsState::default(),
+            setup_wizard: setup::SetupWizardState::new(),
         }
     }
 
@@ -164,6 +168,7 @@ impl DashboardApp {
             // View title
             let title = match self.state.view {
                 View::Login => "Login",
+                View::Setup => "Setup",
                 View::Dashboard => "Dashboard",
                 View::Profiles => "Profiles",
                 View::Rules => "Rules",
@@ -184,8 +189,8 @@ impl DashboardApp {
     /// Renders the main content area.
     fn render_content(&mut self, ui: &mut egui::Ui) {
         match self.state.view {
-            View::Login => {
-                // Login doesn't use header/sidebar
+            View::Login | View::Setup => {
+                // Login and Setup don't use header/sidebar
             }
             View::Dashboard => {
                 dashboard::render(ui, &mut self.state);
@@ -250,29 +255,41 @@ impl eframe::App for DashboardApp {
             self.state.touch_activity();
         }
 
-        // Check for session expiry
-        if !self.state.is_authenticated() && self.state.view != View::Login {
+        // Check for session expiry (but not during setup)
+        if !self.state.is_authenticated()
+            && self.state.view != View::Login
+            && self.state.view != View::Setup
+        {
             self.state.view = View::Login;
         }
 
-        // Render based on authentication state
-        if self.state.view == View::Login {
-            // Full-screen login
-            egui::CentralPanel::default().show(ctx, |ui| {
-                login::render(ui, &mut self.state);
-            });
-        } else {
-            // Sidebar + content layout
-            egui::SidePanel::left("sidebar")
-                .resizable(false)
-                .default_width(180.0)
-                .show(ctx, |ui| {
-                    self.render_sidebar(ui);
+        // Render based on view
+        match self.state.view {
+            View::Setup => {
+                // Full-screen setup wizard
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    setup::render(ui, &mut self.state, &mut self.setup_wizard);
                 });
+            }
+            View::Login => {
+                // Full-screen login
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    login::render(ui, &mut self.state);
+                });
+            }
+            _ => {
+                // Sidebar + content layout
+                egui::SidePanel::left("sidebar")
+                    .resizable(false)
+                    .default_width(180.0)
+                    .show(ctx, |ui| {
+                        self.render_sidebar(ui);
+                    });
 
-            egui::CentralPanel::default().show(ctx, |ui| {
-                self.render_content(ui);
-            });
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    self.render_content(ui);
+                });
+            }
         }
 
         // Messages overlay
@@ -287,7 +304,8 @@ mod tests {
     #[test]
     fn test_dashboard_app_creation() {
         let app = DashboardApp::in_memory().unwrap();
-        assert_eq!(app.state.view, View::Login);
+        // First setup starts with Setup view
+        assert_eq!(app.state.view, View::Setup);
     }
 
     #[test]

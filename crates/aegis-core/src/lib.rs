@@ -12,10 +12,12 @@
 //! - [`profile`] - User profile management (F019)
 //! - [`protection`] - Protection state toggle with auth-guarded operations (F018)
 //! - [`notifications`] - Desktop notifications for blocked content (F014)
+//! - [`interception`] - Interception mode switching between extension and proxy (F017)
 
 pub mod auth;
 pub mod classifier;
 pub mod content_rules;
+pub mod interception;
 pub mod notifications;
 pub mod profile;
 pub mod protection;
@@ -119,5 +121,32 @@ mod tests {
         );
         let result = manager.notify_block(&event);
         assert!(result.was_disabled());
+    }
+
+    #[test]
+    fn interception_manager_can_be_created() {
+        let manager = interception::InterceptionManager::new();
+        assert_eq!(manager.mode(), interception::InterceptionMode::Extension);
+    }
+
+    #[test]
+    fn interception_manager_mode_switch_requires_auth() {
+        let manager = interception::InterceptionManager::new();
+        let auth = auth::AuthManager::new();
+        let session = auth.create_session();
+
+        // Switch to proxy mode
+        manager
+            .set_mode(interception::InterceptionMode::Proxy, &session, &auth)
+            .unwrap();
+        assert_eq!(manager.mode(), interception::InterceptionMode::Proxy);
+        assert!(manager.is_proxy_mode());
+
+        // Switch back to extension mode
+        manager
+            .set_mode(interception::InterceptionMode::Extension, &session, &auth)
+            .unwrap();
+        assert_eq!(manager.mode(), interception::InterceptionMode::Extension);
+        assert!(manager.is_extension_mode());
     }
 }

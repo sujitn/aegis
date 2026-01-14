@@ -67,6 +67,8 @@ impl InterceptionMode {
 pub enum View {
     /// Login screen (when not authenticated).
     Login,
+    /// First-run setup wizard.
+    Setup,
     /// Main dashboard home.
     #[default]
     Dashboard,
@@ -171,12 +173,19 @@ impl AppState {
         let auth = AuthManager::new();
         let is_first_setup = !db.is_auth_setup().unwrap_or(false);
 
+        // Start with Setup view if first run, otherwise Login
+        let initial_view = if is_first_setup {
+            View::Setup
+        } else {
+            View::Login
+        };
+
         Self {
             db: Arc::new(db),
             auth,
             session: None,
             last_activity: Instant::now(),
-            view: View::Login,
+            view: initial_view,
             protection_status: ProtectionStatus::Active,
             interception_mode: InterceptionMode::Extension,
             selected_profile_id: None,
@@ -387,7 +396,8 @@ mod tests {
 
         assert!(state.is_first_setup);
         assert!(!state.is_authenticated());
-        assert_eq!(state.view, View::Login);
+        // First setup starts with Setup view
+        assert_eq!(state.view, View::Setup);
     }
 
     #[test]

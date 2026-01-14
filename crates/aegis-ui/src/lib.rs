@@ -91,7 +91,8 @@ mod tests {
     fn test_app_state_creation() {
         let db = aegis_storage::Database::in_memory().unwrap();
         let state = AppState::new(db);
-        assert_eq!(state.view, View::Login);
+        // First setup starts with Setup view
+        assert_eq!(state.view, View::Setup);
     }
 
     #[test]
