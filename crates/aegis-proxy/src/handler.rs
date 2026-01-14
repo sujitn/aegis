@@ -8,7 +8,8 @@ use std::sync::Arc;
 use http_body_util::{BodyExt, Full};
 use hudsucker::{
     hyper::{Request, Response},
-    Body, HttpContext, HttpHandler, RequestOrResponse,
+    tokio_tungstenite::tungstenite::Message,
+    Body, HttpContext, HttpHandler, RequestOrResponse, WebSocketContext, WebSocketHandler,
 };
 use hyper::body::Bytes;
 use parking_lot::RwLock;
@@ -24,6 +25,15 @@ use aegis_core::rule_engine::{RuleAction, RuleEngine, RuleEngineResult};
 
 use crate::domains::is_llm_domain;
 use crate::extractor::{extract_prompt, PromptInfo};
+
+/// Checks if a request is a WebSocket upgrade request.
+fn is_websocket_upgrade(req: &Request<Body>) -> bool {
+    req.headers()
+        .get(hyper::header::UPGRADE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.eq_ignore_ascii_case("websocket"))
+        .unwrap_or(false)
+}
 
 /// Block page HTML template.
 const BLOCK_PAGE_HTML: &str = r#"<!DOCTYPE html>
@@ -186,6 +196,8 @@ impl ProxyHandler {
             return RequestOrResponse::Request(req);
         }
 
+        tracing::info!("HTTP POST to LLM domain: {}{}", host, path);
+
         // Read the body
         let (parts, body) = req.into_parts();
         let body_bytes = match body.collect().await {
@@ -201,7 +213,7 @@ impl ProxyHandler {
             Some(info) => info,
             None => {
                 // No prompt extracted, forward request
-                tracing::debug!("No prompt extracted from {}{}", host, path);
+                tracing::info!("No prompt extracted from {}{} ({} bytes)", host, path, body_bytes.len());
                 return RequestOrResponse::Request(Request::from_parts(
                     parts,
                     bytes_to_body(body_bytes),
@@ -209,7 +221,7 @@ impl ProxyHandler {
             }
         };
 
-        tracing::debug!(
+        tracing::info!(
             "Extracted prompt from {}: {} chars",
             prompt_info.service,
             prompt_info.text.len()
@@ -305,19 +317,27 @@ impl HttpHandler for ProxyHandler {
     async fn handle_request(
         &mut self,
         _ctx: &HttpContext,
-        req: Request<Body>,
+        mut req: Request<Body>,
     ) -> RequestOrResponse {
         let host = match Self::extract_host(&req) {
             Some(h) => h,
             None => return RequestOrResponse::Request(req),
         };
 
+        // For all WebSocket upgrades, strip compression extension
+        // This prevents protocol errors when proxying compressed WebSocket messages
+        // We do this for all domains because the proxy doesn't handle permessage-deflate
+        if is_websocket_upgrade(&req) {
+            tracing::info!("WebSocket upgrade request to {}", host);
+            req.headers_mut().remove("sec-websocket-extensions");
+        }
+
         // Only intercept LLM domains
         if !is_llm_domain(&host) {
             return RequestOrResponse::Request(req);
         }
 
-        tracing::debug!("Intercepting request to LLM domain: {}", host);
+        tracing::info!("Intercepting {} request to LLM domain: {}", req.method(), host);
 
         self.handle_llm_request(&host, req).await
     }
@@ -326,6 +346,183 @@ impl HttpHandler for ProxyHandler {
         // Pass through responses unchanged
         res
     }
+}
+
+impl WebSocketHandler for ProxyHandler {
+    fn handle_message(
+        &mut self,
+        ctx: &WebSocketContext,
+        message: Message,
+    ) -> impl std::future::Future<Output = Option<Message>> + Send {
+        let classifier = self.config.classifier.clone();
+        let rule_engine = self.config.rule_engine.clone();
+        let notifications = self.config.notifications.clone();
+
+        // Only inspect client-to-server messages (outgoing prompts)
+        // Server-to-client messages (responses) pass through unchanged
+        let host = match ctx {
+            WebSocketContext::ClientToServer { dst, .. } => {
+                Some(dst.host().unwrap_or("unknown").to_string())
+            }
+            WebSocketContext::ServerToClient { .. } => None,
+        };
+
+        async move {
+            // Skip server-to-client (responses) - pass through unchanged
+            let host = match host {
+                Some(h) => h,
+                None => return Some(message),
+            };
+
+            // Only inspect LLM domain WebSocket traffic
+            if !is_llm_domain(&host) {
+                return Some(message);
+            }
+
+            // Only inspect text messages (JSON payloads)
+            let text = match &message {
+                Message::Text(t) => {
+                    let s = t.to_string();
+                    tracing::info!("WebSocket text message from {} ({} bytes)", host, s.len());
+                    s
+                }
+                Message::Binary(b) => {
+                    tracing::debug!("WebSocket binary message from {} ({} bytes)", host, b.len());
+                    return Some(message);
+                }
+                _ => return Some(message),
+            };
+
+            // Try to extract prompt from WebSocket message
+            // ChatGPT WebSocket messages contain JSON with message content
+            if let Some(prompt) = extract_websocket_prompt(&text) {
+                tracing::info!("WebSocket prompt extracted from {}: {} chars", host, prompt.len());
+
+                // Classify the prompt
+                let classification = classifier.write().classify(&prompt);
+
+                // Evaluate rules
+                let result = rule_engine.evaluate_now(&classification);
+
+                match result.action {
+                    RuleAction::Block => {
+                        let reason = result
+                            .source
+                            .rule_name()
+                            .unwrap_or("Policy violation");
+
+                        tracing::info!(
+                            "Blocked WebSocket message to {} - reason: {}",
+                            host,
+                            reason
+                        );
+
+                        // Send notification
+                        if let Some(ref notif) = notifications {
+                            let event = BlockedEvent::from_rule_source(
+                                &result.source,
+                                Some(crate::domains::service_name(&host).to_string()),
+                            );
+                            let _ = notif.notify_block(&event);
+                        }
+
+                        // Block by returning None
+                        return None;
+                    }
+                    RuleAction::Warn => {
+                        tracing::info!("Warned WebSocket message to {}", host);
+                    }
+                    RuleAction::Allow => {
+                        tracing::debug!("Allowed WebSocket message to {}", host);
+                    }
+                }
+            }
+
+            Some(message)
+        }
+    }
+}
+
+/// Extracts prompt text from a WebSocket message (usually JSON).
+fn extract_websocket_prompt(text: &str) -> Option<String> {
+    // Try to parse as JSON and extract common prompt fields
+    let json: serde_json::Value = serde_json::from_str(text).ok()?;
+
+    // ChatGPT WebSocket format: look for message content
+    // Try various known paths
+
+    // Path: .messages[].content.parts[]
+    if let Some(messages) = json.get("messages").and_then(|m| m.as_array()) {
+        let mut prompts = Vec::new();
+        for msg in messages {
+            if let Some(content) = msg.get("content") {
+                if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
+                    for part in parts {
+                        if let Some(text) = part.as_str() {
+                            prompts.push(text.to_string());
+                        }
+                    }
+                } else if let Some(text) = content.as_str() {
+                    prompts.push(text.to_string());
+                }
+            }
+        }
+        if !prompts.is_empty() {
+            return Some(prompts.join("\n"));
+        }
+    }
+
+    // Path: .message.content.parts[]
+    if let Some(message) = json.get("message") {
+        if let Some(content) = message.get("content") {
+            if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
+                let mut prompts = Vec::new();
+                for part in parts {
+                    if let Some(text) = part.as_str() {
+                        prompts.push(text.to_string());
+                    }
+                }
+                if !prompts.is_empty() {
+                    return Some(prompts.join("\n"));
+                }
+            }
+        }
+    }
+
+    // Path: .prompt or .text or .content (simple cases)
+    if let Some(prompt) = json.get("prompt").and_then(|p| p.as_str()) {
+        return Some(prompt.to_string());
+    }
+    if let Some(text) = json.get("text").and_then(|t| t.as_str()) {
+        return Some(text.to_string());
+    }
+    if let Some(content) = json.get("content").and_then(|c| c.as_str()) {
+        return Some(content.to_string());
+    }
+
+    // Path: .action (ChatGPT specific)
+    if let Some(action) = json.get("action").and_then(|a| a.as_str()) {
+        if action == "next" || action == "continue" {
+            // This is a prompt submission
+            if let Some(messages) = json.get("messages").and_then(|m| m.as_array()) {
+                let mut prompts = Vec::new();
+                for msg in messages {
+                    if let Some(content) = msg.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
+                        for part in content {
+                            if let Some(text) = part.as_str() {
+                                prompts.push(text.to_string());
+                            }
+                        }
+                    }
+                }
+                if !prompts.is_empty() {
+                    return Some(prompts.join("\n"));
+                }
+            }
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]

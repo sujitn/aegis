@@ -1,22 +1,27 @@
 /**
  * Aegis popup script.
+ * Displays connection status and troubleshooting help.
  */
 
 interface StatusResponse {
   status: 'online' | 'offline' | 'error';
   lastCheck: number;
   activeTabs: number;
+  consecutiveFailures?: number;
+  nextRetryIn?: number | null;
 }
 
 const elements = {
   statusIndicator: document.getElementById('status-indicator')!,
   statusText: document.getElementById('status-text')!,
-  statusIcon: document.getElementById('status-icon')!,
-  statusMessage: document.getElementById('status-message')!,
-  statusDescription: document.getElementById('status-description')!,
-  lastCheck: document.getElementById('last-check')!,
-  connectionError: document.getElementById('connection-error')!,
+  onlineView: document.getElementById('online-view')!,
+  offlineView: document.getElementById('offline-view')!,
+  lastCheckOnline: document.getElementById('last-check-online')!,
+  offlineDescription: document.getElementById('offline-description')!,
+  retryText: document.getElementById('retry-text')!,
   refreshBtn: document.getElementById('refresh-btn')!,
+  refreshBtnText: document.getElementById('refresh-btn-text')!,
+  failModeToggle: document.getElementById('fail-mode-toggle') as HTMLInputElement,
 };
 
 /**
@@ -43,6 +48,17 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 /**
+ * Format milliseconds as human readable.
+ */
+function formatRetryTime(ms: number): string {
+  if (ms < 60000) {
+    return `${Math.ceil(ms / 1000)} seconds`;
+  } else {
+    return `${Math.ceil(ms / 60000)} minute(s)`;
+  }
+}
+
+/**
  * Update the UI based on service status.
  */
 function updateUI(response: StatusResponse): void {
@@ -52,43 +68,67 @@ function updateUI(response: StatusResponse): void {
   elements.statusIndicator.className = `status-indicator ${isOnline ? 'online' : 'offline'}`;
   elements.statusText.textContent = isOnline ? 'Online' : 'Offline';
 
-  // Status icon
-  elements.statusIcon.className = `status-icon ${isOnline ? 'online' : 'offline'}`;
-  elements.statusIcon.textContent = isOnline ? '\u2713' : '!';
+  // Show appropriate view
+  elements.onlineView.classList.toggle('hidden', !isOnline);
+  elements.offlineView.classList.toggle('hidden', isOnline);
 
-  // Status message
   if (isOnline) {
-    elements.statusMessage.textContent = 'Protection Active';
-    elements.statusDescription.textContent = 'AI prompts are being filtered for safety';
+    elements.lastCheckOnline.textContent = formatRelativeTime(response.lastCheck);
   } else {
-    elements.statusMessage.textContent = 'Service Unavailable';
-    elements.statusDescription.textContent = 'The Aegis service is not running';
+    // Update retry info
+    if (response.nextRetryIn) {
+      elements.retryText.textContent = `Retrying in ${formatRetryTime(response.nextRetryIn)}...`;
+    } else {
+      elements.retryText.textContent = 'Retrying automatically...';
+    }
+
+    // Update description based on failure count
+    if (response.consecutiveFailures && response.consecutiveFailures > 3) {
+      elements.offlineDescription.textContent = 'Connection failed multiple times';
+    } else {
+      elements.offlineDescription.textContent = 'Cannot connect to Aegis';
+    }
   }
-
-  // Last check time
-  elements.lastCheck.textContent = formatRelativeTime(response.lastCheck);
-
-  // Connection error
-  elements.connectionError.classList.toggle('hidden', isOnline);
 }
 
 /**
  * Refresh the status.
  */
 async function refreshStatus(): Promise<void> {
-  elements.refreshBtn.textContent = 'Checking...';
+  elements.refreshBtnText.textContent = 'Checking...';
   elements.refreshBtn.setAttribute('disabled', 'true');
 
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'CHECK_STATUS' });
+    // Use FORCE_RETRY to reset backoff and check immediately
+    const response = await chrome.runtime.sendMessage({ type: 'FORCE_RETRY' });
     updateUI(response);
   } catch (error) {
-    console.error('[Aegis] Failed to check status:', error);
     updateUI({ status: 'offline', lastCheck: 0, activeTabs: 0 });
   } finally {
-    elements.refreshBtn.textContent = 'Refresh Status';
+    elements.refreshBtnText.textContent = 'Check Connection';
     elements.refreshBtn.removeAttribute('disabled');
   }
+}
+
+/**
+ * Load fail mode setting from storage.
+ */
+async function loadFailModeSetting(): Promise<void> {
+  try {
+    const result = await chrome.storage.local.get(['failMode']);
+    // Default is 'closed' (fail-safe on), toggle checked = closed
+    elements.failModeToggle.checked = result.failMode !== 'open';
+  } catch {
+    elements.failModeToggle.checked = true; // Default to fail-safe on
+  }
+}
+
+/**
+ * Handle fail mode toggle change.
+ */
+async function handleFailModeToggle(): Promise<void> {
+  const failMode = elements.failModeToggle.checked ? 'closed' : 'open';
+  await chrome.storage.local.set({ failMode });
 }
 
 /**
@@ -100,12 +140,15 @@ async function initialize(): Promise<void> {
     const response = await chrome.runtime.sendMessage({ type: 'GET_STATUS' });
     updateUI(response);
   } catch (error) {
-    console.error('[Aegis] Failed to get status:', error);
     updateUI({ status: 'offline', lastCheck: 0, activeTabs: 0 });
   }
 
-  // Set up refresh button
+  // Load fail mode setting
+  await loadFailModeSetting();
+
+  // Set up event listeners
   elements.refreshBtn.addEventListener('click', refreshStatus);
+  elements.failModeToggle.addEventListener('change', handleFailModeToggle);
 }
 
 // Initialize when DOM is ready

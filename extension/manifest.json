@@ -1,14 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Aegis AI Safety",
+  "short_name": "Aegis",
   "version": "1.0.0",
-  "description": "Protect children from harmful AI interactions",
+  "description": "Parental controls for AI chatbots. Protects children from harmful content on ChatGPT, Claude, and Gemini.",
+  "homepage_url": "https://github.com/anthropics/aegis",
   "permissions": [
     "storage",
     "activeTab"
   ],
   "host_permissions": [
-    "http://127.0.0.1:8765/*",
+    "http://127.0.0.1:48765/*",
     "https://chat.openai.com/*",
     "https://chatgpt.com/*",
     "https://claude.ai/*",
@@ -16,6 +18,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
+    "default_title": "Aegis AI Safety - Click to check status",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -56,5 +59,9 @@
         "https://gemini.google.com/*"
       ]
     }
-  ]
+  ],
+  "offline_enabled": false,
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
 }

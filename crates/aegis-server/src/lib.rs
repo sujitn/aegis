@@ -32,6 +32,7 @@ use std::net::SocketAddr;
 
 use axum::routing::{get, post, put};
 use axum::Router;
+use socket2::{Domain, Protocol, Socket, Type};
 use thiserror::Error;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
@@ -42,7 +43,7 @@ pub use error::{ApiError, Result};
 pub use state::AppState;
 
 /// Default server port.
-pub const DEFAULT_PORT: u16 = 8765;
+pub const DEFAULT_PORT: u16 = 48765;
 
 /// Default server host (localhost only for security).
 pub const DEFAULT_HOST: &str = "127.0.0.1";
@@ -175,8 +176,31 @@ impl Server {
     pub async fn run(self) -> std::result::Result<(), ServerError> {
         info!("Starting Aegis API server on {}", self.addr);
 
-        let listener = tokio::net::TcpListener::bind(self.addr)
-            .await
+        // Create socket with SO_REUSEADDR to allow binding even when sockets are lingering
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))
+            .map_err(|e| ServerError::BindError(self.addr, e))?;
+
+        // Allow address reuse (helps with TIME_WAIT/CLOSE_WAIT sockets)
+        socket
+            .set_reuse_address(true)
+            .map_err(|e| ServerError::BindError(self.addr, e))?;
+
+        // Bind and listen
+        socket
+            .bind(&self.addr.into())
+            .map_err(|e| ServerError::BindError(self.addr, e))?;
+        socket
+            .listen(128)
+            .map_err(|e| ServerError::BindError(self.addr, e))?;
+
+        // Set non-blocking for tokio
+        socket
+            .set_nonblocking(true)
+            .map_err(|e| ServerError::BindError(self.addr, e))?;
+
+        // Convert to tokio TcpListener
+        let std_listener: std::net::TcpListener = socket.into();
+        let listener = tokio::net::TcpListener::from_std(std_listener)
             .map_err(|e| ServerError::BindError(self.addr, e))?;
 
         axum::serve(listener, self.router)
@@ -411,7 +435,7 @@ mod tests {
     async fn test_server_config_default() {
         let config = ServerConfig::default();
         assert_eq!(config.host, "127.0.0.1");
-        assert_eq!(config.port, 8765);
+        assert_eq!(config.port, DEFAULT_PORT);
         assert!(config.db_path.is_none());
     }
 

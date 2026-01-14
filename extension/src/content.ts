@@ -1,15 +1,39 @@
 /**
  * Aegis content script - intercepts prompts on AI chat sites.
+ * Supports fail-closed mode for maximum safety.
  */
 
 import { checkPrompt, shouldBlock, shouldWarn, type CheckResponse } from './api.js';
 import { getSiteHandler, type SiteHandler } from './sites/index.js';
 
 const OVERLAY_ID = 'aegis-overlay';
-const BLOCK_MESSAGE_ID = 'aegis-block-message';
 
 let isChecking = false;
 let siteHandler: SiteHandler | null = null;
+let failMode: 'open' | 'closed' = 'closed'; // Default to fail-closed for safety
+
+/**
+ * Load settings from storage.
+ */
+async function loadSettings(): Promise<void> {
+  try {
+    const result = await chrome.storage.local.get(['failMode']);
+    if (result.failMode) {
+      failMode = result.failMode;
+    }
+  } catch {
+    // Use default
+  }
+}
+
+/**
+ * Listen for settings changes.
+ */
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.failMode) {
+    failMode = changes.failMode.newValue || 'closed';
+  }
+});
 
 /**
  * Create and show the checking overlay.
@@ -104,9 +128,9 @@ function showWarningOverlay(response: CheckResponse, onProceed: () => void): voi
 }
 
 /**
- * Show service unavailable message.
+ * Show service unavailable message (fail-open mode).
  */
-function showServiceUnavailable(): void {
+function showServiceUnavailableAllowed(): void {
   removeOverlay();
 
   const overlay = document.createElement('div');
@@ -116,7 +140,7 @@ function showServiceUnavailable(): void {
     <div class="aegis-overlay-content">
       <div class="aegis-icon">&#128268;</div>
       <div class="aegis-title">Aegis Unavailable</div>
-      <div class="aegis-text">The safety service is not running. Prompt was allowed.</div>
+      <div class="aegis-text">Safety service is not running. Prompt was allowed.</div>
       <button class="aegis-dismiss">OK</button>
     </div>
   `;
@@ -127,8 +151,35 @@ function showServiceUnavailable(): void {
   const container = siteHandler?.getOverlayContainer() || document.body;
   container.appendChild(overlay);
 
-  // Auto-dismiss after 3 seconds
   setTimeout(removeOverlay, 3000);
+}
+
+/**
+ * Show service unavailable blocked message (fail-closed mode).
+ */
+function showServiceUnavailableBlocked(): void {
+  removeOverlay();
+
+  const overlay = document.createElement('div');
+  overlay.id = OVERLAY_ID;
+  overlay.className = 'aegis-overlay aegis-blocked';
+  overlay.innerHTML = `
+    <div class="aegis-overlay-content">
+      <div class="aegis-icon">&#128274;</div>
+      <div class="aegis-title">Prompt Blocked</div>
+      <div class="aegis-text">Safety service is not running. Prompts are blocked for your protection.</div>
+      <div class="aegis-hint">Please start the Aegis app to send messages.</div>
+      <button class="aegis-dismiss">Dismiss</button>
+    </div>
+  `;
+
+  const dismissBtn = overlay.querySelector('.aegis-dismiss');
+  dismissBtn?.addEventListener('click', removeOverlay);
+
+  const container = siteHandler?.getOverlayContainer() || document.body;
+  container.appendChild(overlay);
+
+  // Don't auto-dismiss - user needs to acknowledge
 }
 
 /**
@@ -143,7 +194,7 @@ function removeOverlay(): void {
  * Intercept and check a prompt before submission.
  * Returns true if the prompt should be blocked.
  */
-async function interceptPrompt(prompt: string): Promise<{ blocked: boolean; response?: CheckResponse }> {
+async function interceptPrompt(prompt: string): Promise<{ blocked: boolean; response?: CheckResponse; serviceError?: boolean }> {
   if (!prompt.trim()) {
     return { blocked: false };
   }
@@ -169,12 +220,41 @@ async function interceptPrompt(prompt: string): Promise<{ blocked: boolean; resp
 
     return { blocked: false, response };
   } catch (error) {
-    console.warn('[Aegis] Service unavailable:', error);
     removeOverlay();
-    showServiceUnavailable();
-    return { blocked: false }; // Allow on service failure
+
+    // Fail-closed: block when service unavailable
+    if (failMode === 'closed') {
+      return { blocked: true, serviceError: true };
+    }
+
+    // Fail-open: allow when service unavailable
+    return { blocked: false, serviceError: true };
   } finally {
     isChecking = false;
+  }
+}
+
+/**
+ * Handle the result of prompt interception.
+ */
+function handleInterceptionResult(
+  result: { blocked: boolean; response?: CheckResponse; serviceError?: boolean },
+  input: HTMLElement
+): void {
+  if (!result.blocked) {
+    if (result.serviceError) {
+      showServiceUnavailableAllowed();
+    }
+    submitOriginal(input);
+  } else if (result.serviceError) {
+    // Blocked due to service unavailable (fail-closed mode)
+    showServiceUnavailableBlocked();
+    siteHandler?.clearInput(input);
+  } else if (result.response && shouldWarn(result.response.action)) {
+    showWarningOverlay(result.response, () => submitOriginal(input));
+  } else if (result.response) {
+    showBlockedOverlay(result.response);
+    siteHandler?.clearInput(input);
   }
 }
 
@@ -194,19 +274,7 @@ function handleSubmit(event: Event, input: HTMLElement): void {
   event.stopImmediatePropagation();
 
   // Check the prompt
-  interceptPrompt(prompt).then(({ blocked, response }) => {
-    if (!blocked) {
-      // Allow - re-trigger the submission
-      submitOriginal(input);
-    } else if (response && shouldWarn(response.action)) {
-      // Show warning with option to proceed
-      showWarningOverlay(response, () => submitOriginal(input));
-    } else if (response) {
-      // Blocked - show message and clear input
-      showBlockedOverlay(response);
-      siteHandler?.clearInput(input);
-    }
-  });
+  interceptPrompt(prompt).then((result) => handleInterceptionResult(result, input));
 }
 
 /**
@@ -254,16 +322,7 @@ function handleKeydown(event: KeyboardEvent, input: HTMLElement): void {
     event.stopImmediatePropagation();
 
     // Check the prompt
-    interceptPrompt(prompt).then(({ blocked, response }) => {
-      if (!blocked) {
-        submitOriginal(input);
-      } else if (response && shouldWarn(response.action)) {
-        showWarningOverlay(response, () => submitOriginal(input));
-      } else if (response) {
-        showBlockedOverlay(response);
-        siteHandler?.clearInput(input);
-      }
-    });
+    interceptPrompt(prompt).then((result) => handleInterceptionResult(result, input));
   }
 }
 
@@ -278,8 +337,6 @@ function setupInputInterception(input: HTMLElement): void {
 
   // Intercept Enter key
   input.addEventListener('keydown', (e) => handleKeydown(e as KeyboardEvent, input), true);
-
-  console.log(`[Aegis] Intercepting input on ${siteHandler?.name}`);
 }
 
 /**
@@ -303,22 +360,20 @@ function setupButtonInterception(button: HTMLElement, inputs: HTMLElement[]): vo
       handleSubmit(e, input);
     }
   }, true);
-
-  console.log(`[Aegis] Intercepting button on ${siteHandler?.name}`);
 }
 
 /**
  * Initialize interception for the current page.
  */
-function initialize(): void {
+async function initialize(): Promise<void> {
+  // Load settings first
+  await loadSettings();
+
   siteHandler = getSiteHandler();
 
   if (!siteHandler) {
-    console.log('[Aegis] No handler for this site');
     return;
   }
-
-  console.log(`[Aegis] Initializing on ${siteHandler.name}`);
 
   // Set up interception on existing elements
   const inputs = siteHandler.findInputs();

@@ -20,40 +20,77 @@
     </header>
 
     <main class="content">
-      <div class="status-card">
-        <div id="status-icon" class="status-icon offline">!</div>
-        <div class="status-details">
-          <div id="status-message" class="status-message">Service unavailable</div>
-          <div id="status-description" class="status-description">
-            The Aegis service is not running
+      <!-- Online State -->
+      <div id="online-view" class="view hidden">
+        <div class="status-card online">
+          <div class="status-icon online">&#10003;</div>
+          <div class="status-details">
+            <div class="status-message">Protection Active</div>
+            <div class="status-description">
+              AI prompts are being filtered for safety
+            </div>
+          </div>
+        </div>
+
+        <div class="info-section">
+          <div class="info-row">
+            <span class="info-label">Protected Sites</span>
+            <span class="info-value">ChatGPT, Claude, Gemini</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Last Check</span>
+            <span id="last-check-online" class="info-value">--</span>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-label">Fail-Safe Mode</span>
+              <span class="setting-desc">Block prompts when service is down</span>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="fail-mode-toggle" checked>
+              <span class="toggle-slider"></span>
+            </label>
           </div>
         </div>
       </div>
 
-      <div class="info-section">
-        <div class="info-row">
-          <span class="info-label">Protected Sites</span>
-          <span class="info-value">ChatGPT, Claude, Gemini</span>
+      <!-- Offline State -->
+      <div id="offline-view" class="view">
+        <div class="status-card offline">
+          <div class="status-icon offline">!</div>
+          <div class="status-details">
+            <div class="status-message">Service Unavailable</div>
+            <div id="offline-description" class="status-description">
+              Cannot connect to Aegis
+            </div>
+          </div>
         </div>
-        <div class="info-row">
-          <span class="info-label">Last Check</span>
-          <span id="last-check" class="info-value">--</span>
-        </div>
-      </div>
 
-      <div id="connection-error" class="error-banner hidden">
-        <span class="error-icon">&#9888;</span>
-        <span class="error-text">Cannot connect to local service</span>
+        <div class="help-section">
+          <div class="help-title">Troubleshooting</div>
+          <ol class="help-steps">
+            <li>Make sure the <strong>Aegis app</strong> is running</li>
+            <li>Check if the app shows "API Server Running"</li>
+            <li>Try restarting the Aegis app</li>
+          </ol>
+        </div>
+
+        <div class="retry-info">
+          <span id="retry-text">Retrying automatically...</span>
+        </div>
       </div>
     </main>
 
     <footer class="footer">
-      <button id="refresh-btn" class="btn btn-secondary">
-        Refresh Status
+      <button id="refresh-btn" class="btn btn-primary">
+        <span id="refresh-btn-text">Check Connection</span>
       </button>
     </footer>
   </div>
 
-  <script src="dist/popup.js" type="module"></script>
+  <script src="dist/popup.js"></script>
 </body>
 </html>

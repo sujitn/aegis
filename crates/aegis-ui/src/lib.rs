@@ -104,7 +104,6 @@ mod tests {
 
     #[test]
     fn test_interception_mode() {
-        assert_eq!(InterceptionMode::Extension.as_str(), "Extension");
         assert_eq!(InterceptionMode::Proxy.as_str(), "Proxy");
     }
 }

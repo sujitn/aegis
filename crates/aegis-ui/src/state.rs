@@ -45,10 +45,8 @@ impl ProtectionStatus {
 /// Interception mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InterceptionMode {
-    /// Browser extension only.
-    #[default]
-    Extension,
     /// MITM proxy for all apps.
+    #[default]
     Proxy,
 }
 
@@ -56,7 +54,6 @@ impl InterceptionMode {
     /// Returns display text.
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Extension => "Extension",
             Self::Proxy => "Proxy",
         }
     }
@@ -187,7 +184,7 @@ impl AppState {
             last_activity: Instant::now(),
             view: initial_view,
             protection_status: ProtectionStatus::Active,
-            interception_mode: InterceptionMode::Extension,
+            interception_mode: InterceptionMode::Proxy,
             selected_profile_id: None,
             rules_tab: RulesTab::Time,
             log_filter: LogFilter::default(),
@@ -385,7 +382,6 @@ mod tests {
 
     #[test]
     fn test_interception_mode() {
-        assert_eq!(InterceptionMode::Extension.as_str(), "Extension");
         assert_eq!(InterceptionMode::Proxy.as_str(), "Proxy");
     }
 

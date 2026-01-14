@@ -47,6 +47,7 @@
 | [F021](F021-build-pipeline.md) | Build Pipeline | `ready` | high | infrastructure | F001 |
 | [F022](F022-native-installers.md) | Native Installers | `ready` | high | infrastructure | F021 |
 | [F023](F023-auto-update.md) | Auto Update | `ready` | medium | app | F021, F022 |
+| [F024](F024-extension-deployment.md) | Chrome Web Store | `ready` | high | extension | F010 |
 
 ## Implementation Order
 
@@ -80,6 +81,7 @@ F011 → F018 → F012 → F015 → F014
 ### Phase 6: Distribution
 ```
 F021 → F022 → F023 → F020
+F024 (Chrome Web Store)
 ```
 
 ## User Journey

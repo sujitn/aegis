@@ -22,6 +22,7 @@ http-body-util = "0.1"
 rcgen = "0.13"
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
 rustls-pemfile = "2.2"
+pem = "3.0"
 
 # Sync primitives
 parking_lot = "0.12"

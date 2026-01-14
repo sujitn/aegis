@@ -40,6 +40,9 @@ impl PromptInfo {
 /// - Anthropic Messages API
 /// - Google Generative Language API
 ///
+/// Falls back to extracting all text content from the JSON body if specific
+/// extraction fails. This ensures we scan all messages even for unknown formats.
+///
 /// Returns `None` if no prompt could be extracted.
 pub fn extract_prompt(host: &str, path: &str, body: &[u8]) -> Option<PromptInfo> {
     // Try to parse as JSON
@@ -59,28 +62,109 @@ pub fn extract_prompt(host: &str, path: &str, body: &[u8]) -> Option<PromptInfo>
         extract_generic(&json)
     };
 
-    text.map(|t| PromptInfo::new(t, service, path))
+    // If specific extraction worked, use it
+    if let Some(t) = text {
+        return Some(PromptInfo::new(t, service, path));
+    }
+
+    // Fall back: extract ALL text content from JSON and scan it
+    // This catches any format we don't specifically handle
+    let all_text = extract_all_text(&json);
+    if !all_text.is_empty() {
+        return Some(PromptInfo::new(all_text, service, path));
+    }
+
+    None
+}
+
+/// Recursively extracts all string values from a JSON structure.
+/// This is used as a fallback to scan the entire payload.
+fn extract_all_text(value: &Value) -> String {
+    let mut texts = Vec::new();
+    collect_text_recursive(value, &mut texts);
+    texts.join(" ")
+}
+
+/// Recursively collects all string values from JSON.
+fn collect_text_recursive(value: &Value, texts: &mut Vec<String>) {
+    match value {
+        Value::String(s) => {
+            // Only include strings that look like actual content (not IDs, tokens, etc.)
+            if s.len() > 10 && !looks_like_id(s) {
+                texts.push(s.clone());
+            }
+        }
+        Value::Array(arr) => {
+            for item in arr {
+                collect_text_recursive(item, texts);
+            }
+        }
+        Value::Object(obj) => {
+            for (key, val) in obj {
+                // Skip keys that are likely metadata
+                if !is_metadata_key(key) {
+                    collect_text_recursive(val, texts);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Checks if a string looks like an ID/token rather than content.
+fn looks_like_id(s: &str) -> bool {
+    // UUIDs, base64 tokens, etc.
+    s.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+        || s.starts_with("eyJ") // JWT/base64
+        || s.chars().filter(|c| c.is_ascii_alphanumeric()).count() == s.len() && s.len() == 32
+}
+
+/// Checks if a JSON key is likely metadata rather than content.
+fn is_metadata_key(key: &str) -> bool {
+    matches!(
+        key,
+        "id"
+            | "uuid"
+            | "token"
+            | "access_token"
+            | "model"
+            | "timestamp"
+            | "created"
+            | "updated"
+            | "parent_message_id"
+            | "conversation_id"
+            | "message_id"
+            | "author_id"
+            | "client_id"
+    )
 }
 
 /// Extracts prompt from OpenAI Chat Completions API format.
 ///
 /// Format: `{"messages": [{"role": "user", "content": "..."}]}`
+/// Also handles ChatGPT web format: `{"messages": [{"author": {"role": "user"}, "content": {"parts": [...]}}]}`
 fn extract_openai(json: &Value) -> Option<String> {
     // Get messages array
     let messages = json.get("messages")?.as_array()?;
 
     // Find the last user message
-    let user_messages: Vec<&str> = messages
+    let user_messages: Vec<String> = messages
         .iter()
         .filter_map(|msg| {
-            let role = msg.get("role")?.as_str()?;
+            // Try standard OpenAI format: messages[].role
+            let role = msg
+                .get("role")
+                .and_then(|r| r.as_str())
+                // Fall back to ChatGPT web format: messages[].author.role
+                .or_else(|| msg.get("author")?.get("role")?.as_str())?;
+
             if role == "user" {
-                // Content can be string or array of content parts
+                // Try standard format: content as string
                 if let Some(content) = msg.get("content") {
                     if let Some(text) = content.as_str() {
-                        return Some(text);
+                        return Some(text.to_string());
                     }
-                    // Handle array format (for multimodal)
+                    // Handle OpenAI multimodal format: content as array of {type, text}
                     if let Some(parts) = content.as_array() {
                         let text_parts: Vec<&str> = parts
                             .iter()
@@ -93,7 +177,17 @@ fn extract_openai(json: &Value) -> Option<String> {
                             })
                             .collect();
                         if !text_parts.is_empty() {
-                            return Some(text_parts.join(" ").leak() as &str);
+                            return Some(text_parts.join(" "));
+                        }
+                    }
+                    // Handle ChatGPT web format: content.parts as array of strings
+                    if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
+                        let text_parts: Vec<&str> = parts
+                            .iter()
+                            .filter_map(|part| part.as_str())
+                            .collect();
+                        if !text_parts.is_empty() {
+                            return Some(text_parts.join(" "));
                         }
                     }
                 }

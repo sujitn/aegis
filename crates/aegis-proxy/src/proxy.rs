@@ -195,7 +195,8 @@ impl ProxyServer {
             .with_addr(self.config.addr)
             .with_ca(authority)
             .with_rustls_connector(default_provider())
-            .with_http_handler(handler)
+            .with_http_handler(handler.clone())
+            .with_websocket_handler(handler)
             .build()
             .map_err(|e| ProxyError::Proxy(e.to_string()))?;
 
@@ -237,7 +238,8 @@ impl ProxyServer {
                 .with_addr(config_addr)
                 .with_ca(authority)
                 .with_rustls_connector(default_provider())
-                .with_http_handler(handler)
+                .with_http_handler(handler.clone())
+                .with_websocket_handler(handler)
                 .build()
             {
                 Ok(p) => p,

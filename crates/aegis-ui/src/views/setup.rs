@@ -4,10 +4,9 @@
 //! 1. Welcome
 //! 2. Password creation
 //! 3. Protection level selection
-//! 4. Interception mode selection
-//! 5. CA certificate installation (if Proxy mode)
-//! 6. Profile creation
-//! 7. Complete
+//! 4. CA certificate installation
+//! 5. Profile creation
+//! 6. Complete
 
 use eframe::egui::{self, Color32, RichText, TextEdit};
 
@@ -23,8 +22,6 @@ pub enum SetupStep {
     Password,
     /// Protection level selection.
     ProtectionLevel,
-    /// Interception mode selection.
-    InterceptionMode,
     /// CA certificate installation guidance.
     CaInstall,
     /// First profile creation.
@@ -40,16 +37,15 @@ impl SetupStep {
             Self::Welcome => 1,
             Self::Password => 2,
             Self::ProtectionLevel => 3,
-            Self::InterceptionMode => 4,
-            Self::CaInstall => 5,
-            Self::Profile => 6,
-            Self::Complete => 7,
+            Self::CaInstall => 4,
+            Self::Profile => 5,
+            Self::Complete => 6,
         }
     }
 
     /// Returns the total number of steps.
     pub fn total() -> usize {
-        7
+        6
     }
 
     /// Returns the next step.
@@ -57,8 +53,7 @@ impl SetupStep {
         match self {
             Self::Welcome => Some(Self::Password),
             Self::Password => Some(Self::ProtectionLevel),
-            Self::ProtectionLevel => Some(Self::InterceptionMode),
-            Self::InterceptionMode => Some(Self::CaInstall),
+            Self::ProtectionLevel => Some(Self::CaInstall),
             Self::CaInstall => Some(Self::Profile),
             Self::Profile => Some(Self::Complete),
             Self::Complete => None,
@@ -71,8 +66,7 @@ impl SetupStep {
             Self::Welcome => None,
             Self::Password => Some(Self::Welcome),
             Self::ProtectionLevel => Some(Self::Password),
-            Self::InterceptionMode => Some(Self::ProtectionLevel),
-            Self::CaInstall => Some(Self::InterceptionMode),
+            Self::CaInstall => Some(Self::ProtectionLevel),
             Self::Profile => Some(Self::CaInstall),
             Self::Complete => Some(Self::Profile),
         }
@@ -111,41 +105,6 @@ impl ProtectionLevel {
     }
 }
 
-/// Selected interception mode during setup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SetupInterceptionMode {
-    /// Browser extension mode.
-    #[default]
-    Extension,
-    /// MITM proxy mode.
-    Proxy,
-}
-
-impl SetupInterceptionMode {
-    /// Returns the display name.
-    pub fn name(&self) -> &'static str {
-        match self {
-            Self::Extension => "Browser Extension",
-            Self::Proxy => "System Proxy",
-        }
-    }
-
-    /// Returns a description.
-    pub fn description(&self) -> &'static str {
-        match self {
-            Self::Extension => "Protects browser-based AI chats (ChatGPT, Claude, Gemini). Simple setup, no extra configuration needed.",
-            Self::Proxy => "Protects all applications that use AI services. Requires CA certificate installation.",
-        }
-    }
-
-    /// Returns setup requirements.
-    pub fn requirements(&self) -> &'static str {
-        match self {
-            Self::Extension => "Install the Aegis browser extension from Chrome Web Store.",
-            Self::Proxy => "Install a trusted CA certificate on your system.",
-        }
-    }
-}
 
 /// State for the setup wizard.
 #[derive(Debug, Default)]
@@ -158,8 +117,6 @@ pub struct SetupWizardState {
     pub confirm_password: String,
     /// Selected protection level.
     pub protection_level: ProtectionLevel,
-    /// Selected interception mode.
-    pub interception_mode: SetupInterceptionMode,
     /// Profile name.
     pub profile_name: String,
     /// Profile OS username.
@@ -203,11 +160,6 @@ impl SetupWizardState {
     pub fn clear_error(&mut self) {
         self.error = None;
     }
-
-    /// Checks if we should skip CA install step (Extension mode).
-    pub fn should_skip_ca_install(&self) -> bool {
-        self.interception_mode == SetupInterceptionMode::Extension
-    }
 }
 
 /// Renders the setup wizard.
@@ -233,7 +185,6 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWizardS
                     SetupStep::Welcome => render_welcome(ui, wizard),
                     SetupStep::Password => render_password(ui, state, wizard),
                     SetupStep::ProtectionLevel => render_protection_level(ui, wizard),
-                    SetupStep::InterceptionMode => render_interception_mode(ui, wizard),
                     SetupStep::CaInstall => render_ca_install(ui, state, wizard),
                     SetupStep::Profile => render_profile(ui, state, wizard),
                     SetupStep::Complete => render_complete(ui, state, wizard),
@@ -533,104 +484,6 @@ fn render_protection_level(ui: &mut egui::Ui, wizard: &mut SetupWizardState) {
     });
 }
 
-/// Renders the Interception Mode step.
-fn render_interception_mode(ui: &mut egui::Ui, wizard: &mut SetupWizardState) {
-    ui.vertical_centered(|ui| {
-        ui.label(
-            RichText::new("Choose Interception Mode")
-                .size(20.0)
-                .strong(),
-        );
-        ui.add_space(8.0);
-        ui.label(
-            RichText::new("Select how Aegis monitors AI interactions.")
-                .size(12.0)
-                .weak(),
-        );
-
-        ui.add_space(24.0);
-
-        // Mode options
-        for mode in [
-            SetupInterceptionMode::Extension,
-            SetupInterceptionMode::Proxy,
-        ] {
-            let is_selected = wizard.interception_mode == mode;
-            let frame_fill = if is_selected {
-                ui.style().visuals.selection.bg_fill
-            } else {
-                ui.style().visuals.widgets.inactive.bg_fill
-            };
-
-            let response = egui::Frame::none()
-                .fill(frame_fill)
-                .rounding(6.0)
-                .inner_margin(12.0)
-                .show(ui, |ui| {
-                    ui.set_min_width(380.0);
-                    ui.horizontal(|ui| {
-                        let radio_color = if is_selected {
-                            Color32::from_rgb(0x42, 0x85, 0xf4)
-                        } else {
-                            Color32::GRAY
-                        };
-                        ui.colored_label(radio_color, if is_selected { "●" } else { "○" });
-
-                        ui.vertical(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new(mode.name()).strong());
-                                if mode == SetupInterceptionMode::Extension {
-                                    ui.label(
-                                        RichText::new("(Recommended)")
-                                            .size(11.0)
-                                            .color(Color32::from_rgb(0x34, 0xa8, 0x53)),
-                                    );
-                                }
-                            });
-                            ui.label(RichText::new(mode.description()).size(11.0).weak());
-                            ui.add_space(4.0);
-                            ui.label(
-                                RichText::new(format!("Setup: {}", mode.requirements()))
-                                    .size(10.0)
-                                    .weak(),
-                            );
-                        });
-                    });
-                })
-                .response;
-
-            if response.interact(egui::Sense::click()).clicked() {
-                wizard.interception_mode = mode;
-            }
-
-            ui.add_space(8.0);
-        }
-
-        ui.add_space(16.0);
-
-        // Navigation buttons
-        ui.horizontal(|ui| {
-            if ui.button("Back").clicked() {
-                wizard.prev_step();
-            }
-
-            ui.add_space(100.0);
-
-            if ui
-                .add_sized([100.0, 32.0], egui::Button::new("Continue"))
-                .clicked()
-            {
-                // Skip CA install if using Extension mode
-                if wizard.should_skip_ca_install() {
-                    wizard.step = SetupStep::Profile;
-                } else {
-                    wizard.next_step();
-                }
-            }
-        });
-    });
-}
-
 /// Renders the CA Installation step.
 fn render_ca_install(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWizardState) {
     ui.vertical_centered(|ui| {
@@ -855,12 +708,7 @@ fn render_profile(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWiz
         // Navigation buttons
         ui.horizontal(|ui| {
             if ui.button("Back").clicked() {
-                // Skip CA install step when going back if in Extension mode
-                if wizard.should_skip_ca_install() {
-                    wizard.step = SetupStep::InterceptionMode;
-                } else {
-                    wizard.prev_step();
-                }
+                wizard.prev_step();
             }
 
             ui.add_space(100.0);
@@ -1008,10 +856,6 @@ fn render_complete(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWi
                     ui.label("Protection Level:");
                     ui.label(RichText::new(wizard.protection_level.name()).strong());
                 });
-                ui.horizontal(|ui| {
-                    ui.label("Interception Mode:");
-                    ui.label(RichText::new(wizard.interception_mode.name()).strong());
-                });
                 if !wizard.profile_name.is_empty() {
                     ui.horizontal(|ui| {
                         ui.label("Profile Created:");
@@ -1026,19 +870,11 @@ fn render_complete(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWi
         ui.label(RichText::new("Next Steps:").strong());
         ui.add_space(8.0);
 
-        let next_steps: Vec<&str> = match wizard.interception_mode {
-            SetupInterceptionMode::Extension => vec![
-                "Install the Aegis browser extension",
-                "Create additional child profiles if needed",
-                "Customize rules in the Dashboard",
-            ],
-            SetupInterceptionMode::Proxy => vec![
-                "Install the CA certificate (see instructions above)",
-                "Configure your browser/system proxy settings",
-                "Create additional child profiles if needed",
-                "Customize rules in the Dashboard",
-            ],
-        };
+        let next_steps = [
+            "Install the CA certificate from Settings",
+            "Enable system proxy from Settings",
+            "Create additional child profiles if needed",
+        ];
 
         for (i, step) in next_steps.iter().enumerate() {
             ui.horizontal(|ui| {
@@ -1047,7 +883,7 @@ fn render_complete(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWi
             });
         }
 
-        ui.add_space(24.0);
+        ui.add_space(16.0);
 
         if ui
             .add_sized([200.0, 36.0], egui::Button::new("Open Dashboard"))
@@ -1060,14 +896,10 @@ fn render_complete(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWi
 
 /// Finishes the setup wizard and transitions to dashboard.
 fn finish_setup(state: &mut AppState, wizard: &SetupWizardState) {
-    // Save interception mode to config
-    let mode_str = match wizard.interception_mode {
-        SetupInterceptionMode::Extension => "extension",
-        SetupInterceptionMode::Proxy => "proxy",
-    };
+    // Save interception mode (proxy is always the mode now)
     let _ = state
         .db
-        .set_config("interception_mode", &serde_json::json!(mode_str));
+        .set_config("interception_mode", &serde_json::json!("proxy"));
 
     // Save protection level
     let level_str = match wizard.protection_level {
@@ -1108,8 +940,8 @@ mod tests {
     #[test]
     fn test_setup_step_numbers() {
         assert_eq!(SetupStep::Welcome.number(), 1);
-        assert_eq!(SetupStep::Complete.number(), 7);
-        assert_eq!(SetupStep::total(), 7);
+        assert_eq!(SetupStep::Complete.number(), 6);
+        assert_eq!(SetupStep::total(), 6);
     }
 
     #[test]
@@ -1120,17 +952,10 @@ mod tests {
     }
 
     #[test]
-    fn test_setup_interception_mode() {
-        assert_eq!(SetupInterceptionMode::Extension.name(), "Browser Extension");
-        assert_eq!(SetupInterceptionMode::Proxy.name(), "System Proxy");
-    }
-
-    #[test]
     fn test_wizard_state_default() {
         let state = SetupWizardState::new();
         assert_eq!(state.step, SetupStep::Welcome);
         assert_eq!(state.protection_level, ProtectionLevel::Standard);
-        assert_eq!(state.interception_mode, SetupInterceptionMode::Extension);
     }
 
     #[test]
@@ -1147,16 +972,6 @@ mod tests {
         // Can't go back from Welcome
         state.prev_step();
         assert_eq!(state.step, SetupStep::Welcome);
-    }
-
-    #[test]
-    fn test_wizard_skip_ca_install() {
-        let mut state = SetupWizardState::new();
-        state.interception_mode = SetupInterceptionMode::Extension;
-        assert!(state.should_skip_ca_install());
-
-        state.interception_mode = SetupInterceptionMode::Proxy;
-        assert!(!state.should_skip_ca_install());
     }
 
     #[test]

@@ -2,7 +2,7 @@
  * Aegis API client for communicating with the local server.
  */
 
-const API_BASE = 'http://127.0.0.1:8765';
+const API_BASE = 'http://127.0.0.1:48765';
 const API_TIMEOUT = 5000;
 
 export interface CategoryMatch {
@@ -12,7 +12,7 @@ export interface CategoryMatch {
 }
 
 export interface CheckResponse {
-  action: 'Allow' | 'Warn' | 'Block';
+  action: 'allow' | 'warn' | 'block';
   reason: string;
   categories: CategoryMatch[];
   latency_ms: number;
@@ -96,12 +96,12 @@ export async function checkServiceStatus(): Promise<StatusResponse> {
  * Determine if an action should block the prompt.
  */
 export function shouldBlock(action: CheckResponse['action']): boolean {
-  return action === 'Block';
+  return action === 'block';
 }
 
 /**
  * Determine if an action should warn about the prompt.
  */
 export function shouldWarn(action: CheckResponse['action']): boolean {
-  return action === 'Warn';
+  return action === 'warn';
 }

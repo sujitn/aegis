@@ -39,6 +39,7 @@ mod error;
 mod extractor;
 mod handler;
 mod proxy;
+pub mod setup;
 
 pub use ca::{CaManager, CaManagerError};
 pub use domains::{is_llm_domain, LLM_DOMAINS};
@@ -46,6 +47,11 @@ pub use error::{ProxyError, Result};
 pub use extractor::{extract_prompt, PromptInfo};
 pub use handler::ProxyHandler;
 pub use proxy::{ProxyConfig, ProxyServer};
+pub use setup::{
+    disable_system_proxy, enable_system_proxy, install_ca_certificate,
+    is_ca_installed, is_proxy_enabled, setup_proxy, teardown_proxy,
+    uninstall_ca_certificate, ProxySetup, SetupResult,
+};
 
 /// Default proxy port.
 pub const DEFAULT_PROXY_PORT: u16 = 8766;

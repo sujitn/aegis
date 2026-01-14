@@ -3,12 +3,19 @@
   "version": "1.0.0",
   "description": "Aegis AI Safety browser extension",
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc --watch",
+    "build": "npm run build:content && npm run build:background && npm run build:popup",
+    "build:content": "esbuild src/content.ts --bundle --outfile=dist/content.js --format=iife --target=chrome100",
+    "build:background": "esbuild src/background.ts --bundle --outfile=dist/background.js --format=esm --target=chrome100",
+    "build:popup": "esbuild src/popup.ts --bundle --outfile=dist/popup.js --format=iife --target=chrome100",
+    "watch": "npm-run-all --parallel watch:*",
+    "watch:content": "esbuild src/content.ts --bundle --outfile=dist/content.js --format=iife --target=chrome100 --watch",
+    "watch:background": "esbuild src/background.ts --bundle --outfile=dist/background.js --format=esm --target=chrome100 --watch",
+    "watch:popup": "esbuild src/popup.ts --bundle --outfile=dist/popup.js --format=iife --target=chrome100 --watch",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.268",
+    "esbuild": "^0.27.2",
     "typescript": "^5.3.0"
   }
 }

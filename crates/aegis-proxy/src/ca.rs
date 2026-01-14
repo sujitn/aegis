@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use hudsucker::certificate_authority::RcgenAuthority;
-use hudsucker::rcgen::{CertificateParams, Issuer, KeyPair};
+use hudsucker::rcgen::{CertificateParams, DistinguishedName, DnType, Issuer, KeyPair};
 use hudsucker::rustls::crypto::aws_lc_rs::default_provider;
 
 pub use crate::error::CaManagerError;
@@ -75,8 +75,16 @@ impl CaManager {
             KeyPair::generate().map_err(|e| CaManagerError::Generation(e.to_string()))?;
 
         // Build certificate parameters for a CA
-        let mut params = CertificateParams::new(vec!["Aegis Root CA".to_string()])
-            .map_err(|e| CaManagerError::Generation(e.to_string()))?;
+        let mut params = CertificateParams::default();
+
+        // Set the Distinguished Name (CN = Aegis Root CA)
+        let mut dn = DistinguishedName::new();
+        dn.push(DnType::CommonName, "Aegis Root CA");
+        dn.push(DnType::OrganizationName, "Aegis");
+        params.distinguished_name = dn;
+
+        // No Subject Alternative Names for CA certificates
+        params.subject_alt_names = vec![];
 
         // Set as CA
         params.is_ca =
@@ -135,31 +143,12 @@ impl CaManager {
 
     /// Reads the CA certificate as DER bytes (for installation instructions).
     pub fn read_cert_der(&self) -> Result<Vec<u8>, CaManagerError> {
-        // Load the key and regenerate the cert
-        let key_pem = fs::read_to_string(self.key_path())?;
-        let key_pair =
-            KeyPair::from_pem(&key_pem).map_err(|e| CaManagerError::Parse(e.to_string()))?;
+        // Read the existing certificate file and convert to DER
+        let cert_pem = fs::read_to_string(self.cert_path())?;
 
-        let mut params = CertificateParams::new(vec!["Aegis Root CA".to_string()])
-            .map_err(|e| CaManagerError::Parse(e.to_string()))?;
-
-        params.is_ca =
-            hudsucker::rcgen::IsCa::Ca(hudsucker::rcgen::BasicConstraints::Unconstrained);
-        params.key_usages = vec![
-            hudsucker::rcgen::KeyUsagePurpose::KeyCertSign,
-            hudsucker::rcgen::KeyUsagePurpose::CrlSign,
-            hudsucker::rcgen::KeyUsagePurpose::DigitalSignature,
-        ];
-        params.extended_key_usages = vec![
-            hudsucker::rcgen::ExtendedKeyUsagePurpose::ServerAuth,
-            hudsucker::rcgen::ExtendedKeyUsagePurpose::ClientAuth,
-        ];
-
-        let cert = params
-            .self_signed(&key_pair)
-            .map_err(|e| CaManagerError::Parse(e.to_string()))?;
-
-        Ok(cert.der().to_vec())
+        // Parse PEM to extract DER
+        let pem = pem::parse(&cert_pem).map_err(|e| CaManagerError::Parse(e.to_string()))?;
+        Ok(pem.contents().to_vec())
     }
 }
 

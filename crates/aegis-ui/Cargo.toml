@@ -9,6 +9,7 @@ description = "Settings GUI for Aegis"
 [dependencies]
 aegis-core.workspace = true
 aegis-storage.workspace = true
+aegis-proxy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

@@ -12,11 +12,19 @@ export const claudeHandler: SiteHandler = {
   },
 
   findInputs(): HTMLElement[] {
-    // Claude uses a contenteditable div
+    // Claude uses a contenteditable div with ProseMirror
     const selectors = [
+      // Primary: ProseMirror editor
+      'div.ProseMirror[contenteditable="true"]',
       '[contenteditable="true"].ProseMirror',
+      // Fieldset-based input area
+      'fieldset div[contenteditable="true"]',
+      // Generic contenteditable in main area
+      'main div[contenteditable="true"]',
       'div[contenteditable="true"]',
+      // Fallback selectors
       '[data-placeholder*="Reply"]',
+      '[data-placeholder*="message"]',
       '.ProseMirror',
     ];
 
@@ -31,9 +39,15 @@ export const claudeHandler: SiteHandler = {
 
   findSubmitButtons(): HTMLElement[] {
     const selectors = [
+      // Aria labels for send button
       'button[aria-label*="Send"]',
+      'button[aria-label*="send"]',
+      // Form submit buttons
       'button[type="submit"]',
-      'button:has(svg[viewBox="0 0 24 24"])', // Send icon button
+      // Buttons in fieldset (near input)
+      'fieldset button',
+      // Button with send icon
+      'button:has(svg[viewBox="0 0 24 24"])',
     ];
 
     for (const selector of selectors) {
@@ -48,11 +62,12 @@ export const claudeHandler: SiteHandler = {
       }
     }
 
-    // Fallback: find buttons near the input
+    // Fallback: find buttons near the input area (bottom of page)
     const buttons = document.querySelectorAll<HTMLElement>('button');
     return Array.from(buttons).filter(btn => {
       const rect = btn.getBoundingClientRect();
-      return rect.bottom > window.innerHeight - 200; // Near bottom of page
+      // Button should be visible and near bottom of page
+      return rect.width > 0 && rect.height > 0 && rect.bottom > window.innerHeight - 200;
     });
   },
 

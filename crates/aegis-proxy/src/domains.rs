@@ -18,6 +18,29 @@ pub const LLM_DOMAINS: &[&str] = &[
     // Google
     "gemini.google.com",
     "generativelanguage.googleapis.com",
+    "aistudio.google.com",
+    // xAI (Grok)
+    "grok.x.ai",
+    "api.x.ai",
+    "x.ai",
+    // Perplexity
+    "perplexity.ai",
+    "api.perplexity.ai",
+    // Mistral
+    "mistral.ai",
+    "chat.mistral.ai",
+    "api.mistral.ai",
+    // Cohere
+    "coral.cohere.com",
+    "api.cohere.ai",
+    // Meta AI
+    "meta.ai",
+    // Microsoft Copilot
+    "copilot.microsoft.com",
+    // Character AI
+    "character.ai",
+    // Hugging Face
+    "huggingface.co",
 ];
 
 /// Checks if the given host is an LLM domain that should be intercepted.
@@ -79,8 +102,27 @@ pub fn service_name(host: &str) -> &'static str {
         "ChatGPT"
     } else if host.contains("claude.ai") || host.contains("anthropic.com") {
         "Claude"
-    } else if host.contains("gemini.google.com") || host.contains("googleapis.com") {
+    } else if host.contains("gemini.google.com")
+        || host.contains("googleapis.com")
+        || host.contains("aistudio.google.com")
+    {
         "Gemini"
+    } else if host.contains("x.ai") || host.contains("grok") {
+        "Grok"
+    } else if host.contains("perplexity.ai") {
+        "Perplexity"
+    } else if host.contains("mistral.ai") {
+        "Mistral"
+    } else if host.contains("cohere") {
+        "Cohere"
+    } else if host.contains("meta.ai") {
+        "Meta AI"
+    } else if host.contains("copilot.microsoft.com") {
+        "Copilot"
+    } else if host.contains("character.ai") {
+        "Character AI"
+    } else if host.contains("huggingface.co") {
+        "Hugging Face"
     } else {
         "Unknown LLM"
     }
