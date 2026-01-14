@@ -3,6 +3,7 @@ members = [
     "crates/aegis-core",
     "crates/aegis-storage",
     "crates/aegis-server",
+    "crates/aegis-proxy",
     "crates/aegis-ui",
     "crates/aegis-tray",
     "crates/aegis-app",
@@ -21,6 +22,7 @@ repository = "https://github.com/aegis/aegis"
 aegis-core = { path = "crates/aegis-core" }
 aegis-storage = { path = "crates/aegis-storage" }
 aegis-server = { path = "crates/aegis-server" }
+aegis-proxy = { path = "crates/aegis-proxy" }
 aegis-ui = { path = "crates/aegis-ui" }
 aegis-tray = { path = "crates/aegis-tray" }
 
@@ -66,3 +68,6 @@ tokio-test = "0.4"
 ort = { version = "2.0.0-rc.9" }
 ndarray = "0.16"
 tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
+
+# Notifications
+notify-rust = "4.11"

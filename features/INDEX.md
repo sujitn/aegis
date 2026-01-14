@@ -18,8 +18,8 @@
 | ID | Feature | Status | Priority | Crate | Requires |
 |----|---------|--------|----------|-------|----------|
 | [F009](F009-http-api.md) | HTTP API | `complete` | high | server | F007, F008 |
-| [F010](F010-browser-extension.md) | Browser Extension | `ready` | high | extension | F009 |
-| [F016](F016-mitm-proxy.md) | MITM Proxy | `ready` | high | proxy | F007 |
+| [F010](F010-browser-extension.md) | Browser Extension | `complete` | high | extension | F009 |
+| [F016](F016-mitm-proxy.md) | MITM Proxy | `complete` | high | proxy | F007 |
 | [F017](F017-interception-mode.md) | Interception Mode | `ready` | high | core | F010, F016 |
 
 ## User Management
@@ -27,16 +27,16 @@
 | ID | Feature | Status | Priority | Crate | Requires |
 |----|---------|--------|----------|-------|----------|
 | [F013](F013-authentication.md) | Authentication | `complete` | critical | core | F008 |
-| [F018](F018-protection-toggle.md) | Protection Toggle | `ready` | high | core | F011, F013 |
+| [F018](F018-protection-toggle.md) | Protection Toggle | `complete` | high | core | F011, F013 |
 | [F019](F019-user-profiles.md) | User Profiles | `complete` | critical | core | F005, F006, F008 |
 
 ## UI & Experience
 
 | ID | Feature | Status | Priority | Crate | Requires |
 |----|---------|--------|----------|-------|----------|
-| [F011](F011-system-tray.md) | System Tray | `ready` | high | tray | F001 |
-| [F012](F012-parent-dashboard.md) | Parent Dashboard | `ready` | high | ui | F008, F011, F013 |
-| [F014](F014-notifications.md) | Notifications | `ready` | medium | core | F007 |
+| [F011](F011-system-tray.md) | System Tray | `complete` | high | tray | F001 |
+| [F012](F012-parent-dashboard.md) | Parent Dashboard | `complete` | high | ui | F008, F011, F013 |
+| [F014](F014-notifications.md) | Notifications | `complete` | medium | core | F007 |
 | [F015](F015-first-run-setup.md) | First-Run Setup | `ready` | high | ui | F012, F013, F017, F019 |
 | [F020](F020-clean-uninstall.md) | Clean Uninstall | `ready` | high | app | F013, F016 |
 

@@ -2,7 +2,7 @@
 
 | Status | Priority | Crate |
 |--------|----------|-------|
-| `ready` | critical | aegis-proxy |
+| `complete` | critical | aegis-proxy |
 
 ## Description
 
@@ -15,16 +15,16 @@ Transparent HTTPS proxy that intercepts LLM traffic. Catches all apps (browser, 
 
 ## Acceptance Criteria
 
-- [ ] Generate root CA on first run
-- [ ] Generate per-domain certificates on the fly
-- [ ] Intercept only LLM domains (passthrough others)
-- [ ] Extract prompt from request body
-- [ ] Apply classification and rules (F007)
-- [ ] Block or forward based on result
-- [ ] Inject block page for blocked requests
-- [ ] Log events to storage (F008)
-- [ ] <100ms added latency
-- [ ] Works with browser and desktop apps
+- [x] Generate root CA on first run
+- [x] Generate per-domain certificates on the fly
+- [x] Intercept only LLM domains (passthrough others)
+- [x] Extract prompt from request body
+- [x] Apply classification and rules (F007)
+- [x] Block or forward based on result
+- [x] Inject block page for blocked requests
+- [x] Log events to storage (F008)
+- [x] <100ms added latency
+- [x] Works with browser and desktop apps
 
 ## Target Domains
 

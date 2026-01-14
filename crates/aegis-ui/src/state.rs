@@ -1,0 +1,430 @@
+//! Application state management.
+
+use std::sync::Arc;
+use std::time::Instant;
+
+use aegis_core::auth::{AuthManager, SessionToken, SESSION_TIMEOUT};
+use aegis_storage::{DailyStats, Database, Event, Profile};
+use chrono::{Local, NaiveDate};
+use eframe::egui;
+
+use crate::error::{Result, UiError};
+
+/// Protection status of the application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProtectionStatus {
+    /// Actively filtering.
+    #[default]
+    Active,
+    /// Temporarily paused.
+    Paused,
+    /// Completely disabled.
+    Disabled,
+}
+
+impl ProtectionStatus {
+    /// Returns display text.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Active => "Active",
+            Self::Paused => "Paused",
+            Self::Disabled => "Disabled",
+        }
+    }
+
+    /// Returns the color for this status.
+    pub fn color(&self) -> egui::Color32 {
+        match self {
+            Self::Active => egui::Color32::from_rgb(0x34, 0xa8, 0x53), // Green
+            Self::Paused => egui::Color32::from_rgb(0xfb, 0xbc, 0x04), // Yellow
+            Self::Disabled => egui::Color32::from_rgb(0xea, 0x43, 0x35), // Red
+        }
+    }
+}
+
+/// Interception mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InterceptionMode {
+    /// Browser extension only.
+    #[default]
+    Extension,
+    /// MITM proxy for all apps.
+    Proxy,
+}
+
+impl InterceptionMode {
+    /// Returns display text.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Extension => "Extension",
+            Self::Proxy => "Proxy",
+        }
+    }
+}
+
+/// Current navigation view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum View {
+    /// Login screen (when not authenticated).
+    Login,
+    /// Main dashboard home.
+    #[default]
+    Dashboard,
+    /// Profile management.
+    Profiles,
+    /// Rule configuration for selected profile.
+    Rules,
+    /// Event logs.
+    Logs,
+    /// Application settings.
+    Settings,
+}
+
+/// Sub-tabs for rules view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RulesTab {
+    #[default]
+    Time,
+    Content,
+}
+
+/// Filter options for logs.
+#[derive(Debug, Clone, Default)]
+pub struct LogFilter {
+    /// Filter by profile name.
+    pub profile: Option<String>,
+    /// Filter by action.
+    pub action: Option<aegis_storage::Action>,
+    /// Filter by category.
+    pub category: Option<aegis_core::classifier::Category>,
+    /// Filter by date range start.
+    pub date_from: Option<NaiveDate>,
+    /// Filter by date range end.
+    pub date_to: Option<NaiveDate>,
+    /// Search text.
+    pub search: String,
+}
+
+/// Application state for the dashboard.
+pub struct AppState {
+    /// Database connection.
+    pub db: Arc<Database>,
+
+    /// Authentication manager.
+    pub auth: AuthManager,
+
+    /// Current session token.
+    pub session: Option<SessionToken>,
+
+    /// Last activity time for session timeout.
+    pub last_activity: Instant,
+
+    /// Current view.
+    pub view: View,
+
+    /// Protection status.
+    pub protection_status: ProtectionStatus,
+
+    /// Interception mode.
+    pub interception_mode: InterceptionMode,
+
+    /// Selected profile ID for rules view.
+    pub selected_profile_id: Option<i64>,
+
+    /// Current rules tab.
+    pub rules_tab: RulesTab,
+
+    /// Log filter settings.
+    pub log_filter: LogFilter,
+
+    /// Cached today's stats.
+    pub today_stats: Option<DailyStats>,
+
+    /// Cached recent events.
+    pub recent_events: Vec<Event>,
+
+    /// Cached profiles list.
+    pub profiles: Vec<Profile>,
+
+    /// Error message to display.
+    pub error_message: Option<String>,
+
+    /// Success message to display.
+    pub success_message: Option<String>,
+
+    /// Password input for login.
+    pub password_input: String,
+
+    /// New password input for change password.
+    pub new_password_input: String,
+
+    /// Confirm password input.
+    pub confirm_password_input: String,
+
+    /// Whether this is first-time setup (no password set).
+    pub is_first_setup: bool,
+}
+
+impl AppState {
+    /// Creates a new application state.
+    pub fn new(db: Database) -> Self {
+        let auth = AuthManager::new();
+        let is_first_setup = !db.is_auth_setup().unwrap_or(false);
+
+        Self {
+            db: Arc::new(db),
+            auth,
+            session: None,
+            last_activity: Instant::now(),
+            view: View::Login,
+            protection_status: ProtectionStatus::Active,
+            interception_mode: InterceptionMode::Extension,
+            selected_profile_id: None,
+            rules_tab: RulesTab::Time,
+            log_filter: LogFilter::default(),
+            today_stats: None,
+            recent_events: Vec::new(),
+            profiles: Vec::new(),
+            error_message: None,
+            success_message: None,
+            password_input: String::new(),
+            new_password_input: String::new(),
+            confirm_password_input: String::new(),
+            is_first_setup,
+        }
+    }
+
+    /// Creates state with in-memory database (for testing).
+    pub fn in_memory() -> Result<Self> {
+        let db = Database::in_memory()?;
+        Ok(Self::new(db))
+    }
+
+    /// Checks if session is valid and not expired.
+    pub fn is_authenticated(&self) -> bool {
+        if let Some(ref token) = self.session {
+            if self.last_activity.elapsed() > SESSION_TIMEOUT {
+                return false;
+            }
+            self.auth.is_session_valid(token)
+        } else {
+            false
+        }
+    }
+
+    /// Updates last activity time.
+    pub fn touch_activity(&mut self) {
+        self.last_activity = Instant::now();
+    }
+
+    /// Attempts to login with password.
+    pub fn login(&mut self, password: &str) -> Result<()> {
+        let hash = self.db.get_password_hash()?;
+
+        if self.auth.verify_password(password, &hash)? {
+            let token = self.auth.create_session();
+            self.session = Some(token);
+            self.last_activity = Instant::now();
+            self.db.update_last_login()?;
+            self.view = View::Dashboard;
+            self.password_input.clear();
+            self.refresh_data()?;
+            Ok(())
+        } else {
+            Err(UiError::InvalidInput("Incorrect password".into()))
+        }
+    }
+
+    /// Sets up initial password (first run).
+    pub fn setup_password(&mut self, password: &str) -> Result<()> {
+        let hash = self.auth.hash_password(password)?;
+        self.db.set_password_hash(&hash)?;
+        self.is_first_setup = false;
+
+        // Auto-login after setup
+        let token = self.auth.create_session();
+        self.session = Some(token);
+        self.last_activity = Instant::now();
+        self.view = View::Dashboard;
+        self.password_input.clear();
+
+        Ok(())
+    }
+
+    /// Changes password.
+    pub fn change_password(&mut self, current: &str, new_password: &str) -> Result<()> {
+        // Verify current password
+        let hash = self.db.get_password_hash()?;
+        if !self.auth.verify_password(current, &hash)? {
+            return Err(UiError::InvalidInput(
+                "Current password is incorrect".into(),
+            ));
+        }
+
+        // Hash and save new password
+        let new_hash = self.auth.hash_password(new_password)?;
+        self.db.set_password_hash(&new_hash)?;
+
+        // Invalidate all sessions and re-login
+        self.auth.logout_all();
+        let token = self.auth.create_session();
+        self.session = Some(token);
+
+        Ok(())
+    }
+
+    /// Locks the dashboard (requires re-authentication).
+    pub fn lock(&mut self) {
+        if let Some(ref token) = self.session {
+            self.auth.logout(token);
+        }
+        self.session = None;
+        self.view = View::Login;
+        self.password_input.clear();
+    }
+
+    /// Logs out completely.
+    pub fn logout(&mut self) {
+        self.lock();
+    }
+
+    /// Refreshes cached data from database.
+    pub fn refresh_data(&mut self) -> Result<()> {
+        // Load today's stats
+        let today = Local::now().date_naive();
+        self.today_stats = self.db.get_stats(today)?;
+
+        // Load recent events
+        self.recent_events = self.db.get_recent_events(10, 0)?;
+
+        // Load profiles
+        self.profiles = self.load_profiles()?;
+
+        Ok(())
+    }
+
+    /// Loads profiles from database.
+    fn load_profiles(&self) -> Result<Vec<Profile>> {
+        self.db.get_all_profiles().map_err(UiError::Storage)
+    }
+
+    /// Gets filtered events for logs view.
+    pub fn get_filtered_events(&self, limit: i64, offset: i64) -> Result<Vec<Event>> {
+        // For now, just get recent events
+        // Full filtering would require additional database queries
+        if let Some(action) = self.log_filter.action {
+            Ok(self.db.get_events_by_action(action, limit, offset)?)
+        } else {
+            Ok(self.db.get_recent_events(limit, offset)?)
+        }
+    }
+
+    /// Exports logs to CSV.
+    pub fn export_logs_csv(&self, path: &std::path::Path) -> Result<()> {
+        let events = self.db.get_recent_events(10000, 0)?;
+
+        let mut writer = csv::Writer::from_path(path)?;
+
+        writer.write_record(["Timestamp", "Preview", "Category", "Action", "Source"])?;
+
+        for event in events {
+            writer.write_record([
+                event.created_at.to_string(),
+                event.preview,
+                event
+                    .category
+                    .map(|c| c.name().to_string())
+                    .unwrap_or_default(),
+                event.action.as_str().to_string(),
+                event.source.unwrap_or_default(),
+            ])?;
+        }
+
+        writer.flush()?;
+        Ok(())
+    }
+
+    /// Clears message after display.
+    pub fn clear_messages(&mut self) {
+        self.error_message = None;
+        self.success_message = None;
+    }
+
+    /// Sets an error message.
+    pub fn set_error(&mut self, msg: impl Into<String>) {
+        self.error_message = Some(msg.into());
+        self.success_message = None;
+    }
+
+    /// Sets a success message.
+    pub fn set_success(&mut self, msg: impl Into<String>) {
+        self.success_message = Some(msg.into());
+        self.error_message = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_protection_status() {
+        assert_eq!(ProtectionStatus::Active.as_str(), "Active");
+        assert_eq!(ProtectionStatus::Paused.as_str(), "Paused");
+        assert_eq!(ProtectionStatus::Disabled.as_str(), "Disabled");
+    }
+
+    #[test]
+    fn test_interception_mode() {
+        assert_eq!(InterceptionMode::Extension.as_str(), "Extension");
+        assert_eq!(InterceptionMode::Proxy.as_str(), "Proxy");
+    }
+
+    #[test]
+    fn test_app_state_creation() {
+        let db = Database::in_memory().unwrap();
+        let state = AppState::new(db);
+
+        assert!(state.is_first_setup);
+        assert!(!state.is_authenticated());
+        assert_eq!(state.view, View::Login);
+    }
+
+    #[test]
+    fn test_app_state_setup_and_login() {
+        let db = Database::in_memory().unwrap();
+        let mut state = AppState::new(db);
+
+        // First setup
+        state.setup_password("password123").unwrap();
+        assert!(!state.is_first_setup);
+        assert!(state.is_authenticated());
+
+        // Lock and re-login
+        state.lock();
+        assert!(!state.is_authenticated());
+
+        state.login("password123").unwrap();
+        assert!(state.is_authenticated());
+    }
+
+    #[test]
+    fn test_app_state_wrong_password() {
+        let db = Database::in_memory().unwrap();
+        let mut state = AppState::new(db);
+
+        state.setup_password("password123").unwrap();
+        state.lock();
+
+        let result = state.login("wrongpassword");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_log_filter_default() {
+        let filter = LogFilter::default();
+        assert!(filter.profile.is_none());
+        assert!(filter.action.is_none());
+        assert!(filter.search.is_empty());
+    }
+}

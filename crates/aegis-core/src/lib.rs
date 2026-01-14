@@ -10,11 +10,15 @@
 //! - [`content_rules`] - Content-based filtering rules (F006)
 //! - [`rule_engine`] - Unified rule evaluation engine (F007)
 //! - [`profile`] - User profile management (F019)
+//! - [`protection`] - Protection state toggle with auth-guarded operations (F018)
+//! - [`notifications`] - Desktop notifications for blocked content (F014)
 
 pub mod auth;
 pub mod classifier;
 pub mod content_rules;
+pub mod notifications;
 pub mod profile;
+pub mod protection;
 pub mod rule_engine;
 pub mod time_rules;
 
@@ -64,5 +68,56 @@ mod tests {
         let found = manager.get_by_os_username("child");
         assert!(found.is_some());
         assert_eq!(found.unwrap().name, "Child");
+    }
+
+    #[test]
+    fn protection_manager_can_be_created() {
+        let manager = protection::ProtectionManager::new();
+        assert_eq!(manager.state(), protection::ProtectionState::Active);
+    }
+
+    #[test]
+    fn protection_manager_pause_requires_auth() {
+        let manager = protection::ProtectionManager::new();
+        let auth = auth::AuthManager::new();
+        let session = auth.create_session();
+
+        // Pause with valid session
+        manager
+            .pause(protection::PauseDuration::FIVE_MINUTES, &session, &auth)
+            .unwrap();
+        assert_eq!(manager.state(), protection::ProtectionState::Paused);
+
+        // Resume
+        manager.resume();
+        assert_eq!(manager.state(), protection::ProtectionState::Active);
+    }
+
+    #[test]
+    fn notification_manager_can_be_created() {
+        let manager = notifications::NotificationManager::new();
+        assert!(manager.is_enabled());
+    }
+
+    #[test]
+    fn notification_manager_can_be_disabled() {
+        let manager = notifications::NotificationManager::new();
+        manager.disable();
+        assert!(!manager.is_enabled());
+    }
+
+    #[test]
+    fn notification_manager_respects_disabled_state() {
+        let manager = notifications::NotificationManager::with_settings(
+            notifications::NotificationSettings::disabled(),
+        );
+        let event = notifications::BlockedEvent::new(
+            Some("Test".to_string()),
+            Some(classifier::Category::Violence),
+            None,
+            false,
+        );
+        let result = manager.notify_block(&event);
+        assert!(result.was_disabled());
     }
 }

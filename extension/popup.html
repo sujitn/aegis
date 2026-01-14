@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aegis AI Safety</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup">
+    <header class="header">
+      <div class="logo">
+        <img src="icons/icon32.png" alt="Aegis">
+        <span class="title">Aegis</span>
+      </div>
+      <div id="status-indicator" class="status-indicator offline">
+        <span class="status-dot"></span>
+        <span id="status-text">Offline</span>
+      </div>
+    </header>
+
+    <main class="content">
+      <div class="status-card">
+        <div id="status-icon" class="status-icon offline">!</div>
+        <div class="status-details">
+          <div id="status-message" class="status-message">Service unavailable</div>
+          <div id="status-description" class="status-description">
+            The Aegis service is not running
+          </div>
+        </div>
+      </div>
+
+      <div class="info-section">
+        <div class="info-row">
+          <span class="info-label">Protected Sites</span>
+          <span class="info-value">ChatGPT, Claude, Gemini</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Last Check</span>
+          <span id="last-check" class="info-value">--</span>
+        </div>
+      </div>
+
+      <div id="connection-error" class="error-banner hidden">
+        <span class="error-icon">&#9888;</span>
+        <span class="error-text">Cannot connect to local service</span>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <button id="refresh-btn" class="btn btn-secondary">
+        Refresh Status
+      </button>
+    </footer>
+  </div>
+
+  <script src="dist/popup.js" type="module"></script>
+</body>
+</html>

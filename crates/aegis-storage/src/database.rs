@@ -8,10 +8,13 @@ use directories::ProjectDirs;
 use tracing::info;
 
 use crate::error::{Result, StorageError};
-use crate::models::{Action, Auth, Config, DailyStats, Event, NewEvent, NewRule, Rule};
+use crate::models::{
+    Action, Auth, Config, DailyStats, Event, NewEvent, NewProfile, NewRule, Profile, Rule,
+};
 use crate::pool::ConnectionPool;
 use crate::repository::{
-    create_preview, hash_prompt, AuthRepo, ConfigRepo, EventsRepo, RulesRepo, StatsRepo,
+    create_preview, hash_prompt, AuthRepo, ConfigRepo, EventsRepo, ProfileRepo, RulesRepo,
+    StatsRepo,
 };
 
 /// High-level database interface for Aegis.
@@ -249,6 +252,90 @@ impl Database {
         let conn = self.pool.get()?;
         AuthRepo::update_last_login(&conn)
     }
+
+    // === Profiles ===
+
+    /// Create a new profile.
+    pub fn create_profile(&self, profile: NewProfile) -> Result<i64> {
+        let conn = self.pool.get()?;
+        ProfileRepo::insert(&conn, profile)
+    }
+
+    /// Get a profile by ID.
+    pub fn get_profile(&self, id: i64) -> Result<Option<Profile>> {
+        let conn = self.pool.get()?;
+        ProfileRepo::get_by_id(&conn, id)
+    }
+
+    /// Get a profile by OS username.
+    pub fn get_profile_by_os_username(&self, os_username: &str) -> Result<Option<Profile>> {
+        let conn = self.pool.get()?;
+        ProfileRepo::get_by_os_username(&conn, os_username)
+    }
+
+    /// Get all profiles.
+    pub fn get_all_profiles(&self) -> Result<Vec<Profile>> {
+        let conn = self.pool.get()?;
+        ProfileRepo::get_all(&conn)
+    }
+
+    /// Get all enabled profiles.
+    pub fn get_enabled_profiles(&self) -> Result<Vec<Profile>> {
+        let conn = self.pool.get()?;
+        ProfileRepo::get_enabled(&conn)
+    }
+
+    /// Update a profile.
+    pub fn update_profile(&self, id: i64, profile: NewProfile) -> Result<()> {
+        let conn = self.pool.get()?;
+        ProfileRepo::update(&conn, id, profile)
+    }
+
+    /// Enable or disable a profile.
+    pub fn set_profile_enabled(&self, id: i64, enabled: bool) -> Result<()> {
+        let conn = self.pool.get()?;
+        ProfileRepo::set_enabled(&conn, id, enabled)
+    }
+
+    /// Delete a profile.
+    pub fn delete_profile(&self, id: i64) -> Result<()> {
+        let conn = self.pool.get()?;
+        ProfileRepo::delete(&conn, id)
+    }
+
+    /// Count profiles.
+    pub fn count_profiles(&self) -> Result<i64> {
+        let conn = self.pool.get()?;
+        ProfileRepo::count(&conn)
+    }
+
+    // === Protection State ===
+
+    /// Config key for protection state.
+    const PROTECTION_STATE_KEY: &'static str = "protection_state";
+
+    /// Get the current protection state.
+    ///
+    /// Returns `None` if not set (defaults to Active).
+    pub fn get_protection_state(&self) -> Result<Option<String>> {
+        let conn = self.pool.get()?;
+        match ConfigRepo::get(&conn, Self::PROTECTION_STATE_KEY)? {
+            Some(config) => {
+                if let Some(state) = config.value.as_str() {
+                    Ok(Some(state.to_string()))
+                } else {
+                    Ok(None)
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Set the protection state.
+    pub fn set_protection_state(&self, state: &str) -> Result<()> {
+        let conn = self.pool.get()?;
+        ConfigRepo::set(&conn, Self::PROTECTION_STATE_KEY, &serde_json::json!(state))
+    }
 }
 
 impl Default for Database {
@@ -370,5 +457,34 @@ mod tests {
 
         let hash = db.get_password_hash().unwrap();
         assert_eq!(hash, "hash123");
+    }
+
+    #[test]
+    fn test_protection_state() {
+        let db = Database::in_memory().unwrap();
+
+        // Default is None (Active)
+        assert!(db.get_protection_state().unwrap().is_none());
+
+        // Set to paused
+        db.set_protection_state("paused").unwrap();
+        assert_eq!(
+            db.get_protection_state().unwrap(),
+            Some("paused".to_string())
+        );
+
+        // Set to disabled
+        db.set_protection_state("disabled").unwrap();
+        assert_eq!(
+            db.get_protection_state().unwrap(),
+            Some("disabled".to_string())
+        );
+
+        // Set back to active
+        db.set_protection_state("active").unwrap();
+        assert_eq!(
+            db.get_protection_state().unwrap(),
+            Some("active".to_string())
+        );
     }
 }

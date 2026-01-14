@@ -1,0 +1,52 @@
+[package]
+name = "aegis-proxy"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "MITM proxy for Aegis AI safety platform"
+
+[dependencies]
+aegis-core.workspace = true
+aegis-storage.workspace = true
+
+# Async runtime
+tokio.workspace = true
+
+# HTTP/Proxy
+hudsucker = { version = "0.24", features = ["rcgen-ca"] }
+hyper = { version = "1.5", features = ["full"] }
+http-body-util = "0.1"
+
+# TLS/Certificates
+rcgen = "0.13"
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
+rustls-pemfile = "2.2"
+
+# Sync primitives
+parking_lot = "0.12"
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Date/Time
+chrono.workspace = true
+
+# Async utilities
+async-trait = "0.1"
+futures = "0.3"
+
+# File system
+directories.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true
+tempfile = "3.14"

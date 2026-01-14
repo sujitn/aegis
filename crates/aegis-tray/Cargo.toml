@@ -9,6 +9,16 @@ description = "System tray integration for Aegis"
 [dependencies]
 aegis-core.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
+
+# Cross-platform tray icon
+tray-icon = "0.19"
+
+# Menu support
+muda = "0.15"
+
+# Image loading for icons
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [dev-dependencies]
 tokio-test.workspace = true

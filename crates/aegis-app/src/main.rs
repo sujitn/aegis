@@ -5,7 +5,7 @@
 use aegis_core::{auth::AuthManager, classifier::KeywordClassifier, rule_engine::RuleEngine};
 use aegis_server::{Server, ServerConfig};
 use aegis_storage::db::Database;
-use aegis_tray::tray::SystemTray;
+use aegis_tray::SystemTray;
 use aegis_ui::settings::SettingsUi;
 
 #[tokio::main]
@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
     let _db = Database::new();
     let _server = Server::new(ServerConfig::default()).await?;
     let _ui = SettingsUi::new();
-    let _tray = SystemTray::new();
+    let (_tray, _tray_rx) = SystemTray::new()?;
 
     tracing::info!("Aegis initialized successfully");
 
