@@ -274,71 +274,120 @@ pub fn teardown_proxy(config: &ProxySetup, remove_ca: bool) -> Vec<SetupResult> 
 
 #[cfg(target_os = "windows")]
 fn install_ca_windows(cert_path: &Path) -> SetupResult {
+    use std::os::windows::process::CommandExt;
+
     let cert_path_str = cert_path.to_string_lossy();
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
 
     // First, remove any old CA certificates (both old "rcgen" and existing "Aegis")
     let names_to_remove = ["rcgen self signed cert", "Aegis Root CA"];
     for name in &names_to_remove {
-        // Try machine store
-        let _ = Command::new("certutil")
-            .args(["-delstore", "Root", name])
-            .output();
-        // Try user store
+        // Try user store first (doesn't need admin)
         let _ = Command::new("certutil")
             .args(["-delstore", "-user", "Root", name])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+        // Try machine store (may fail without admin, that's ok)
+        let _ = Command::new("certutil")
+            .args(["-delstore", "Root", name])
+            .creation_flags(CREATE_NO_WINDOW)
             .output();
     }
 
-    // Try to install to machine-wide root store (requires admin)
-    let output = Command::new("certutil")
-        .args(["-addstore", "Root", &cert_path_str])
+    // Try machine store first with UAC elevation (for multi-user support)
+    // Use PowerShell Start-Process with -Verb RunAs to trigger UAC
+    let ps_script = format!(
+        r#"
+        $certPath = '{}'
+        $process = Start-Process -FilePath 'certutil' -ArgumentList '-addstore', 'Root', $certPath -Verb RunAs -Wait -PassThru -WindowStyle Hidden
+        exit $process.ExitCode
+        "#,
+        cert_path_str.replace('\'', "''")
+    );
+
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+        .creation_flags(CREATE_NO_WINDOW)
         .output();
 
     match output {
         Ok(out) => {
             if out.status.success() {
-                SetupResult::success("CA certificate installed to machine trust store")
-            } else {
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                if stderr.contains("Access is denied") || stderr.contains("elevation") {
-                    SetupResult::needs_admin("Administrator privileges required to install CA certificate. Run Aegis as Administrator.")
-                } else {
-                    SetupResult::failure(format!("Failed to install certificate: {}", stderr))
+                return SetupResult::success("CA certificate installed to machine trust store");
+            }
+
+            // UAC was cancelled or failed, try user store as fallback
+            let user_output = Command::new("certutil")
+                .args(["-addstore", "-user", "Root", &cert_path_str])
+                .creation_flags(CREATE_NO_WINDOW)
+                .output();
+
+            match user_output {
+                Ok(u_out) => {
+                    if u_out.status.success() {
+                        SetupResult::success("CA certificate installed to user trust store (current user only)")
+                    } else {
+                        let stderr = String::from_utf8_lossy(&u_out.stderr);
+                        SetupResult::failure(format!(
+                            "UAC elevation cancelled and user store failed: {}",
+                            stderr.trim()
+                        ))
+                    }
                 }
+                Err(e) => SetupResult::failure(format!("Failed to run certutil: {}", e)),
             }
         }
-        Err(e) => SetupResult::failure(format!("Failed to run certutil: {}", e)),
+        Err(e) => SetupResult::failure(format!("Failed to request elevation: {}", e)),
     }
 }
 
 #[cfg(target_os = "windows")]
 fn uninstall_ca_windows(_cert_path: &Path) -> SetupResult {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
     // Remove both old and new CA names from root store
     let names_to_remove = ["rcgen self signed cert", "Aegis Root CA"];
-    let mut removed_any = false;
 
+    // Build PowerShell script to remove from machine store with UAC
+    let names_list = names_to_remove
+        .iter()
+        .map(|n| format!("'{}'", n))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let ps_script = format!(
+        r#"
+        $names = @({})
+        foreach ($name in $names) {{
+            certutil -delstore Root $name 2>$null
+        }}
+        "#,
+        names_list
+    );
+
+    // Request elevation for machine store removal
+    let elevated_script = format!(
+        r#"Start-Process -FilePath 'powershell' -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', '{}' -Verb RunAs -Wait -WindowStyle Hidden"#,
+        ps_script.replace('\'', "''")
+    );
+
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &elevated_script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+
+    // Also remove from user store (doesn't need elevation)
     for name in &names_to_remove {
-        // Try machine store first
         let _ = Command::new("certutil")
-            .args(["-delstore", "Root", name])
-            .output();
-
-        // Then user store
-        let output = Command::new("certutil")
             .args(["-delstore", "-user", "Root", name])
+            .creation_flags(CREATE_NO_WINDOW)
             .output();
-
-        if let Ok(out) = output {
-            if out.status.success() {
-                removed_any = true;
-            }
-        }
     }
 
-    if removed_any {
-        SetupResult::success("CA certificate(s) removed from trust store")
-    } else {
-        SetupResult::failure("No certificates found to remove")
+    match output {
+        Ok(_) => SetupResult::success("CA certificate(s) removed from trust store"),
+        Err(e) => SetupResult::failure(format!("Failed to remove certificates: {}", e)),
     }
 }
 
@@ -477,53 +526,72 @@ fn is_proxy_enabled_windows(host: &str, port: u16) -> bool {
 fn install_ca_macos(cert_path: &Path) -> SetupResult {
     let cert_path_str = cert_path.to_string_lossy();
 
-    // Try user keychain first (doesn't require admin)
-    let output = Command::new("security")
-        .args([
-            "add-trusted-cert",
-            "-r", "trustRoot",
-            "-k", &format!("{}/Library/Keychains/login.keychain-db", std::env::var("HOME").unwrap_or_default()),
-            &cert_path_str,
-        ])
+    // Try system keychain with admin prompt (for multi-user support)
+    // Uses osascript to show native macOS admin password dialog
+    let script = format!(
+        r#"do shell script "security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain '{}'" with administrator privileges"#,
+        cert_path_str.replace('\'', "'\\''")
+    );
+
+    let output = Command::new("osascript")
+        .args(["-e", &script])
         .output();
 
     match output {
         Ok(out) => {
             if out.status.success() {
-                SetupResult::success("CA certificate installed to user keychain")
-            } else {
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                if stderr.contains("authorization") || stderr.contains("denied") {
-                    SetupResult::needs_admin("Administrator privileges required. Run: sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain <cert_path>")
-                } else {
-                    SetupResult::failure(format!("Failed to install certificate: {}", stderr))
+                return SetupResult::success("CA certificate installed to system keychain");
+            }
+
+            // Admin prompt cancelled or failed, try user keychain as fallback
+            let user_output = Command::new("security")
+                .args([
+                    "add-trusted-cert",
+                    "-r", "trustRoot",
+                    "-k", &format!("{}/Library/Keychains/login.keychain-db", std::env::var("HOME").unwrap_or_default()),
+                    &cert_path_str,
+                ])
+                .output();
+
+            match user_output {
+                Ok(u_out) => {
+                    if u_out.status.success() {
+                        SetupResult::success("CA certificate installed to user keychain (current user only)")
+                    } else {
+                        let stderr = String::from_utf8_lossy(&u_out.stderr);
+                        SetupResult::failure(format!(
+                            "Admin prompt cancelled and user keychain failed: {}",
+                            stderr.trim()
+                        ))
+                    }
                 }
+                Err(e) => SetupResult::failure(format!("Failed to run security command: {}", e)),
             }
         }
-        Err(e) => SetupResult::failure(format!("Failed to run security command: {}", e)),
+        Err(e) => SetupResult::failure(format!("Failed to request admin privileges: {}", e)),
     }
 }
 
 #[cfg(target_os = "macos")]
 fn uninstall_ca_macos() -> SetupResult {
-    // Remove from user keychain
-    let output = Command::new("security")
-        .args([
-            "delete-certificate",
-            "-c", "rcgen self signed cert",
-            "-t",
-        ])
+    // Try to remove from system keychain with admin prompt
+    let script = r#"do shell script "security delete-certificate -c 'Aegis Root CA' /Library/Keychains/System.keychain 2>/dev/null; security delete-certificate -c 'rcgen self signed cert' /Library/Keychains/System.keychain 2>/dev/null" with administrator privileges"#;
+
+    let output = Command::new("osascript")
+        .args(["-e", script])
+        .output();
+
+    // Also try to remove from user keychain (doesn't need admin)
+    let _ = Command::new("security")
+        .args(["delete-certificate", "-c", "Aegis Root CA", "-t"])
+        .output();
+    let _ = Command::new("security")
+        .args(["delete-certificate", "-c", "rcgen self signed cert", "-t"])
         .output();
 
     match output {
-        Ok(out) => {
-            if out.status.success() {
-                SetupResult::success("CA certificate removed from keychain")
-            } else {
-                SetupResult::failure("Failed to remove certificate (may not be installed)")
-            }
-        }
-        Err(e) => SetupResult::failure(format!("Failed to run security command: {}", e)),
+        Ok(_) => SetupResult::success("CA certificate removed from keychain"),
+        Err(e) => SetupResult::failure(format!("Failed to remove certificate: {}", e)),
     }
 }
 
@@ -644,18 +712,25 @@ fn is_proxy_enabled_macos(host: &str, port: u16) -> bool {
 fn install_ca_linux(cert_path: &Path) -> SetupResult {
     let cert_path_str = cert_path.to_string_lossy();
 
+    // Determine which elevation tool to use (pkexec for GUI, sudo for terminal)
+    let elevation_cmd = if std::env::var("DISPLAY").is_ok() || std::env::var("WAYLAND_DISPLAY").is_ok() {
+        "pkexec" // GUI environment - use PolicyKit for graphical prompt
+    } else {
+        "sudo" // Terminal - use sudo
+    };
+
     // Detect distro and use appropriate method
     if Path::new("/usr/local/share/ca-certificates").exists() {
         // Debian/Ubuntu
         let dest = "/usr/local/share/ca-certificates/aegis-ca.crt";
 
-        let copy_result = Command::new("sudo")
+        let copy_result = Command::new(elevation_cmd)
             .args(["cp", &cert_path_str, dest])
             .output();
 
         match copy_result {
             Ok(out) if out.status.success() => {
-                let update_result = Command::new("sudo")
+                let update_result = Command::new(elevation_cmd)
                     .args(["update-ca-certificates"])
                     .output();
 
@@ -666,20 +741,27 @@ fn install_ca_linux(cert_path: &Path) -> SetupResult {
                     _ => SetupResult::failure("Failed to update CA certificates"),
                 }
             }
-            Ok(_) => SetupResult::needs_admin("Administrator privileges required (sudo)"),
-            Err(e) => SetupResult::failure(format!("Failed to copy certificate: {}", e)),
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                if stderr.contains("dismissed") || stderr.contains("cancelled") {
+                    SetupResult::failure("Authentication cancelled by user")
+                } else {
+                    SetupResult::failure(format!("Failed to install certificate: {}", stderr))
+                }
+            }
+            Err(e) => SetupResult::failure(format!("Failed to run {}: {}", elevation_cmd, e)),
         }
     } else if Path::new("/etc/pki/ca-trust/source/anchors").exists() {
         // Fedora/RHEL/CentOS
         let dest = "/etc/pki/ca-trust/source/anchors/aegis-ca.crt";
 
-        let copy_result = Command::new("sudo")
+        let copy_result = Command::new(elevation_cmd)
             .args(["cp", &cert_path_str, dest])
             .output();
 
         match copy_result {
             Ok(out) if out.status.success() => {
-                let update_result = Command::new("sudo")
+                let update_result = Command::new(elevation_cmd)
                     .args(["update-ca-trust", "extract"])
                     .output();
 
@@ -690,20 +772,27 @@ fn install_ca_linux(cert_path: &Path) -> SetupResult {
                     _ => SetupResult::failure("Failed to update CA trust"),
                 }
             }
-            Ok(_) => SetupResult::needs_admin("Administrator privileges required (sudo)"),
-            Err(e) => SetupResult::failure(format!("Failed to copy certificate: {}", e)),
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                if stderr.contains("dismissed") || stderr.contains("cancelled") {
+                    SetupResult::failure("Authentication cancelled by user")
+                } else {
+                    SetupResult::failure(format!("Failed to install certificate: {}", stderr))
+                }
+            }
+            Err(e) => SetupResult::failure(format!("Failed to run {}: {}", elevation_cmd, e)),
         }
     } else if Path::new("/etc/ca-certificates/trust-source/anchors").exists() {
         // Arch Linux
         let dest = "/etc/ca-certificates/trust-source/anchors/aegis-ca.crt";
 
-        let copy_result = Command::new("sudo")
+        let copy_result = Command::new(elevation_cmd)
             .args(["cp", &cert_path_str, dest])
             .output();
 
         match copy_result {
             Ok(out) if out.status.success() => {
-                let update_result = Command::new("sudo")
+                let update_result = Command::new(elevation_cmd)
                     .args(["trust", "extract-compat"])
                     .output();
 
@@ -714,8 +803,15 @@ fn install_ca_linux(cert_path: &Path) -> SetupResult {
                     _ => SetupResult::failure("Failed to extract trust"),
                 }
             }
-            Ok(_) => SetupResult::needs_admin("Administrator privileges required (sudo)"),
-            Err(e) => SetupResult::failure(format!("Failed to copy certificate: {}", e)),
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                if stderr.contains("dismissed") || stderr.contains("cancelled") {
+                    SetupResult::failure("Authentication cancelled by user")
+                } else {
+                    SetupResult::failure(format!("Failed to install certificate: {}", stderr))
+                }
+            }
+            Err(e) => SetupResult::failure(format!("Failed to run {}: {}", elevation_cmd, e)),
         }
     } else {
         SetupResult::failure("Unknown Linux distribution. Please install the CA certificate manually.")
@@ -724,6 +820,13 @@ fn install_ca_linux(cert_path: &Path) -> SetupResult {
 
 #[cfg(target_os = "linux")]
 fn uninstall_ca_linux() -> SetupResult {
+    // Determine which elevation tool to use (pkexec for GUI, sudo for terminal)
+    let elevation_cmd = if std::env::var("DISPLAY").is_ok() || std::env::var("WAYLAND_DISPLAY").is_ok() {
+        "pkexec" // GUI environment - use PolicyKit for graphical prompt
+    } else {
+        "sudo" // Terminal - use sudo
+    };
+
     // Try all known locations
     let locations = [
         "/usr/local/share/ca-certificates/aegis-ca.crt",
@@ -731,18 +834,34 @@ fn uninstall_ca_linux() -> SetupResult {
         "/etc/ca-certificates/trust-source/anchors/aegis-ca.crt",
     ];
 
+    let mut removed = false;
     for loc in &locations {
         if Path::new(loc).exists() {
-            let _ = Command::new("sudo").args(["rm", loc]).output();
+            let result = Command::new(elevation_cmd).args(["rm", loc]).output();
+            if let Ok(out) = result {
+                if out.status.success() {
+                    removed = true;
+                }
+            }
         }
     }
 
-    // Update certificates
-    let _ = Command::new("sudo").args(["update-ca-certificates"]).output();
-    let _ = Command::new("sudo").args(["update-ca-trust", "extract"]).output();
-    let _ = Command::new("sudo").args(["trust", "extract-compat"]).output();
+    // Update certificates based on distro
+    if Path::new("/usr/local/share/ca-certificates").exists() {
+        let _ = Command::new(elevation_cmd).args(["update-ca-certificates"]).output();
+    }
+    if Path::new("/etc/pki/ca-trust").exists() {
+        let _ = Command::new(elevation_cmd).args(["update-ca-trust", "extract"]).output();
+    }
+    if Path::new("/etc/ca-certificates/trust-source").exists() {
+        let _ = Command::new(elevation_cmd).args(["trust", "extract-compat"]).output();
+    }
 
-    SetupResult::success("CA certificate removed")
+    if removed {
+        SetupResult::success("CA certificate removed")
+    } else {
+        SetupResult::failure("No certificate found to remove (may not be installed)")
+    }
 }
 
 #[cfg(target_os = "linux")]
