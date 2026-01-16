@@ -19,4 +19,4 @@ tracing.workspace = true
 
 [dev-dependencies]
 tokio-test.workspace = true
-tempfile = "3.19"
+tempfile = "3.24"

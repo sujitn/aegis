@@ -28,7 +28,7 @@ aegis-ui = { path = "crates/aegis-ui" }
 aegis-tray = { path = "crates/aegis-tray" }
 
 # Async runtime
-tokio = { version = "1.43", features = ["full"] }
+tokio = { version = "1.49", features = ["full"] }
 
 # Web framework
 axum = "0.8"
@@ -56,7 +56,7 @@ thiserror = "2.0"
 anyhow = "1.0"
 
 # Regex
-regex = "1.11"
+regex = "1.12"
 
 # Logging
 tracing = "0.1"
@@ -70,7 +70,7 @@ clap = { version = "4.5", features = ["derive"] }
 tokio-test = "0.4"
 
 # ML/ONNX (optional - for Prompt Guard)
-ort = { version = "2.0.0-rc.9" }
+ort = { version = "2.0.0-rc.11" }
 ndarray = "0.16"
 tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
 
