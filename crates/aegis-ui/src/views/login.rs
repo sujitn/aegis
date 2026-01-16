@@ -3,6 +3,7 @@
 use eframe::egui::{self, RichText, TextEdit};
 
 use crate::state::AppState;
+use crate::theme::status;
 
 /// Renders the login screen.
 pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
@@ -33,7 +34,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
         // Error message
         if let Some(ref error) = state.error_message {
             ui.add_space(16.0);
-            ui.colored_label(egui::Color32::from_rgb(0xea, 0x43, 0x35), error);
+            ui.colored_label(status::ERROR, error);
         }
     });
 }

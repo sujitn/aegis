@@ -1,10 +1,24 @@
-//! Tray icon management.
+//! Tray icon management with embedded PNG icons.
 
 use crate::{status::TrayStatus, TrayError};
+use image::GenericImageView;
 use tray_icon::Icon;
 
-/// Icon dimensions for the tray.
-const ICON_SIZE: u32 = 32;
+/// Embedded PNG icon data for each status.
+/// These icons are generated from the Aegis shield logo with status indicator dots.
+mod embedded {
+    // Protected status icons (green dot)
+    pub const PROTECTED_32: &[u8] =
+        include_bytes!("../../aegis-app/assets/icons/tray/tray-protected-32.png");
+
+    // Paused status icons (yellow dot)
+    pub const PAUSED_32: &[u8] =
+        include_bytes!("../../aegis-app/assets/icons/tray/tray-paused-32.png");
+
+    // Error status icons (red dot)
+    pub const ERROR_32: &[u8] =
+        include_bytes!("../../aegis-app/assets/icons/tray/tray-error-32.png");
+}
 
 /// Manages tray icon loading and generation.
 pub struct TrayIcon;
@@ -12,26 +26,34 @@ pub struct TrayIcon;
 impl TrayIcon {
     /// Loads or generates an icon for the given status.
     pub fn for_status(status: TrayStatus) -> crate::Result<Icon> {
-        Self::generate_icon(status)
+        Self::load_embedded_icon(status)
     }
 
-    /// Generates a simple colored icon for the status.
-    /// This creates a basic icon without external files.
-    fn generate_icon(status: TrayStatus) -> crate::Result<Icon> {
-        let (r, g, b) = match status {
-            TrayStatus::Protected => (0x1a, 0x73, 0xe8), // Blue - #1a73e8
-            TrayStatus::Paused => (0xfb, 0xbc, 0x04),    // Yellow - #fbbc04
-            TrayStatus::Error => (0xea, 0x43, 0x35),     // Red - #ea4335
+    /// Loads an embedded PNG icon for the given status.
+    fn load_embedded_icon(status: TrayStatus) -> crate::Result<Icon> {
+        let png_data = match status {
+            TrayStatus::Protected => embedded::PROTECTED_32,
+            TrayStatus::Paused => embedded::PAUSED_32,
+            TrayStatus::Error => embedded::ERROR_32,
         };
 
-        let rgba = generate_shield_icon(ICON_SIZE, r, g, b);
+        // Decode the PNG
+        let img = image::load_from_memory(png_data)
+            .map_err(|e| TrayError::IconCreation(format!("Failed to decode PNG: {}", e)))?;
 
-        Icon::from_rgba(rgba, ICON_SIZE, ICON_SIZE)
+        let (width, height) = img.dimensions();
+
+        // Convert to RGBA
+        let rgba = img.to_rgba8();
+
+        Icon::from_rgba(rgba.into_raw(), width, height)
             .map_err(|e| TrayError::IconCreation(e.to_string()))
     }
 }
 
-/// Generates a simple shield-shaped icon in RGBA format.
+/// Fallback: generates a simple colored shield icon in RGBA format.
+/// Used when embedded icons are not available.
+#[allow(dead_code)]
 fn generate_shield_icon(size: u32, r: u8, g: u8, b: u8) -> Vec<u8> {
     let mut rgba = vec![0u8; (size * size * 4) as usize];
 
@@ -62,6 +84,7 @@ fn generate_shield_icon(size: u32, r: u8, g: u8, b: u8) -> Vec<u8> {
 }
 
 /// Determines if a point is inside the shield shape.
+#[allow(dead_code)]
 fn is_in_shield(nx: f32, ny: f32) -> bool {
     // Shield dimensions
     let shield_width = 0.7;
@@ -107,9 +130,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn icon_size_is_valid() {
-        assert!(ICON_SIZE > 0);
-        assert!(ICON_SIZE <= 256);
+    fn embedded_icons_exist() {
+        assert!(!embedded::PROTECTED_32.is_empty());
+        assert!(!embedded::PAUSED_32.is_empty());
+        assert!(!embedded::ERROR_32.is_empty());
+    }
+
+    #[test]
+    fn can_decode_embedded_icons() {
+        for png_data in [
+            embedded::PROTECTED_32,
+            embedded::PAUSED_32,
+            embedded::ERROR_32,
+        ] {
+            let img = image::load_from_memory(png_data);
+            assert!(img.is_ok(), "Failed to decode embedded PNG");
+        }
     }
 
     #[test]

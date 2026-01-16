@@ -6,6 +6,8 @@ use std::path::PathBuf;
 use directories::ProjectDirs;
 use eframe::egui::{self, Color32, RichText, ScrollArea};
 
+use crate::theme::{brand, status};
+
 /// Log level for filtering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LogLevel {
@@ -31,10 +33,10 @@ impl LogLevel {
     pub fn color(&self) -> Color32 {
         match self {
             LogLevel::Trace => Color32::GRAY,
-            LogLevel::Debug => Color32::from_rgb(100, 149, 237), // Cornflower blue
-            LogLevel::Info => Color32::from_rgb(34, 139, 34),    // Forest green
-            LogLevel::Warn => Color32::from_rgb(255, 165, 0),    // Orange
-            LogLevel::Error => Color32::from_rgb(220, 20, 60),   // Crimson
+            LogLevel::Debug => brand::PRIMARY,
+            LogLevel::Info => status::SUCCESS,
+            LogLevel::Warn => status::WARNING,
+            LogLevel::Error => status::ERROR,
         }
     }
 

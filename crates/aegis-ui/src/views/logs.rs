@@ -1,17 +1,9 @@
 //! Logs view.
 
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 
 use crate::state::AppState;
-
-/// Colors for action badges.
-mod colors {
-    use eframe::egui::Color32;
-
-    pub const GREEN: Color32 = Color32::from_rgb(0x34, 0xa8, 0x53);
-    pub const YELLOW: Color32 = Color32::from_rgb(0xfb, 0xbc, 0x04);
-    pub const RED: Color32 = Color32::from_rgb(0xea, 0x43, 0x35);
-}
+use crate::theme::status;
 
 /// State for log filters.
 #[derive(Default)]
@@ -220,9 +212,9 @@ fn render_log_row(ui: &mut egui::Ui, event: &aegis_storage::Event) {
 
         // Action badge
         let (action_text, action_color) = match event.action {
-            aegis_storage::Action::Allowed => ("Allowed", colors::GREEN),
-            aegis_storage::Action::Blocked => ("Blocked", colors::RED),
-            aegis_storage::Action::Flagged => ("Warned", colors::YELLOW),
+            aegis_storage::Action::Allowed => ("Allowed", status::SUCCESS),
+            aegis_storage::Action::Blocked => ("Blocked", status::ERROR),
+            aegis_storage::Action::Flagged => ("Warned", status::WARNING),
         };
 
         egui::Frame::none()
@@ -341,7 +333,7 @@ fn render_clear_dialog(ui: &mut egui::Ui, state: &mut AppState, logs_state: &mut
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ui.ctx(), |ui| {
             ui.colored_label(
-                Color32::from_rgb(0xea, 0x43, 0x35),
+                status::ERROR,
                 "This action cannot be undone!",
             );
             ui.add_space(8.0);

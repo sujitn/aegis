@@ -3,6 +3,7 @@
 use eframe::egui::{self, Color32, RichText};
 
 use crate::state::{AppState, RulesTab, View};
+use crate::theme::status;
 
 /// Renders the rules view.
 pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
@@ -134,7 +135,7 @@ fn render_time_rule_card(ui: &mut egui::Ui, _index: usize, rule: &serde_json::Va
                     .and_then(|v| v.as_bool())
                     .unwrap_or(true);
                 let status_color = if enabled {
-                    Color32::from_rgb(0x34, 0xa8, 0x53)
+                    status::SUCCESS
                 } else {
                     Color32::GRAY
                 };
@@ -182,24 +183,12 @@ fn render_content_rules(ui: &mut egui::Ui, state: &mut AppState) {
 
     // Category rules
     let categories = [
-        ("Violence", "violence", Color32::from_rgb(0xea, 0x43, 0x35)),
-        (
-            "Self-Harm",
-            "self_harm",
-            Color32::from_rgb(0xea, 0x43, 0x35),
-        ),
-        (
-            "Adult Content",
-            "adult",
-            Color32::from_rgb(0xf4, 0x51, 0x1e),
-        ),
-        (
-            "Jailbreak",
-            "jailbreak",
-            Color32::from_rgb(0xfb, 0xbc, 0x04),
-        ),
-        ("Hate Speech", "hate", Color32::from_rgb(0xea, 0x43, 0x35)),
-        ("Illegal", "illegal", Color32::from_rgb(0xea, 0x43, 0x35)),
+        ("Violence", "violence", status::ERROR),
+        ("Self-Harm", "self_harm", status::ERROR),
+        ("Adult Content", "adult", status::WARNING),
+        ("Jailbreak", "jailbreak", status::WARNING),
+        ("Hate Speech", "hate", status::ERROR),
+        ("Illegal", "illegal", status::ERROR),
     ];
 
     for (name, _key, color) in categories {

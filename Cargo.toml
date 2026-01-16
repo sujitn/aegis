@@ -7,6 +7,7 @@ members = [
     "crates/aegis-ui",
     "crates/aegis-tray",
     "crates/aegis-app",
+    "tools/icon-gen",
 ]
 resolver = "2"
 
@@ -75,3 +76,9 @@ tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
 
 # Notifications
 notify-rust = "4.11"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Semver
+semver = "1.0"

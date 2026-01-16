@@ -6,6 +6,7 @@ use egui::{Color32, RichText, Vec2};
 use aegis_storage::Database;
 
 use crate::state::{AppState, View};
+use crate::theme::status;
 use crate::views::{dashboard, login, logs, profiles, rules, settings, setup, system_logs};
 
 /// Main dashboard application.
@@ -226,7 +227,7 @@ impl DashboardApp {
         if let Some(error) = self.state.error_message.clone() {
             egui::TopBottomPanel::bottom("error_panel").show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.colored_label(Color32::from_rgb(0xea, 0x43, 0x35), "⚠");
+                    ui.colored_label(status::ERROR, "⚠");
                     ui.label(&error);
                     if ui.button("✕").clicked() {
                         clear_error = true;
@@ -243,7 +244,7 @@ impl DashboardApp {
         if let Some(success) = self.state.success_message.clone() {
             egui::TopBottomPanel::bottom("success_panel").show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.colored_label(Color32::from_rgb(0x34, 0xa8, 0x53), "✓");
+                    ui.colored_label(status::SUCCESS, "✓");
                     ui.label(&success);
                     if ui.button("✕").clicked() {
                         clear_success = true;

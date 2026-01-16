@@ -3,7 +3,7 @@
 use std::env;
 
 use auto_launch::{AutoLaunch, AutoLaunchBuilder};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 
 use aegis_proxy::{
     disable_system_proxy, enable_system_proxy, install_ca_certificate, is_ca_installed,
@@ -11,6 +11,7 @@ use aegis_proxy::{
 };
 
 use crate::state::AppState;
+use crate::theme::status;
 
 /// App name for autostart.
 const APP_NAME: &str = "Aegis";
@@ -70,7 +71,6 @@ fn disable_autostart() -> Result<(), String> {
 }
 
 /// State for the settings view.
-#[derive(Default)]
 pub struct SettingsState {
     /// Current password for change password.
     pub current_password: String,
@@ -80,16 +80,77 @@ pub struct SettingsState {
     pub confirm_password: String,
     /// Show change password section.
     pub show_change_password: bool,
+
+    // Cached system state (expensive to check every frame)
+    /// Whether autostart is enabled (cached).
+    pub autostart_enabled: bool,
+    /// Whether autostart lock is enabled (cached).
+    pub autostart_locked: bool,
+    /// Whether CA certificate is installed (cached).
+    pub ca_installed: bool,
+    /// Whether system proxy is enabled (cached).
+    pub proxy_enabled: bool,
+    /// CA certificate path (cached).
+    pub ca_path: Option<std::path::PathBuf>,
+    /// Whether initial load has been done.
+    pub initialized: bool,
+}
+
+impl Default for SettingsState {
+    fn default() -> Self {
+        // Initialize CA path eagerly (fast operation)
+        let ca_path = get_ca_cert_path();
+
+        Self {
+            current_password: String::new(),
+            new_password: String::new(),
+            confirm_password: String::new(),
+            show_change_password: false,
+            autostart_enabled: false,
+            autostart_locked: false,
+            ca_installed: false,
+            proxy_enabled: false,
+            ca_path,
+            initialized: false,
+        }
+    }
+}
+
+impl SettingsState {
+    /// Refreshes cached system state. Call this when entering settings or after changes.
+    pub fn refresh_cache(&mut self, db: &aegis_storage::Database) {
+        self.autostart_enabled = is_autostart_enabled();
+        self.autostart_locked = db
+            .get_config(CONFIG_KEY_AUTOSTART_LOCKED)
+            .ok()
+            .flatten()
+            .and_then(|v| v.value.as_bool())
+            .unwrap_or(false);
+        self.ca_path = get_ca_cert_path();
+        self.ca_installed = self.ca_path
+            .as_ref()
+            .map(|p| is_ca_installed(p))
+            .unwrap_or(false);
+        self.proxy_enabled = is_proxy_enabled("127.0.0.1", DEFAULT_PROXY_PORT);
+        self.initialized = true;
+    }
 }
 
 /// Renders the settings view.
 pub fn render(ui: &mut egui::Ui, state: &mut AppState, settings: &mut SettingsState) {
     egui::ScrollArea::vertical().show(ui, |ui| {
-        ui.heading("Settings");
+        ui.horizontal(|ui| {
+            ui.heading("Settings");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("↻ Refresh Status").clicked() {
+                    settings.refresh_cache(&state.db);
+                }
+            });
+        });
         ui.add_space(16.0);
 
         // General section (autostart)
-        render_general_section(ui, state);
+        render_general_section(ui, state, settings);
 
         ui.add_space(24.0);
 
@@ -99,7 +160,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, settings: &mut SettingsSt
         ui.add_space(24.0);
 
         // Mode selection
-        render_mode_section(ui, state);
+        render_mode_section(ui, state, settings);
 
         ui.add_space(24.0);
 
@@ -109,7 +170,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, settings: &mut SettingsSt
 }
 
 /// Renders the general settings section (autostart, etc.).
-fn render_general_section(ui: &mut egui::Ui, state: &mut AppState) {
+fn render_general_section(ui: &mut egui::Ui, state: &mut AppState, settings: &mut SettingsState) {
     ui.label(RichText::new("General").size(16.0).strong());
     ui.add_space(8.0);
 
@@ -118,15 +179,9 @@ fn render_general_section(ui: &mut egui::Ui, state: &mut AppState) {
         .rounding(8.0)
         .inner_margin(16.0)
         .show(ui, |ui| {
-            // Autostart toggle
-            let autostart_enabled = is_autostart_enabled();
-            let is_locked = state
-                .db
-                .get_config(CONFIG_KEY_AUTOSTART_LOCKED)
-                .ok()
-                .flatten()
-                .and_then(|v| v.value.as_bool())
-                .unwrap_or(false);
+            // Use cached values
+            let autostart_enabled = settings.autostart_enabled;
+            let is_locked = settings.autostart_locked;
 
             ui.horizontal(|ui| {
                 ui.label("Start on login");
@@ -139,12 +194,18 @@ fn render_general_section(ui: &mut egui::Ui, state: &mut AppState) {
                         if ui.checkbox(&mut enabled, "").changed() {
                             if enabled {
                                 match enable_autostart() {
-                                    Ok(()) => state.set_success("Autostart enabled"),
+                                    Ok(()) => {
+                                        state.set_success("Autostart enabled");
+                                        settings.autostart_enabled = true;
+                                    }
                                     Err(e) => state.set_error(format!("Failed to enable autostart: {}", e)),
                                 }
                             } else {
                                 match disable_autostart() {
-                                    Ok(()) => state.set_success("Autostart disabled"),
+                                    Ok(()) => {
+                                        state.set_success("Autostart disabled");
+                                        settings.autostart_enabled = false;
+                                    }
                                     Err(e) => state.set_error(format!("Failed to disable autostart: {}", e)),
                                 }
                             }
@@ -169,10 +230,13 @@ fn render_general_section(ui: &mut egui::Ui, state: &mut AppState) {
                     if ui.checkbox(&mut locked, "").changed() {
                         if let Err(e) = state.db.set_config(CONFIG_KEY_AUTOSTART_LOCKED, &serde_json::json!(locked)) {
                             state.set_error(format!("Failed to update lock setting: {}", e));
-                        } else if locked {
-                            state.set_success("Autostart setting locked");
                         } else {
-                            state.set_success("Autostart setting unlocked");
+                            if locked {
+                                state.set_success("Autostart setting locked");
+                            } else {
+                                state.set_success("Autostart setting unlocked");
+                            }
+                            settings.autostart_locked = locked;
                         }
                     }
                 });
@@ -291,7 +355,7 @@ fn render_change_password_form(
 }
 
 /// Renders the proxy setup section.
-fn render_mode_section(ui: &mut egui::Ui, state: &mut AppState) {
+fn render_mode_section(ui: &mut egui::Ui, state: &mut AppState, settings: &mut SettingsState) {
     ui.label(RichText::new("Proxy Protection").size(16.0).strong());
     ui.add_space(8.0);
 
@@ -310,21 +374,18 @@ fn render_mode_section(ui: &mut egui::Ui, state: &mut AppState) {
 
             ui.add_space(12.0);
 
-            render_proxy_setup(ui, state);
+            render_proxy_setup(ui, state, settings);
         });
 }
 
 /// Renders proxy setup controls.
-fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState) {
+fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState, settings: &mut SettingsState) {
     ui.label(RichText::new("Proxy Setup").strong());
     ui.add_space(8.0);
 
-    let ca_path = get_ca_cert_path();
-    let ca_installed = ca_path
-        .as_ref()
-        .map(|p| is_ca_installed(p))
-        .unwrap_or(false);
-    let proxy_enabled = is_proxy_enabled("127.0.0.1", DEFAULT_PROXY_PORT);
+    // Use cached values
+    let ca_installed = settings.ca_installed;
+    let proxy_enabled = settings.proxy_enabled;
 
     // Status overview
     egui::Frame::none()
@@ -344,18 +405,18 @@ fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState) {
             ui.horizontal(|ui| {
                 ui.label("CA Certificate:");
                 if ca_installed {
-                    ui.colored_label(Color32::from_rgb(0x34, 0xa8, 0x53), "Installed");
+                    ui.colored_label(status::SUCCESS, "Installed");
                 } else {
-                    ui.colored_label(Color32::from_rgb(0xea, 0x43, 0x35), "Not Installed");
+                    ui.colored_label(status::ERROR, "Not Installed");
                 }
             });
 
             ui.horizontal(|ui| {
                 ui.label("System Proxy:");
                 if proxy_enabled {
-                    ui.colored_label(Color32::from_rgb(0x34, 0xa8, 0x53), "Enabled");
+                    ui.colored_label(status::SUCCESS, "Enabled");
                 } else {
-                    ui.colored_label(Color32::from_rgb(0xea, 0x43, 0x35), "Disabled");
+                    ui.colored_label(status::ERROR, "Disabled");
                 }
             });
         });
@@ -366,7 +427,7 @@ fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState) {
     ui.label(RichText::new("Step 1: Install CA Certificate").size(13.0));
     ui.add_space(4.0);
 
-    if let Some(ref ca_path) = ca_path {
+    if let Some(ref ca_path) = settings.ca_path.clone() {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Path:").weak());
             if ui
@@ -404,6 +465,7 @@ fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState) {
                     let result = uninstall_ca_certificate(ca_path);
                     if result.success {
                         state.set_success(result.message);
+                        settings.ca_installed = false;
                     } else if result.needs_admin {
                         state.set_error(format!("Admin required: {}", result.message));
                     } else {
@@ -417,6 +479,7 @@ fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState) {
                     let result = install_ca_certificate(ca_path);
                     if result.success {
                         state.set_success(result.message);
+                        settings.ca_installed = true;
                     } else if result.needs_admin {
                         state.set_error(format!("Admin required: {}", result.message));
                     } else {
@@ -436,12 +499,17 @@ fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState) {
     ui.label(RichText::new("Step 2: Configure System Proxy").size(13.0));
     ui.add_space(4.0);
 
+    // Track proxy state changes for closures
+    let mut new_proxy_state: Option<bool> = None;
+    let mut new_ca_state: Option<bool> = None;
+
     ui.horizontal(|ui| {
         if proxy_enabled {
             if ui.button("Disable Proxy").clicked() {
                 let result = disable_system_proxy();
                 if result.success {
                     state.set_success(result.message);
+                    new_proxy_state = Some(false);
                 } else {
                     state.set_error(result.message);
                 }
@@ -454,6 +522,7 @@ fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState) {
                     let result = enable_system_proxy("127.0.0.1", DEFAULT_PROXY_PORT);
                     if result.success {
                         state.set_success(result.message);
+                        new_proxy_state = Some(true);
                     } else if result.needs_admin {
                         state.set_error(format!("Admin required: {}", result.message));
                     } else {
@@ -481,20 +550,21 @@ fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState) {
 
     if fully_configured {
         ui.horizontal(|ui| {
-            ui.colored_label(Color32::from_rgb(0x34, 0xa8, 0x53), "✓");
+            ui.colored_label(status::SUCCESS, "✓");
             ui.label(RichText::new("Proxy protection is fully configured!").strong());
         });
     } else {
         ui.horizontal(|ui| {
             if ui.button("One-Click Setup").clicked() {
                 // Install CA first
-                if let Some(ref ca_path) = ca_path {
+                if let Some(ref ca_path) = settings.ca_path.clone() {
                     if !ca_installed {
                         let ca_result = install_ca_certificate(ca_path);
                         if !ca_result.success {
                             state.set_error(format!("CA install failed: {}", ca_result.message));
                             return;
                         }
+                        new_ca_state = Some(true);
                     }
                 }
 
@@ -502,6 +572,7 @@ fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState) {
                 let proxy_result = enable_system_proxy("127.0.0.1", DEFAULT_PROXY_PORT);
                 if proxy_result.success {
                     state.set_success("Proxy protection configured successfully!");
+                    new_proxy_state = Some(true);
                 } else {
                     state.set_error(format!("Proxy setup failed: {}", proxy_result.message));
                 }
@@ -512,6 +583,14 @@ fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState) {
                     .size(11.0),
             );
         });
+    }
+
+    // Apply state changes after closures
+    if let Some(proxy_state) = new_proxy_state {
+        settings.proxy_enabled = proxy_state;
+    }
+    if let Some(ca_state) = new_ca_state {
+        settings.ca_installed = ca_state;
     }
 
     ui.add_space(8.0);

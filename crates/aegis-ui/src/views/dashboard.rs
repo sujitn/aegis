@@ -3,16 +3,7 @@
 use eframe::egui::{self, Color32, RichText, Vec2};
 
 use crate::state::{AppState, ProtectionStatus, View};
-
-/// Colors for the dashboard.
-mod colors {
-    use eframe::egui::Color32;
-
-    pub const GREEN: Color32 = Color32::from_rgb(0x34, 0xa8, 0x53);
-    pub const YELLOW: Color32 = Color32::from_rgb(0xfb, 0xbc, 0x04);
-    pub const RED: Color32 = Color32::from_rgb(0xea, 0x43, 0x35);
-    pub const BLUE: Color32 = Color32::from_rgb(0x1a, 0x73, 0xe8);
-}
+use crate::theme::{cards, status};
 
 /// Renders the dashboard home view.
 pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
@@ -44,7 +35,7 @@ fn render_summary_cards(ui: &mut egui::Ui, state: &AppState) {
             ui,
             "Total",
             stats.map(|s| s.total_prompts).unwrap_or(0),
-            colors::BLUE,
+            cards::TOTAL,
         );
 
         ui.add_space(12.0);
@@ -54,7 +45,7 @@ fn render_summary_cards(ui: &mut egui::Ui, state: &AppState) {
             ui,
             "Blocked",
             stats.map(|s| s.blocked_count).unwrap_or(0),
-            colors::RED,
+            cards::BLOCKED,
         );
 
         ui.add_space(12.0);
@@ -64,7 +55,7 @@ fn render_summary_cards(ui: &mut egui::Ui, state: &AppState) {
             ui,
             "Warnings",
             stats.map(|s| s.flagged_count).unwrap_or(0),
-            colors::YELLOW,
+            cards::WARNING,
         );
 
         ui.add_space(12.0);
@@ -74,7 +65,7 @@ fn render_summary_cards(ui: &mut egui::Ui, state: &AppState) {
             ui,
             "Allowed",
             stats.map(|s| s.allowed_count).unwrap_or(0),
-            colors::GREEN,
+            cards::ALLOWED,
         );
     });
 }
@@ -192,9 +183,9 @@ fn render_recent_activity(ui: &mut egui::Ui, state: &AppState) {
                     ui.horizontal(|ui| {
                         // Action indicator
                         let (icon, color) = match event.action {
-                            aegis_storage::Action::Allowed => ("✓", colors::GREEN),
-                            aegis_storage::Action::Blocked => ("✗", colors::RED),
-                            aegis_storage::Action::Flagged => ("!", colors::YELLOW),
+                            aegis_storage::Action::Allowed => ("✓", status::SUCCESS),
+                            aegis_storage::Action::Blocked => ("✗", status::ERROR),
+                            aegis_storage::Action::Flagged => ("!", status::WARNING),
                         };
                         ui.colored_label(color, icon);
 
@@ -229,9 +220,9 @@ mod tests {
 
     #[test]
     fn test_colors_defined() {
-        assert_ne!(colors::GREEN, Color32::BLACK);
-        assert_ne!(colors::RED, Color32::BLACK);
-        assert_ne!(colors::YELLOW, Color32::BLACK);
-        assert_ne!(colors::BLUE, Color32::BLACK);
+        assert_ne!(cards::TOTAL, Color32::BLACK);
+        assert_ne!(cards::BLOCKED, Color32::BLACK);
+        assert_ne!(cards::WARNING, Color32::BLACK);
+        assert_ne!(cards::ALLOWED, Color32::BLACK);
     }
 }

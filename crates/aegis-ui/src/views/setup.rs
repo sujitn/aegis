@@ -14,6 +14,7 @@ use auto_launch::{AutoLaunch, AutoLaunchBuilder};
 use eframe::egui::{self, Color32, RichText, TextEdit};
 
 use crate::state::AppState;
+use crate::theme::{brand, progress, status};
 
 /// App name for autostart.
 const APP_NAME: &str = "Aegis";
@@ -236,7 +237,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWizardS
         // Error message
         if let Some(ref error) = wizard.error {
             ui.add_space(16.0);
-            ui.colored_label(Color32::from_rgb(0xea, 0x43, 0x35), error);
+            ui.colored_label(status::ERROR, error);
         }
     });
 }
@@ -252,11 +253,11 @@ fn render_progress(ui: &mut egui::Ui, wizard: &SetupWizardState) {
             let is_done = i < current;
 
             let color = if is_current {
-                Color32::from_rgb(0x42, 0x85, 0xf4) // Blue
+                progress::CURRENT
             } else if is_done {
-                Color32::from_rgb(0x34, 0xa8, 0x53) // Green
+                progress::DONE
             } else {
-                Color32::GRAY
+                progress::PENDING
             };
 
             // Circle
@@ -270,9 +271,9 @@ fn render_progress(ui: &mut egui::Ui, wizard: &SetupWizardState) {
                 let (line_rect, _) =
                     ui.allocate_exact_size(egui::vec2(line_width, 2.0), egui::Sense::hover());
                 let line_color = if is_done {
-                    Color32::from_rgb(0x34, 0xa8, 0x53)
+                    progress::DONE
                 } else {
-                    Color32::GRAY
+                    progress::PENDING
                 };
                 ui.painter().rect_filled(line_rect, 0.0, line_color);
             }
@@ -294,7 +295,7 @@ fn render_welcome(ui: &mut egui::Ui, wizard: &mut SetupWizardState) {
         ui.label(
             RichText::new("AI Safety for Families")
                 .size(14.0)
-                .color(Color32::from_rgb(0x42, 0x85, 0xf4)),
+                .color(brand::PRIMARY),
         );
 
         ui.add_space(24.0);
@@ -312,7 +313,7 @@ fn render_welcome(ui: &mut egui::Ui, wizard: &mut SetupWizardState) {
 
         for feature in features {
             ui.horizontal(|ui| {
-                ui.colored_label(Color32::from_rgb(0x34, 0xa8, 0x53), "✓");
+                ui.colored_label(status::SUCCESS, "✓");
                 ui.label(feature);
             });
         }
@@ -386,11 +387,11 @@ fn render_password(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWi
         let (strength_text, strength_color) = if password_len == 0 {
             ("", Color32::GRAY)
         } else if password_len < 6 {
-            ("Too short", Color32::from_rgb(0xea, 0x43, 0x35))
+            ("Too short", status::ERROR)
         } else if password_len < 10 {
-            ("Acceptable", Color32::from_rgb(0xfb, 0xbc, 0x04))
+            ("Acceptable", status::WARNING)
         } else {
-            ("Strong", Color32::from_rgb(0x34, 0xa8, 0x53))
+            ("Strong", status::SUCCESS)
         };
         if !strength_text.is_empty() {
             ui.label(
@@ -485,7 +486,7 @@ fn render_protection_level(ui: &mut egui::Ui, wizard: &mut SetupWizardState) {
                     ui.horizontal(|ui| {
                         // Radio button visual
                         let radio_color = if is_selected {
-                            Color32::from_rgb(0x42, 0x85, 0xf4)
+                            brand::PRIMARY
                         } else {
                             Color32::GRAY
                         };
@@ -547,7 +548,7 @@ fn render_ca_install(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut Setup
         } else {
             // Show success and path
             ui.colored_label(
-                Color32::from_rgb(0x34, 0xa8, 0x53),
+                status::SUCCESS,
                 "✓ CA Certificate Generated",
             );
 
@@ -879,7 +880,7 @@ fn render_complete(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWi
         ui.label(RichText::new("Setup Complete!").size(24.0).strong());
         ui.add_space(8.0);
         ui.colored_label(
-            Color32::from_rgb(0x34, 0xa8, 0x53),
+            status::SUCCESS,
             "Aegis is ready to protect your family.",
         );
 

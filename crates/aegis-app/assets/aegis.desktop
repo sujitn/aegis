@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Aegis
+Comment=AI safety platform for families
+GenericName=Parental Controls
+Exec=aegis
+Icon=aegis
+Terminal=false
+Type=Application
+Categories=Utility;Security;
+Keywords=parental;controls;ai;safety;filter;chatgpt;claude;
+StartupNotify=true
+StartupWMClass=aegis

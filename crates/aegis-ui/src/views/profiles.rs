@@ -3,6 +3,7 @@
 use eframe::egui::{self, Color32, RichText};
 
 use crate::state::{AppState, View};
+use crate::theme::status;
 
 /// State for the profile editor dialog.
 #[derive(Default)]
@@ -116,7 +117,7 @@ fn render_profile_card(
             ui.horizontal(|ui| {
                 // Status indicator
                 let status_color = if profile.enabled {
-                    Color32::from_rgb(0x34, 0xa8, 0x53)
+                    status::SUCCESS
                 } else {
                     Color32::GRAY
                 };
@@ -208,7 +209,7 @@ fn render_editor_dialog(ui: &mut egui::Ui, state: &mut AppState, editor: &mut Pr
                 // Delete button (only for existing profiles)
                 if let Some(id) = editor.editing_id {
                     if editor.confirm_delete {
-                        ui.colored_label(Color32::from_rgb(0xea, 0x43, 0x35), "Delete?");
+                        ui.colored_label(status::ERROR, "Delete?");
                         if ui.button("Yes").clicked() {
                             if let Err(e) = state.db.delete_profile(id) {
                                 state.set_error(e.to_string());

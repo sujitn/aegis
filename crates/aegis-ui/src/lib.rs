@@ -26,6 +26,7 @@
 mod app;
 pub mod error;
 pub mod state;
+pub mod theme;
 pub mod views;
 
 pub use app::DashboardApp;

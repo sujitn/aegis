@@ -1,0 +1,28 @@
+[package]
+name = "aegis-icon-gen"
+version = "0.1.0"
+edition = "2021"
+description = "Icon generation tool for Aegis"
+publish = false
+
+[[bin]]
+name = "icon-gen"
+path = "src/main.rs"
+
+[dependencies]
+# SVG rendering
+resvg = "0.44"
+usvg = "0.44"
+tiny-skia = "0.11"
+
+# ICO file generation
+ico = "0.3"
+
+# PNG encoding (resvg uses tiny-skia which gives us raw pixels)
+png = "0.17"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Path handling
+anyhow = "1.0"

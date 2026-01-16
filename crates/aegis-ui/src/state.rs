@@ -34,10 +34,11 @@ impl ProtectionStatus {
 
     /// Returns the color for this status.
     pub fn color(&self) -> egui::Color32 {
+        use crate::theme::status;
         match self {
-            Self::Active => egui::Color32::from_rgb(0x34, 0xa8, 0x53), // Green
-            Self::Paused => egui::Color32::from_rgb(0xfb, 0xbc, 0x04), // Yellow
-            Self::Disabled => egui::Color32::from_rgb(0xea, 0x43, 0x35), // Red
+            Self::Active => status::SUCCESS,  // Friendly green
+            Self::Paused => status::WARNING,  // Warm amber
+            Self::Disabled => status::ERROR,  // Soft red
         }
     }
 }
