@@ -60,7 +60,8 @@ jobs:
             libwayland-dev \
             libxcb1-dev \
             libatk1.0-dev \
-            libpango1.0-dev
+            libpango1.0-dev \
+            libxdo-dev
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -306,7 +307,8 @@ jobs:
             libwayland-dev \
             libxcb1-dev \
             libatk1.0-dev \
-            libpango1.0-dev
+            libpango1.0-dev \
+            libxdo-dev
 
       - name: Install cargo-deb
         run: cargo install cargo-deb
@@ -389,6 +391,7 @@ jobs:
             libxcb1-dev \
             libatk1.0-dev \
             libpango1.0-dev \
+            libxdo-dev \
             rpm
 
       - name: Install cargo-generate-rpm
@@ -468,6 +471,7 @@ jobs:
             libxcb1-dev \
             libatk1.0-dev \
             libpango1.0-dev \
+            libxdo-dev \
             fuse libfuse2 imagemagick
 
       - name: Download appimagetool
