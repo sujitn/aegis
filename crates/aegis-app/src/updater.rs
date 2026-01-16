@@ -638,8 +638,10 @@ mod tests {
     #[test]
     fn test_is_check_due_disabled() {
         let temp_dir = env::temp_dir().join("aegis_update_test3");
-        let mut settings = UpdateSettings::default();
-        settings.enabled = false;
+        let settings = UpdateSettings {
+            enabled: false,
+            ..Default::default()
+        };
         let manager = UpdateManager::with_settings(temp_dir, settings).unwrap();
 
         // Disabled means check is not due

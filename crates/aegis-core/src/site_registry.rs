@@ -1119,7 +1119,7 @@ mod tests {
         assert!(registry.is_monitored("custom.com"));
 
         // Reload without custom sites
-        registry.reload(|| Vec::new());
+        registry.reload(Vec::new);
         assert!(!registry.is_monitored("custom.com"));
         assert!(registry.is_monitored("api.openai.com")); // Bundled still works
     }

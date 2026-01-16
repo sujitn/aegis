@@ -130,6 +130,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::const_is_empty)]
     fn embedded_icons_exist() {
         assert!(!embedded::PROTECTED_32.is_empty());
         assert!(!embedded::PAUSED_32.is_empty());
