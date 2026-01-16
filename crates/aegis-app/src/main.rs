@@ -6,8 +6,8 @@
 //! - System tray (primary interface)
 //! - Parent Dashboard GUI (opens on demand)
 
-// Hide console window on Windows in release builds
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Hide console window on Windows (logs go to file instead)
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 use std::panic;
 use std::path::PathBuf;
@@ -212,6 +212,7 @@ fn load_profiles_from_db(db: &Database) -> ProfileManager {
 async fn start_servers(db: Database) {
     let server_db = db.clone();
     let profile_db = db.clone();
+    let proxy_db = Arc::new(db.clone());
 
     // Start HTTP API server in background (for browser extension)
     let server_config = ServerConfig::default();
@@ -294,9 +295,11 @@ async fn start_servers(db: Database) {
 
     // Start MITM proxy server in background (for system-wide protection)
     // Use the shared filtering state so ProfileProxyController can control filtering
+    // Also pass the database for event logging (live stats)
     tokio::spawn(async move {
         match ProxyConfig::with_filtering_state(filtering_state) {
             Ok(config) => {
+                let config = config.with_database(proxy_db);
                 let proxy_addr = config.addr;
                 match ProxyServer::new(config) {
                     Ok(proxy) => {

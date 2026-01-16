@@ -181,8 +181,12 @@ impl DashboardApp {
             text_color,
         );
 
-        if response.clicked() {
+        if response.clicked() && self.state.view != view {
             self.state.view = view;
+            // Refresh data when switching views to update stats
+            if let Err(e) = self.state.refresh_data() {
+                tracing::warn!("Failed to refresh data on view switch: {}", e);
+            }
         }
     }
 

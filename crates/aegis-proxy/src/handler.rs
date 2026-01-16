@@ -26,6 +26,7 @@ fn bytes_to_body(bytes: Bytes) -> Body {
 use aegis_core::classifier::{ClassificationResult, TieredClassifier};
 use aegis_core::notifications::{BlockedEvent, NotificationManager};
 use aegis_core::rule_engine::{RuleAction, RuleEngine, RuleEngineResult};
+use aegis_storage::{Action, Database};
 
 use crate::domains::is_llm_domain;
 use crate::extractor::{extract_prompt, PromptInfo};
@@ -172,6 +173,8 @@ pub struct HandlerConfig {
     pub on_allow: Option<OnAllowCallback>,
     /// Shared filtering state (controlled by ProfileProxyController).
     pub filtering_state: FilteringState,
+    /// Optional database for event logging.
+    pub database: Option<Arc<Database>>,
 }
 
 impl std::fmt::Debug for HandlerConfig {
@@ -183,6 +186,7 @@ impl std::fmt::Debug for HandlerConfig {
             .field("on_block", &self.on_block.is_some())
             .field("on_allow", &self.on_allow.is_some())
             .field("filtering_state", &self.filtering_state)
+            .field("database", &self.database.is_some())
             .finish()
     }
 }
@@ -212,6 +216,7 @@ impl ProxyHandler {
             on_block: None,
             on_allow: None,
             filtering_state: FilteringState::new(),
+            database: None,
         })
     }
 
@@ -226,6 +231,7 @@ impl ProxyHandler {
             on_block: None,
             on_allow: None,
             filtering_state,
+            database: None,
         })
     }
 
@@ -265,6 +271,31 @@ impl ProxyHandler {
     /// Evaluates rules against classification.
     fn evaluate_rules(&self, classification: &ClassificationResult) -> RuleEngineResult {
         self.config.rule_engine.evaluate_now(classification)
+    }
+
+    /// Records an event to the database if configured.
+    fn record_event(
+        &self,
+        prompt: &PromptInfo,
+        classification: &ClassificationResult,
+        action: Action,
+    ) {
+        if let Some(ref db) = self.config.database {
+            // Get the primary category from classification
+            let category = classification.matches.first().map(|m| m.category);
+            let confidence = classification.matches.first().map(|m| m.confidence);
+
+            // Log event (this also updates daily stats)
+            if let Err(e) = db.log_event(
+                &prompt.text,
+                category,
+                confidence,
+                action,
+                Some(prompt.service.clone()),
+            ) {
+                tracing::warn!("Failed to record event: {}", e);
+            }
+        }
     }
 
     /// Creates a block response.
@@ -359,6 +390,9 @@ impl ProxyHandler {
                     reason
                 );
 
+                // Record event to database
+                self.record_event(&prompt_info, &classification, Action::Blocked);
+
                 // Send notification if enabled
                 if let Some(notifications) = &self.config.notifications {
                     let event = BlockedEvent::from_rule_source(
@@ -385,6 +419,9 @@ impl ProxyHandler {
                     result.source.rule_name()
                 );
 
+                // Record event to database
+                self.record_event(&prompt_info, &classification, Action::Flagged);
+
                 // Call on_allow callback (warn still allows)
                 if let Some(callback) = &self.config.on_allow {
                     callback(&prompt_info, &result);
@@ -398,6 +435,9 @@ impl ProxyHandler {
             }
             RuleAction::Allow => {
                 tracing::debug!("Allowed request to {}", prompt_info.service);
+
+                // Record event to database
+                self.record_event(&prompt_info, &classification, Action::Allowed);
 
                 // Call on_allow callback
                 if let Some(callback) = &self.config.on_allow {
@@ -669,6 +709,7 @@ mod tests {
             on_block: None,
             on_allow: None,
             filtering_state: FilteringState::new(),
+            database: None,
         };
         let debug = format!("{:?}", config);
         assert!(debug.contains("HandlerConfig"));

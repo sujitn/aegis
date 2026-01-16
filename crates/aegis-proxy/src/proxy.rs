@@ -13,6 +13,7 @@ use tokio::sync::broadcast;
 use aegis_core::classifier::TieredClassifier;
 use aegis_core::notifications::NotificationManager;
 use aegis_core::rule_engine::RuleEngine;
+use aegis_storage::Database;
 
 use crate::ca::CaManager;
 use crate::error::{ProxyError, Result};
@@ -37,6 +38,8 @@ pub struct ProxyConfig {
     pub notifications: Option<Arc<NotificationManager>>,
     /// Shared filtering state (controlled by ProfileProxyController).
     pub filtering_state: FilteringState,
+    /// Optional database for event logging.
+    pub database: Option<Arc<Database>>,
 }
 
 impl std::fmt::Debug for ProxyConfig {
@@ -48,6 +51,7 @@ impl std::fmt::Debug for ProxyConfig {
             .field("rule_engine", &"RuleEngine")
             .field("notifications", &self.notifications.is_some())
             .field("filtering_state", &self.filtering_state)
+            .field("database", &self.database.is_some())
             .finish()
     }
 }
@@ -68,6 +72,7 @@ impl ProxyConfig {
             rule_engine: Arc::new(RuleEngine::with_defaults()),
             notifications: Some(Arc::new(NotificationManager::new())),
             filtering_state: FilteringState::new(),
+            database: None,
         })
     }
 
@@ -84,12 +89,19 @@ impl ProxyConfig {
             rule_engine: Arc::new(RuleEngine::with_defaults()),
             notifications: Some(Arc::new(NotificationManager::new())),
             filtering_state,
+            database: None,
         })
     }
 
     /// Sets the filtering state.
     pub fn set_filtering_state(mut self, filtering_state: FilteringState) -> Self {
         self.filtering_state = filtering_state;
+        self
+    }
+
+    /// Sets the database for event logging.
+    pub fn with_database(mut self, database: Arc<Database>) -> Self {
+        self.database = Some(database);
         self
     }
 
@@ -224,6 +236,7 @@ impl ProxyServer {
             on_block: self.on_block.clone(),
             on_allow: self.on_allow.clone(),
             filtering_state: self.config.filtering_state.clone(),
+            database: self.config.database.clone(),
         };
 
         let handler = ProxyHandler::new(handler_config);
@@ -268,6 +281,7 @@ impl ProxyServer {
             on_block: self.on_block.clone(),
             on_allow: self.on_allow.clone(),
             filtering_state: self.config.filtering_state.clone(),
+            database: self.config.database.clone(),
         };
 
         let config_addr = self.config.addr;
@@ -358,6 +372,7 @@ mod tests {
             rule_engine: Arc::new(RuleEngine::with_defaults()),
             notifications: None,
             filtering_state: FilteringState::new(),
+            database: None,
         }
     }
 
