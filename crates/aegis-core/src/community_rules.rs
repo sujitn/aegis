@@ -19,7 +19,9 @@ use crate::classifier::Category;
 /// Rule tier determining priority in the layered system.
 ///
 /// Higher tiers override lower tiers for the same pattern.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord, Default,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum RuleTier {
     /// Community-contributed rules (lowest priority).
@@ -428,10 +430,7 @@ impl CommunityRuleManager {
 
     /// Adds a rule to the manager.
     pub fn add_rule(&mut self, rule: CommunityRule) {
-        self.rules_by_tier
-            .entry(rule.tier)
-            .or_default()
-            .push(rule);
+        self.rules_by_tier.entry(rule.tier).or_default().push(rule);
         self.compiled = None; // Invalidate compiled rules
     }
 
@@ -486,12 +485,15 @@ impl CommunityRuleManager {
 
         // Add parent blacklist rules
         for (term, category) in &self.overrides.blacklist {
-            effective_rules.push(CommunityRule::new(
-                format!("parent_blacklist_{}", term),
-                term.clone(),
-                *category,
-                RuleSource::parent_custom(),
-            ).with_tier(RuleTier::Parent));
+            effective_rules.push(
+                CommunityRule::new(
+                    format!("parent_blacklist_{}", term),
+                    term.clone(),
+                    *category,
+                    RuleSource::parent_custom(),
+                )
+                .with_tier(RuleTier::Parent),
+            );
         }
 
         self.compiled = Some(CompiledRuleSet::compile(effective_rules)?);

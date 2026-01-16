@@ -30,6 +30,9 @@ open = "5.3"
 auto-launch = "0.5"
 chrono.workspace = true
 csv = "1.3"
+reqwest.workspace = true
+semver.workspace = true
+serde.workspace = true
 
 # For draining stale events from global receivers
 muda = "0.15"
@@ -44,3 +47,81 @@ tempfile = "3.14"
 [[example]]
 name = "test_uninstall"
 path = "../../examples/test_uninstall.rs"
+
+# ============================================================================
+# Package metadata for native installers
+# ============================================================================
+
+[package.metadata.bundle]
+# cargo-bundle configuration for macOS .app bundle and .dmg
+name = "Aegis"
+identifier = "com.aegis.app"
+icon = ["assets/icons/icon.icns"]
+version = "0.1.0"
+copyright = "Copyright © 2024 Aegis Team. All rights reserved."
+category = "public.app-category.utilities"
+short_description = "AI safety platform for families"
+long_description = """
+Aegis provides parental controls for AI chatbots like ChatGPT, Claude, and Gemini.
+Protect your children from harmful content with automatic filtering and monitoring.
+"""
+# macOS specific
+osx_minimum_system_version = "10.13"
+osx_url_schemes = ["aegis"]
+
+[package.metadata.deb]
+# cargo-deb configuration for Debian/Ubuntu .deb packages
+maintainer = "Aegis Team <support@aegis.app>"
+copyright = "2024, Aegis Team"
+license-file = ["../../LICENSE", "0"]
+extended-description = """
+Aegis AI Safety Platform
+
+Provides parental controls for AI chatbots including:
+- Content filtering for ChatGPT, Claude, Gemini, and more
+- Time-based access rules
+- Per-child profiles with custom settings
+- Browser extension and system-wide proxy modes
+"""
+depends = "$auto"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/aegis", "usr/bin/", "755"],
+    ["assets/aegis.desktop", "usr/share/applications/", "644"],
+    ["assets/icons/icon-256.png", "usr/share/icons/hicolor/256x256/apps/aegis.png", "644"],
+    ["assets/icons/icon-128.png", "usr/share/icons/hicolor/128x128/apps/aegis.png", "644"],
+    ["assets/icons/icon-64.png", "usr/share/icons/hicolor/64x64/apps/aegis.png", "644"],
+    ["assets/icons/icon-32.png", "usr/share/icons/hicolor/32x32/apps/aegis.png", "644"],
+]
+maintainer-scripts = "debian/"
+systemd-units = { enable = false }
+
+[package.metadata.wix]
+# cargo-wix configuration for Windows .msi installer
+upgrade-guid = "A3E91F2D-4B5C-6D7E-8F9A-0B1C2D3E4F5A"
+path-guid = "B4F02G3E-5C6D-7E8F-9A0B-1C2D3E4F5A6B"
+license = false
+eula = false
+banner = "assets/wix/banner.bmp"
+dialog = "assets/wix/dialog.bmp"
+product-icon = "assets/icons/icon.ico"
+product-name = "Aegis AI Safety"
+manufacturer = "Aegis Team"
+
+[package.metadata.rpm]
+# cargo-generate-rpm configuration
+package = "aegis"
+
+[package.metadata.rpm.cargo]
+buildflags = ["--release"]
+
+[package.metadata.rpm.targets]
+aegis = { path = "/usr/bin/aegis" }
+
+[package.metadata.rpm.files]
+"../assets/aegis.desktop" = { path = "/usr/share/applications/aegis.desktop" }
+"../assets/icons/icon-256.png" = { path = "/usr/share/icons/hicolor/256x256/apps/aegis.png" }
+"../assets/icons/icon-128.png" = { path = "/usr/share/icons/hicolor/128x128/apps/aegis.png" }
+"../assets/icons/icon-64.png" = { path = "/usr/share/icons/hicolor/64x64/apps/aegis.png" }
+"../assets/icons/icon-32.png" = { path = "/usr/share/icons/hicolor/32x32/apps/aegis.png" }

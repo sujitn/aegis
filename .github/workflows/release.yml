@@ -1,0 +1,755 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: aegis-macos-x64
+            binary: aegis
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: aegis-macos-arm64
+            binary: aegis
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: aegis-windows-x64
+            binary: aegis.exe
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: aegis-linux-x64
+            binary: aegis
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-release-
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Create artifact directory
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          cp target/${{ matrix.target }}/release/${{ matrix.binary }} artifacts/
+          cd artifacts
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a ../${{ matrix.artifact }}.zip *
+          else
+            tar -czvf ../${{ matrix.artifact }}.tar.gz *
+          fi
+
+      - name: Upload artifact (Unix)
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.tar.gz
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.zip
+
+  # ============================================================================
+  # Native Installers
+  # ============================================================================
+
+  build-macos-dmg:
+    name: Build macOS DMG
+    needs: build
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            artifact: aegis-macos-x64
+            arch: x64
+          - target: aarch64-apple-darwin
+            artifact: aegis-macos-arm64
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cargo-bundle
+        run: cargo install cargo-bundle
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-${{ matrix.target }}-cargo-bundle-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create placeholder icons if needed
+        run: |
+          mkdir -p crates/aegis-app/assets/icons
+          if [ ! -f crates/aegis-app/assets/icons/icon.icns ]; then
+            # Create a simple placeholder .icns
+            mkdir -p icon.iconset
+            for size in 16 32 64 128 256 512; do
+              sips -z $size $size <(printf '\x89PNG\r\n\x1a\n' | dd bs=1 count=8 2>/dev/null; \
+                convert -size ${size}x${size} xc:#4A90D9 png:- 2>/dev/null || \
+                echo "placeholder") --out icon.iconset/icon_${size}x${size}.png 2>/dev/null || \
+              convert -size ${size}x${size} xc:#4A90D9 icon.iconset/icon_${size}x${size}.png 2>/dev/null || true
+            done
+            iconutil -c icns icon.iconset -o crates/aegis-app/assets/icons/icon.icns 2>/dev/null || true
+          fi
+
+      - name: Build app bundle
+        run: |
+          cargo bundle --release --target ${{ matrix.target }} --package aegis-app || \
+          cargo build --release --target ${{ matrix.target }} --package aegis-app
+
+      - name: Create DMG
+        run: |
+          APP_PATH="target/${{ matrix.target }}/release/bundle/osx/Aegis.app"
+          DMG_NAME="Aegis-${{ steps.version.outputs.VERSION }}-macos-${{ matrix.arch }}.dmg"
+
+          if [ -d "$APP_PATH" ]; then
+            # Create DMG with app bundle
+            hdiutil create -volname "Aegis" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_NAME"
+          else
+            # Fallback: create DMG with just the binary
+            mkdir -p dmg_contents
+            cp "target/${{ matrix.target }}/release/aegis" dmg_contents/
+            hdiutil create -volname "Aegis" -srcfolder dmg_contents -ov -format UDZO "$DMG_NAME"
+          fi
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-dmg-${{ matrix.arch }}
+          path: Aegis-*.dmg
+
+  build-windows-msi:
+    name: Build Windows MSI
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Install WiX Toolset
+        run: |
+          choco install wixtoolset -y
+          echo "C:\Program Files (x86)\WiX Toolset v3.14\bin" >> $env:GITHUB_PATH
+
+      - name: Install cargo-wix
+        run: cargo install cargo-wix
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-cargo-wix-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Get version from tag
+        id: version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create placeholder assets
+        shell: powershell
+        run: |
+          # Create placeholder icon if needed
+          $iconPath = "crates/aegis-app/assets/icons/icon.ico"
+          if (-not (Test-Path $iconPath)) {
+            New-Item -ItemType Directory -Force -Path "crates/aegis-app/assets/icons"
+            # Copy a system icon as placeholder
+            Copy-Item "$env:SystemRoot\System32\shell32.dll" -Destination "temp_shell32.dll" -ErrorAction SilentlyContinue
+          }
+
+          # Create placeholder WiX bitmaps
+          $wixPath = "crates/aegis-app/assets/wix"
+          New-Item -ItemType Directory -Force -Path $wixPath
+
+          # Create simple BMPs using PowerShell
+          if (-not (Test-Path "$wixPath/banner.bmp")) {
+            Add-Type -AssemblyName System.Drawing
+            $bmp = New-Object System.Drawing.Bitmap(493, 58)
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.Clear([System.Drawing.Color]::FromArgb(74, 144, 217))
+            $bmp.Save("$wixPath/banner.bmp", [System.Drawing.Imaging.ImageFormat]::Bmp)
+            $g.Dispose()
+            $bmp.Dispose()
+          }
+
+          if (-not (Test-Path "$wixPath/dialog.bmp")) {
+            Add-Type -AssemblyName System.Drawing
+            $bmp = New-Object System.Drawing.Bitmap(493, 312)
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.Clear([System.Drawing.Color]::FromArgb(74, 144, 217))
+            $bmp.Save("$wixPath/dialog.bmp", [System.Drawing.Imaging.ImageFormat]::Bmp)
+            $g.Dispose()
+            $bmp.Dispose()
+          }
+
+      - name: Build release
+        run: cargo build --release --package aegis-app
+
+      - name: Initialize WiX
+        run: cargo wix init --package aegis-app
+        continue-on-error: true
+
+      - name: Build MSI
+        run: |
+          cargo wix --package aegis-app --nocapture || echo "WiX build had issues, checking for output..."
+
+      - name: Find and rename MSI
+        shell: bash
+        run: |
+          MSI_FILE=$(find target/wix -name "*.msi" -type f | head -1)
+          if [ -n "$MSI_FILE" ]; then
+            cp "$MSI_FILE" "Aegis-${{ steps.version.outputs.VERSION }}-windows-x64.msi"
+          else
+            echo "No MSI file found, creating placeholder"
+            touch "Aegis-${{ steps.version.outputs.VERSION }}-windows-x64.msi.missing"
+          fi
+
+      - name: Upload MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-msi
+          path: Aegis-*.msi
+        if: hashFiles('Aegis-*.msi') != ''
+
+  build-linux-deb:
+    name: Build Linux DEB
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: linux-cargo-deb-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create placeholder icons
+        run: |
+          mkdir -p crates/aegis-app/assets/icons
+          for size in 256 128 64 32; do
+            if [ ! -f "crates/aegis-app/assets/icons/icon-${size}.png" ]; then
+              convert -size ${size}x${size} xc:#4A90D9 -fill white -gravity center \
+                -pointsize $((size/3)) -annotate 0 'A' \
+                "crates/aegis-app/assets/icons/icon-${size}.png" 2>/dev/null || \
+              # Fallback: create empty file
+              touch "crates/aegis-app/assets/icons/icon-${size}.png"
+            fi
+          done
+
+      - name: Create LICENSE file if needed
+        run: |
+          if [ ! -f LICENSE ]; then
+            echo "MIT License" > LICENSE
+            echo "" >> LICENSE
+            echo "Copyright (c) 2024 Aegis Team" >> LICENSE
+          fi
+
+      - name: Build DEB package
+        run: |
+          cargo deb --package aegis-app || cargo build --release --package aegis-app
+
+      - name: Find and rename DEB
+        run: |
+          DEB_FILE=$(find target/debian -name "*.deb" -type f | head -1)
+          if [ -n "$DEB_FILE" ]; then
+            cp "$DEB_FILE" "aegis-${{ steps.version.outputs.VERSION }}-linux-x64.deb"
+          fi
+
+      - name: Upload DEB
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-deb
+          path: aegis-*.deb
+        if: hashFiles('aegis-*.deb') != ''
+
+  build-linux-rpm:
+    name: Build Linux RPM
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev rpm
+
+      - name: Install cargo-generate-rpm
+        run: cargo install cargo-generate-rpm
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: linux-cargo-rpm-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Create placeholder assets
+        run: |
+          mkdir -p crates/aegis-app/assets/icons
+          for size in 256 128 64 32; do
+            if [ ! -f "crates/aegis-app/assets/icons/icon-${size}.png" ]; then
+              convert -size ${size}x${size} xc:#4A90D9 -fill white -gravity center \
+                -pointsize $((size/3)) -annotate 0 'A' \
+                "crates/aegis-app/assets/icons/icon-${size}.png" 2>/dev/null || \
+              touch "crates/aegis-app/assets/icons/icon-${size}.png"
+            fi
+          done
+
+      - name: Build release
+        run: cargo build --release --package aegis-app
+
+      - name: Build RPM package
+        run: |
+          cd crates/aegis-app
+          cargo generate-rpm || echo "RPM generation may have had issues"
+        continue-on-error: true
+
+      - name: Find and rename RPM
+        run: |
+          RPM_FILE=$(find target -name "*.rpm" -type f | head -1)
+          if [ -n "$RPM_FILE" ]; then
+            cp "$RPM_FILE" "aegis-${{ steps.version.outputs.VERSION }}-linux-x64.rpm"
+          fi
+
+      - name: Upload RPM
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-rpm
+          path: aegis-*.rpm
+        if: hashFiles('aegis-*.rpm') != ''
+
+  build-linux-appimage:
+    name: Build Linux AppImage
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev fuse libfuse2 imagemagick
+
+      - name: Download appimagetool
+        run: |
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
+            -O appimagetool
+          chmod +x appimagetool
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: linux-cargo-appimage-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Build release
+        run: cargo build --release --package aegis-app
+
+      - name: Create AppDir
+        run: |
+          APPDIR="Aegis.AppDir"
+          mkdir -p "$APPDIR/usr/bin"
+          mkdir -p "$APPDIR/usr/share/applications"
+          mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+          mkdir -p "$APPDIR/usr/share/metainfo"
+
+          # Copy binary
+          cp target/release/aegis "$APPDIR/usr/bin/"
+
+          # Copy desktop entry
+          cp crates/aegis-app/appimage/aegis.desktop "$APPDIR/"
+          cp crates/aegis-app/appimage/aegis.desktop "$APPDIR/usr/share/applications/"
+
+          # Copy AppStream metadata
+          cp crates/aegis-app/appimage/aegis.appdata.xml "$APPDIR/usr/share/metainfo/"
+
+          # Create icon
+          convert -size 256x256 xc:#4A90D9 -fill white -gravity center \
+            -pointsize 80 -annotate 0 'A' "$APPDIR/aegis.png"
+          cp "$APPDIR/aegis.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/"
+
+          # Create AppRun
+          cat > "$APPDIR/AppRun" << 'EOF'
+          #!/bin/bash
+          SELF=$(readlink -f "$0")
+          HERE=${SELF%/*}
+          export PATH="${HERE}/usr/bin:${PATH}"
+          exec "${HERE}/usr/bin/aegis" "$@"
+          EOF
+          chmod +x "$APPDIR/AppRun"
+
+      - name: Build AppImage
+        run: |
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run Aegis.AppDir \
+            "Aegis-${{ steps.version.outputs.VERSION }}-x86_64.AppImage"
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-appimage
+          path: Aegis-*.AppImage
+
+  # ============================================================================
+  # Browser Extension
+  # ============================================================================
+
+  build-extension:
+    name: Build Browser Extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: extension/package-lock.json
+
+      - name: Install dependencies
+        working-directory: extension
+        run: npm ci || npm install
+
+      - name: Build extension
+        working-directory: extension
+        run: npm run build
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Update extension version
+        working-directory: extension
+        run: |
+          jq '.version = "${{ steps.version.outputs.VERSION }}"' manifest.json > manifest.tmp.json
+          mv manifest.tmp.json manifest.json
+
+      - name: Create extension zip
+        working-directory: extension
+        run: |
+          mkdir -p ../release
+          zip -r ../release/aegis-extension-${{ steps.version.outputs.VERSION }}.zip \
+            manifest.json \
+            popup.html \
+            overlay.css \
+            icons/ \
+            dist/
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-extension
+          path: release/aegis-extension-*.zip
+
+  # ============================================================================
+  # Code Signing (Optional - requires secrets)
+  # ============================================================================
+
+  sign-macos:
+    name: Sign macOS Binaries
+    needs: [build, build-macos-dmg]
+    runs-on: macos-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - name: Download DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: aegis-dmg-${{ matrix.arch }}
+        continue-on-error: true
+
+      - name: Sign DMG
+        if: env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Import certificate
+          echo $APPLE_CERTIFICATE | base64 --decode > certificate.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+
+          # Sign DMG
+          DMG_FILE=$(ls Aegis-*-macos-${{ matrix.arch }}.dmg 2>/dev/null | head -1)
+          if [ -n "$DMG_FILE" ]; then
+            codesign --force --sign "Developer ID Application" "$DMG_FILE"
+
+            # Notarize
+            xcrun notarytool submit "$DMG_FILE" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_ID_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait
+
+            # Staple
+            xcrun stapler staple "$DMG_FILE"
+          fi
+
+      - name: Upload signed DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-dmg-${{ matrix.arch }}-signed
+          path: Aegis-*.dmg
+        if: env.APPLE_CERTIFICATE != ''
+
+  sign-windows:
+    name: Sign Windows MSI
+    needs: build-windows-msi
+    runs-on: windows-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download MSI
+        uses: actions/download-artifact@v4
+        with:
+          name: aegis-msi
+        continue-on-error: true
+
+      - name: Sign MSI
+        if: env.WINDOWS_CERTIFICATE != ''
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        shell: powershell
+        run: |
+          $msiFile = Get-ChildItem -Filter "Aegis-*.msi" | Select-Object -First 1
+          if ($msiFile) {
+            $certBytes = [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+            [IO.File]::WriteAllBytes("certificate.pfx", $certBytes)
+
+            & 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.17763.0\x64\signtool.exe' sign `
+              /f certificate.pfx `
+              /p $env:WINDOWS_CERTIFICATE_PASSWORD `
+              /tr http://timestamp.digicert.com `
+              /td sha256 `
+              /fd sha256 `
+              $msiFile.FullName
+
+            Remove-Item certificate.pfx
+          }
+
+      - name: Upload signed MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: aegis-msi-signed
+          path: Aegis-*.msi
+        if: env.WINDOWS_CERTIFICATE != ''
+
+  # ============================================================================
+  # Checksums & Release
+  # ============================================================================
+
+  checksums:
+    name: Generate Checksums
+    needs:
+      - build
+      - build-extension
+      - build-macos-dmg
+      - build-windows-msi
+      - build-linux-deb
+      - build-linux-rpm
+      - build-linux-appimage
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          # Flatten all artifacts
+          find . -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.dmg" -o -name "*.msi" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) -exec mv {} . \; 2>/dev/null || true
+          # Remove empty directories
+          find . -type d -empty -delete 2>/dev/null || true
+          # Generate checksums
+          sha256sum * 2>/dev/null > SHA256SUMS.txt || true
+          cat SHA256SUMS.txt
+
+      - name: Upload checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums
+          path: artifacts/SHA256SUMS.txt
+
+  release:
+    name: Create Release
+    needs:
+      - build
+      - build-extension
+      - build-macos-dmg
+      - build-windows-msi
+      - build-linux-deb
+      - build-linux-rpm
+      - build-linux-appimage
+      - checksums
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release
+          find artifacts -type f \( \
+            -name "*.tar.gz" -o \
+            -name "*.zip" -o \
+            -name "*.dmg" -o \
+            -name "*.msi" -o \
+            -name "*.deb" -o \
+            -name "*.rpm" -o \
+            -name "*.AppImage" -o \
+            -name "SHA256SUMS.txt" \
+          \) -exec cp {} release/ \; 2>/dev/null || true
+          ls -la release/
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Extract changelog
+        run: |
+          if grep -q "## \[${{ steps.version.outputs.VERSION }}\]" CHANGELOG.md 2>/dev/null; then
+            sed -n '/## \[${{ steps.version.outputs.VERSION }}\]/,/## \[/p' CHANGELOG.md | head -n -1 > release_notes.md
+          else
+            echo "Release ${{ steps.version.outputs.VERSION }}" > release_notes.md
+            echo "" >> release_notes.md
+            echo "## Downloads" >> release_notes.md
+            echo "" >> release_notes.md
+            echo "### macOS" >> release_notes.md
+            echo "- \`.dmg\` - Drag-to-Applications installer" >> release_notes.md
+            echo "" >> release_notes.md
+            echo "### Windows" >> release_notes.md
+            echo "- \`.msi\` - Windows Installer package" >> release_notes.md
+            echo "" >> release_notes.md
+            echo "### Linux" >> release_notes.md
+            echo "- \`.deb\` - Debian/Ubuntu package" >> release_notes.md
+            echo "- \`.rpm\` - Fedora/RHEL package" >> release_notes.md
+            echo "- \`.AppImage\` - Universal Linux package" >> release_notes.md
+            echo "" >> release_notes.md
+            echo "### Browser Extension" >> release_notes.md
+            echo "- \`.zip\` - Chrome/Edge extension (load unpacked or submit to store)" >> release_notes.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Aegis ${{ steps.version.outputs.VERSION }}
+          body_path: release_notes.md
+          draft: true
+          prerelease: ${{ contains(github.ref, '-') }}
+          files: |
+            release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -101,6 +101,7 @@ pub struct CategoryCounts {
     pub jailbreak: i64,
     pub hate: i64,
     pub illegal: i64,
+    pub profanity: i64,
 }
 
 impl CategoryCounts {
@@ -113,6 +114,7 @@ impl CategoryCounts {
             Category::Jailbreak => self.jailbreak += 1,
             Category::Hate => self.hate += 1,
             Category::Illegal => self.illegal += 1,
+            Category::Profanity => self.profanity += 1,
         }
     }
 }
@@ -205,4 +207,57 @@ pub struct NewProfile {
     pub content_rules: serde_json::Value,
     /// Whether this profile is enabled.
     pub enabled: bool,
+}
+
+/// A site entry stored in the database.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Site {
+    /// Unique identifier.
+    pub id: i64,
+    /// Domain pattern (exact or wildcard).
+    pub pattern: String,
+    /// Human-friendly display name.
+    pub name: String,
+    /// Site category (consumer, api, enterprise).
+    pub category: String,
+    /// Parser ID for F026 integration.
+    pub parser_id: Option<String>,
+    /// Whether this site is enabled.
+    pub enabled: bool,
+    /// Source of this entry (bundled, remote, custom).
+    pub source: String,
+    /// Priority for pattern matching.
+    pub priority: i32,
+    /// Created timestamp.
+    pub created_at: DateTime<Utc>,
+    /// Updated timestamp.
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Parameters for creating a new site.
+#[derive(Debug, Clone)]
+pub struct NewSite {
+    /// Domain pattern (exact or wildcard).
+    pub pattern: String,
+    /// Human-friendly display name.
+    pub name: String,
+    /// Site category (consumer, api, enterprise).
+    pub category: String,
+    /// Parser ID for F026 integration.
+    pub parser_id: Option<String>,
+    /// Whether this site is enabled.
+    pub enabled: bool,
+    /// Source of this entry (bundled, remote, custom).
+    pub source: String,
+    /// Priority for pattern matching.
+    pub priority: i32,
+}
+
+/// A disabled bundled site pattern.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DisabledBundledSite {
+    /// The pattern that is disabled.
+    pub pattern: String,
+    /// When it was disabled.
+    pub disabled_at: DateTime<Utc>,
 }

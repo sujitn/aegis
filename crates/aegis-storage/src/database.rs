@@ -9,12 +9,13 @@ use tracing::info;
 
 use crate::error::{Result, StorageError};
 use crate::models::{
-    Action, Auth, Config, DailyStats, Event, NewEvent, NewProfile, NewRule, Profile, Rule,
+    Action, Auth, Config, DailyStats, DisabledBundledSite, Event, NewEvent, NewProfile, NewRule,
+    NewSite, Profile, Rule, Site,
 };
 use crate::pool::ConnectionPool;
 use crate::repository::{
-    create_preview, hash_prompt, AuthRepo, ConfigRepo, EventsRepo, ProfileRepo, RulesRepo,
-    StatsRepo,
+    create_preview, hash_prompt, AuthRepo, ConfigRepo, DisabledBundledRepo, EventsRepo,
+    ProfileRepo, RulesRepo, SiteRepo, StatsRepo,
 };
 
 /// High-level database interface for Aegis.
@@ -335,6 +336,124 @@ impl Database {
     pub fn set_protection_state(&self, state: &str) -> Result<()> {
         let conn = self.pool.get()?;
         ConfigRepo::set(&conn, Self::PROTECTION_STATE_KEY, &serde_json::json!(state))
+    }
+
+    // === Sites ===
+
+    /// Create a new site.
+    pub fn create_site(&self, site: NewSite) -> Result<i64> {
+        let conn = self.pool.get()?;
+        SiteRepo::insert(&conn, site)
+    }
+
+    /// Get a site by ID.
+    pub fn get_site(&self, id: i64) -> Result<Option<Site>> {
+        let conn = self.pool.get()?;
+        SiteRepo::get_by_id(&conn, id)
+    }
+
+    /// Get a site by pattern.
+    pub fn get_site_by_pattern(&self, pattern: &str) -> Result<Option<Site>> {
+        let conn = self.pool.get()?;
+        SiteRepo::get_by_pattern(&conn, pattern)
+    }
+
+    /// Get all sites.
+    pub fn get_all_sites(&self) -> Result<Vec<Site>> {
+        let conn = self.pool.get()?;
+        SiteRepo::get_all(&conn)
+    }
+
+    /// Get all enabled sites.
+    pub fn get_enabled_sites(&self) -> Result<Vec<Site>> {
+        let conn = self.pool.get()?;
+        SiteRepo::get_enabled(&conn)
+    }
+
+    /// Get sites by source.
+    pub fn get_sites_by_source(&self, source: &str) -> Result<Vec<Site>> {
+        let conn = self.pool.get()?;
+        SiteRepo::get_by_source(&conn, source)
+    }
+
+    /// Update a site.
+    pub fn update_site(&self, id: i64, site: NewSite) -> Result<()> {
+        let conn = self.pool.get()?;
+        SiteRepo::update(&conn, id, site)
+    }
+
+    /// Enable or disable a site.
+    pub fn set_site_enabled(&self, id: i64, enabled: bool) -> Result<()> {
+        let conn = self.pool.get()?;
+        SiteRepo::set_enabled(&conn, id, enabled)
+    }
+
+    /// Enable or disable a site by pattern.
+    pub fn set_site_enabled_by_pattern(&self, pattern: &str, enabled: bool) -> Result<()> {
+        let conn = self.pool.get()?;
+        SiteRepo::set_enabled_by_pattern(&conn, pattern, enabled)
+    }
+
+    /// Delete a site.
+    pub fn delete_site(&self, id: i64) -> Result<()> {
+        let conn = self.pool.get()?;
+        SiteRepo::delete(&conn, id)
+    }
+
+    /// Delete a site by pattern.
+    pub fn delete_site_by_pattern(&self, pattern: &str) -> Result<()> {
+        let conn = self.pool.get()?;
+        SiteRepo::delete_by_pattern(&conn, pattern)
+    }
+
+    /// Count total sites.
+    pub fn count_sites(&self) -> Result<i64> {
+        let conn = self.pool.get()?;
+        SiteRepo::count(&conn)
+    }
+
+    /// Upsert a site (insert or update by pattern).
+    pub fn upsert_site(&self, site: NewSite) -> Result<i64> {
+        let conn = self.pool.get()?;
+        SiteRepo::upsert(&conn, site)
+    }
+
+    // === Disabled Bundled Sites ===
+
+    /// Disable a bundled site.
+    pub fn disable_bundled_site(&self, pattern: &str) -> Result<()> {
+        let conn = self.pool.get()?;
+        DisabledBundledRepo::add(&conn, pattern)
+    }
+
+    /// Re-enable a bundled site.
+    pub fn enable_bundled_site(&self, pattern: &str) -> Result<()> {
+        let conn = self.pool.get()?;
+        DisabledBundledRepo::remove(&conn, pattern)
+    }
+
+    /// Check if a bundled site is disabled.
+    pub fn is_bundled_site_disabled(&self, pattern: &str) -> Result<bool> {
+        let conn = self.pool.get()?;
+        DisabledBundledRepo::is_disabled(&conn, pattern)
+    }
+
+    /// Get all disabled bundled sites.
+    pub fn get_disabled_bundled_sites(&self) -> Result<Vec<DisabledBundledSite>> {
+        let conn = self.pool.get()?;
+        DisabledBundledRepo::get_all(&conn)
+    }
+
+    /// Get all disabled bundled site patterns.
+    pub fn get_disabled_bundled_patterns(&self) -> Result<Vec<String>> {
+        let conn = self.pool.get()?;
+        DisabledBundledRepo::get_patterns(&conn)
+    }
+
+    /// Clear all disabled bundled sites.
+    pub fn clear_disabled_bundled_sites(&self) -> Result<()> {
+        let conn = self.pool.get()?;
+        DisabledBundledRepo::clear(&conn)
     }
 }
 

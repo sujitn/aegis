@@ -39,8 +39,8 @@ mod schema;
 pub use database::Database;
 pub use error::{Result, StorageError};
 pub use models::{
-    Action, Auth, CategoryCounts, Config, DailyStats, Event, NewEvent, NewProfile, NewRule,
-    Profile, Rule,
+    Action, Auth, CategoryCounts, Config, DailyStats, DisabledBundledSite, Event, NewEvent,
+    NewProfile, NewRule, NewSite, Profile, Rule, Site,
 };
 pub use pool::ConnectionPool;
 pub use repository::{create_preview, hash_prompt};

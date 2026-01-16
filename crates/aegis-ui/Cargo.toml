@@ -32,5 +32,8 @@ open = "5.3"
 # Autostart
 auto-launch = "0.5"
 
+# Image loading for window icon
+image = { version = "0.25", default-features = false, features = ["png"] }
+
 [dev-dependencies]
 tokio-test.workspace = true

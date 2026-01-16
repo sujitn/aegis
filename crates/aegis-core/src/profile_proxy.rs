@@ -706,8 +706,8 @@ mod tests {
         let callback_count = Arc::new(AtomicUsize::new(0));
         let count_clone = callback_count.clone();
 
-        let controller = ProfileProxyController::with_defaults(profiles, protection)
-            .on_switch(move |_event| {
+        let controller =
+            ProfileProxyController::with_defaults(profiles, protection).on_switch(move |_event| {
                 count_clone.fetch_add(1, Ordering::SeqCst);
             });
 

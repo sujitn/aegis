@@ -1,0 +1,47 @@
+#!/bin/sh
+# Post-removal script for Aegis
+
+set -e
+
+case "$1" in
+    purge)
+        # Remove user data directory
+        if [ -d "$HOME/.local/share/aegis" ]; then
+            rm -rf "$HOME/.local/share/aegis"
+        fi
+
+        # Remove config directory
+        if [ -d "$HOME/.config/aegis" ]; then
+            rm -rf "$HOME/.config/aegis"
+        fi
+
+        # Update icon cache
+        if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+            gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+        fi
+
+        # Update desktop database
+        if command -v update-desktop-database >/dev/null 2>&1; then
+            update-desktop-database /usr/share/applications 2>/dev/null || true
+        fi
+        ;;
+
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        # Update icon cache
+        if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+            gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
+        fi
+
+        # Update desktop database
+        if command -v update-desktop-database >/dev/null 2>&1; then
+            update-desktop-database /usr/share/applications 2>/dev/null || true
+        fi
+        ;;
+
+    *)
+        echo "postrm called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

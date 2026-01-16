@@ -5,6 +5,7 @@ pub mod config;
 pub mod events;
 pub mod profiles;
 pub mod rules;
+pub mod sites;
 pub mod stats;
 
 pub use auth::AuthRepo;
@@ -12,4 +13,5 @@ pub use config::ConfigRepo;
 pub use events::{create_preview, hash_prompt, EventsRepo};
 pub use profiles::ProfileRepo;
 pub use rules::RulesRepo;
+pub use sites::{DisabledBundledRepo, SiteRepo};
 pub use stats::StatsRepo;

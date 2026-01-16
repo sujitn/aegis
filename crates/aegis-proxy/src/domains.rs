@@ -2,11 +2,26 @@
 //!
 //! Defines which domains should be intercepted for content filtering
 //! and which should be passed through.
+//!
+//! This module now uses the dynamic SiteRegistry (F027) for flexible
+//! site management while maintaining backward compatibility.
+
+use std::sync::Arc;
+
+use aegis_core::site_registry::{bundled_sites, SiteRegistry};
+use once_cell::sync::Lazy;
+
+/// Global site registry instance.
+static SITE_REGISTRY: Lazy<Arc<SiteRegistry>> =
+    Lazy::new(|| Arc::new(SiteRegistry::with_defaults()));
 
 /// List of LLM service domains to intercept.
 ///
 /// Traffic to these domains will be inspected for prompt content.
 /// All other domains are passed through without inspection.
+///
+/// Note: This is kept for backward compatibility. New code should use
+/// `SITE_REGISTRY.is_monitored()` instead.
 pub const LLM_DOMAINS: &[&str] = &[
     // OpenAI
     "api.openai.com",
@@ -45,6 +60,9 @@ pub const LLM_DOMAINS: &[&str] = &[
 
 /// Checks if the given host is an LLM domain that should be intercepted.
 ///
+/// This function now uses the dynamic SiteRegistry (F027) for checking,
+/// which supports wildcards, custom sites, and disabled bundled sites.
+///
 /// # Examples
 ///
 /// ```
@@ -56,22 +74,23 @@ pub const LLM_DOMAINS: &[&str] = &[
 /// assert!(!is_llm_domain("example.com"));
 /// ```
 pub fn is_llm_domain(host: &str) -> bool {
-    // Remove port if present
-    let host = host.split(':').next().unwrap_or(host);
+    SITE_REGISTRY.is_monitored(host)
+}
 
-    // Check exact match
-    if LLM_DOMAINS.contains(&host) {
-        return true;
-    }
+/// Returns the global site registry instance.
+///
+/// Use this for advanced operations like adding custom sites,
+/// disabling bundled sites, or getting parser IDs.
+pub fn get_registry() -> Arc<SiteRegistry> {
+    Arc::clone(&SITE_REGISTRY)
+}
 
-    // Check subdomain match (e.g., www.chatgpt.com -> chatgpt.com)
-    for domain in LLM_DOMAINS {
-        if host.ends_with(&format!(".{}", domain)) {
-            return true;
-        }
-    }
-
-    false
+/// Gets a clone of the default bundled sites.
+///
+/// This returns the compiled-in default list, useful for
+/// resetting or inspecting the bundled sites.
+pub fn get_bundled_sites() -> Vec<aegis_core::site_registry::SiteEntry> {
+    bundled_sites()
 }
 
 /// Returns the primary domain name for logging purposes.
@@ -95,37 +114,19 @@ pub fn normalize_domain(host: &str) -> &str {
 }
 
 /// Returns a human-friendly name for the LLM service.
+///
+/// This function now uses the dynamic SiteRegistry (F027) which
+/// provides service names from site entries.
 pub fn service_name(host: &str) -> &'static str {
-    let host = host.split(':').next().unwrap_or(host);
+    SITE_REGISTRY.service_name(host)
+}
 
-    if host.contains("openai.com") || host.contains("chatgpt.com") {
-        "ChatGPT"
-    } else if host.contains("claude.ai") || host.contains("anthropic.com") {
-        "Claude"
-    } else if host.contains("gemini.google.com")
-        || host.contains("googleapis.com")
-        || host.contains("aistudio.google.com")
-    {
-        "Gemini"
-    } else if host.contains("x.ai") || host.contains("grok") {
-        "Grok"
-    } else if host.contains("perplexity.ai") {
-        "Perplexity"
-    } else if host.contains("mistral.ai") {
-        "Mistral"
-    } else if host.contains("cohere") {
-        "Cohere"
-    } else if host.contains("meta.ai") {
-        "Meta AI"
-    } else if host.contains("copilot.microsoft.com") {
-        "Copilot"
-    } else if host.contains("character.ai") {
-        "Character AI"
-    } else if host.contains("huggingface.co") {
-        "Hugging Face"
-    } else {
-        "Unknown LLM"
-    }
+/// Gets the parser ID for a host from the registry.
+///
+/// This links to F026 Smart Content Parsing - each site can specify
+/// which parser to use for its payloads.
+pub fn parser_id(host: &str) -> Option<String> {
+    SITE_REGISTRY.parser_id(host)
 }
 
 #[cfg(test)]
@@ -219,5 +220,37 @@ mod tests {
     #[test]
     fn service_name_unknown() {
         assert_eq!(service_name("example.com"), "Unknown LLM");
+    }
+
+    // ==================== Registry Tests ====================
+
+    #[test]
+    fn get_registry_returns_registry() {
+        let registry = get_registry();
+        assert!(registry.is_monitored("api.openai.com"));
+    }
+
+    #[test]
+    fn get_bundled_sites_not_empty() {
+        let sites = get_bundled_sites();
+        assert!(!sites.is_empty());
+    }
+
+    #[test]
+    fn parser_id_openai() {
+        let id = parser_id("api.openai.com");
+        assert_eq!(id, Some("openai_json".to_string()));
+    }
+
+    #[test]
+    fn parser_id_anthropic() {
+        let id = parser_id("api.anthropic.com");
+        assert_eq!(id, Some("anthropic_json".to_string()));
+    }
+
+    #[test]
+    fn parser_id_unknown() {
+        let id = parser_id("example.com");
+        assert!(id.is_none());
     }
 }

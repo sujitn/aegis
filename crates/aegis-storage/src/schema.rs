@@ -6,7 +6,7 @@ use tracing::info;
 use crate::error::Result;
 
 /// Current schema version.
-pub const SCHEMA_VERSION: i32 = 2;
+pub const SCHEMA_VERSION: i32 = 3;
 
 /// Run all pending migrations.
 pub fn run_migrations(conn: &Connection) -> Result<()> {
@@ -24,6 +24,10 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
         if current_version < 2 {
             migrate_v2(conn)?;
+        }
+
+        if current_version < 3 {
+            migrate_v3(conn)?;
         }
 
         set_schema_version(conn, SCHEMA_VERSION)?;
@@ -171,6 +175,51 @@ fn migrate_v2(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Migration to version 3: Site registry.
+fn migrate_v3(conn: &Connection) -> Result<()> {
+    info!("Applying migration v3: Site registry");
+
+    // Sites table - custom and remote sites
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS sites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pattern TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT 'consumer',
+            parser_id TEXT,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            source TEXT NOT NULL DEFAULT 'custom',
+            priority INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )",
+        [],
+    )?;
+
+    // Index for looking up sites by pattern
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sites_pattern ON sites (pattern)",
+        [],
+    )?;
+
+    // Index for enabled sites
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sites_enabled ON sites (enabled)",
+        [],
+    )?;
+
+    // Disabled bundled sites table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS disabled_bundled_sites (
+            pattern TEXT PRIMARY KEY,
+            disabled_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )",
+        [],
+    )?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,5 +249,8 @@ mod tests {
         conn.execute("SELECT * FROM config LIMIT 1", []).ok();
         conn.execute("SELECT * FROM auth LIMIT 1", []).ok();
         conn.execute("SELECT * FROM profiles LIMIT 1", []).ok();
+        conn.execute("SELECT * FROM sites LIMIT 1", []).ok();
+        conn.execute("SELECT * FROM disabled_bundled_sites LIMIT 1", [])
+            .ok();
     }
 }

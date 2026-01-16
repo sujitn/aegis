@@ -2,7 +2,7 @@
 
 | Status | Priority | Crate |
 |--------|----------|-------|
-| `ready` | high | aegis-proxy |
+| `complete` | high | aegis-proxy |
 
 ## Description
 

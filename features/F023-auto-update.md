@@ -2,7 +2,7 @@
 
 | Status | Priority | Crate |
 |--------|----------|-------|
-| `ready` | medium | aegis-app |
+| `complete` | medium | aegis-app |
 
 ## Description
 

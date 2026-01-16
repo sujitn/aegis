@@ -15,6 +15,7 @@
 //! - [`protection`] - Protection state toggle with auth-guarded operations (F018)
 //! - [`notifications`] - Desktop notifications for blocked content (F014)
 //! - [`interception`] - Interception mode switching between extension and proxy (F017)
+//! - [`site_registry`] - Dynamic site registry for LLM domain management (F027)
 
 pub mod auth;
 pub mod classifier;
@@ -26,6 +27,7 @@ pub mod profile;
 pub mod profile_proxy;
 pub mod protection;
 pub mod rule_engine;
+pub mod site_registry;
 pub mod time_rules;
 
 #[cfg(test)]
@@ -152,5 +154,25 @@ mod tests {
             .unwrap();
         assert_eq!(manager.mode(), interception::InterceptionMode::Extension);
         assert!(manager.is_extension_mode());
+    }
+
+    #[test]
+    fn site_registry_can_be_created() {
+        let registry = site_registry::SiteRegistry::new();
+        assert!(registry.exact_sites().is_empty());
+    }
+
+    #[test]
+    fn site_registry_with_defaults_has_sites() {
+        let registry = site_registry::SiteRegistry::with_defaults();
+        assert!(registry.is_monitored("api.openai.com"));
+        assert!(registry.is_monitored("claude.ai"));
+    }
+
+    #[test]
+    fn site_registry_service_name() {
+        let registry = site_registry::SiteRegistry::with_defaults();
+        assert_eq!(registry.service_name("api.openai.com"), "ChatGPT");
+        assert_eq!(registry.service_name("claude.ai"), "Claude");
     }
 }

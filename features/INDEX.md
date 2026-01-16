@@ -22,8 +22,8 @@
 | [F010](F010-browser-extension.md) | Browser Extension | `complete` | high | extension | F009 |
 | [F016](F016-mitm-proxy.md) | MITM Proxy | `complete` | high | proxy | F007 |
 | [F017](F017-interception-mode.md) | Interception Mode | `complete` | high | core | F010, F016 |
-| [F026](F026-smart-content-parsing.md) | Smart Content Parsing | `ready` | high | proxy | F016 |
-| [F027](F027-dynamic-site-registry.md) | Dynamic Site Registry | `ready` | high | core | F008, F016 |
+| [F026](F026-smart-content-parsing.md) | Smart Content Parsing | `complete` | high | proxy | F016 |
+| [F027](F027-dynamic-site-registry.md) | Dynamic Site Registry | `complete` | high | core | F008, F016 |
 
 ## User Management
 
@@ -50,9 +50,9 @@
 
 | ID | Feature | Status | Priority | Crate | Requires |
 |----|---------|--------|----------|-------|----------|
-| [F021](F021-build-pipeline.md) | Build Pipeline | `ready` | high | infrastructure | F001 |
-| [F022](F022-native-installers.md) | Native Installers | `ready` | high | infrastructure | F021 |
-| [F023](F023-auto-update.md) | Auto Update | `ready` | medium | app | F021, F022 |
+| [F021](F021-build-pipeline.md) | Build Pipeline | `complete` | high | infrastructure | F001 |
+| [F022](F022-native-installers.md) | Native Installers | `complete` | high | infrastructure | F021 |
+| [F023](F023-auto-update.md) | Auto Update | `complete` | medium | app | F021, F022 |
 | [F024](F024-extension-deployment.md) | Chrome Web Store | `ready` | high | extension | F010 |
 
 ## Implementation Order

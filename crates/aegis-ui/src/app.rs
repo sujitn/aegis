@@ -55,8 +55,23 @@ impl DashboardApp {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size([900.0, 600.0])
                 .with_min_inner_size([700.0, 500.0])
-                .with_title("Aegis Dashboard"),
+                .with_title("Aegis Dashboard")
+                .with_icon(Self::load_icon()),
             ..Default::default()
+        }
+    }
+
+    /// Loads the application icon.
+    fn load_icon() -> egui::IconData {
+        let icon_data = include_bytes!("../../aegis-app/assets/icons/icon-256.png");
+        let image = image::load_from_memory(icon_data)
+            .expect("Failed to load icon")
+            .into_rgba8();
+        let (width, height) = image.dimensions();
+        egui::IconData {
+            rgba: image.into_raw(),
+            width,
+            height,
         }
     }
 

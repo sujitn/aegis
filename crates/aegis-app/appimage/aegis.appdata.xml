@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.aegis.app</id>
+  <name>Aegis</name>
+  <summary>AI safety platform for families</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+
+  <description>
+    <p>
+      Aegis provides parental controls for AI chatbots like ChatGPT, Claude, and Gemini.
+      Protect your children from harmful content with automatic filtering and monitoring.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>Content filtering for violence, adult content, self-harm, and more</li>
+      <li>Time-based access rules (bedtimes, school hours)</li>
+      <li>Per-child profiles with custom settings</li>
+      <li>Browser extension and system-wide proxy modes</li>
+      <li>Privacy-first design - all processing happens locally</li>
+    </ul>
+  </description>
+
+  <categories>
+    <category>Utility</category>
+    <category>Security</category>
+  </categories>
+
+  <keywords>
+    <keyword>parental controls</keyword>
+    <keyword>AI safety</keyword>
+    <keyword>content filter</keyword>
+    <keyword>ChatGPT</keyword>
+    <keyword>Claude</keyword>
+    <keyword>family safety</keyword>
+  </keywords>
+
+  <url type="homepage">https://github.com/aegis/aegis</url>
+  <url type="bugtracker">https://github.com/aegis/aegis/issues</url>
+
+  <launchable type="desktop-id">aegis.desktop</launchable>
+
+  <provides>
+    <binary>aegis</binary>
+  </provides>
+
+  <releases>
+    <release version="0.1.0" date="2024-01-01">
+      <description>
+        <p>Initial release with core features:</p>
+        <ul>
+          <li>Content classification (keywords + ML)</li>
+          <li>Time and content rules</li>
+          <li>User profiles</li>
+          <li>Browser extension and MITM proxy</li>
+          <li>Parent dashboard</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+
+  <content_rating type="oars-1.1" />
+</component>
