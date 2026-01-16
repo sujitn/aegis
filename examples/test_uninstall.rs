@@ -2,9 +2,7 @@
 //!
 //! Run with: cargo run --example test_uninstall
 
-use aegis_app::uninstall::{
-    get_confirmation_text, UninstallManager, UninstallOptions, UninstallPaths,
-};
+use aegis_app::uninstall::{get_confirmation_text, UninstallManager, UninstallPaths};
 use aegis_storage::Database;
 
 fn main() {
