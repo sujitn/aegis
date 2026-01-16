@@ -585,7 +585,7 @@ impl CommunityRuleManager {
             // Jailbreak patterns
             CommunityRule::new(
                 "curated_jailbreak_001",
-                r"\bignore\s+(all\s+)?(previous|your)\s+(instructions|rules|guidelines)\b",
+                r"\bignore\s+(all\s+)?(previous|your)\s+(instructions?|rules?|guidelines?)\b",
                 Category::Jailbreak,
                 source.clone(),
             )
@@ -622,6 +622,51 @@ impl CommunityRuleManager {
             CommunityRule::new(
                 "curated_jailbreak_005",
                 r"\bbypass\s+(safety|content|ethical)\s*(filters?|restrictions?|guidelines?)?\b",
+                Category::Jailbreak,
+                source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe)
+            .with_tier(RuleTier::Curated),
+            CommunityRule::new(
+                "curated_jailbreak_006",
+                r"\bforget\s+(all\s+)?(previous|your)\s+(instructions?|rules?|context)\b",
+                Category::Jailbreak,
+                source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe)
+            .with_tier(RuleTier::Curated),
+            CommunityRule::new(
+                "curated_jailbreak_007",
+                r"\bdisregard\s+(all\s+)?(previous|your)\s+(instructions?|rules?)\b",
+                Category::Jailbreak,
+                source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe)
+            .with_tier(RuleTier::Curated),
+            CommunityRule::new(
+                "curated_jailbreak_008",
+                r"\bdisable\s+(safety|content|ethical)\s*(filters?|mode)?\b",
+                Category::Jailbreak,
+                source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe)
+            .with_tier(RuleTier::Curated),
+            CommunityRule::new(
+                "curated_jailbreak_009",
+                r"\bact\s+as\s+(an?\s+)?(evil|unethical|unrestricted)\b",
+                Category::Jailbreak,
+                source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Strong)
+            .with_tier(RuleTier::Curated),
+            CommunityRule::new(
+                "curated_jailbreak_010",
+                r"\byou\s+are\s+now\s+(free|unrestricted|unfiltered)\b",
                 Category::Jailbreak,
                 source.clone(),
             )

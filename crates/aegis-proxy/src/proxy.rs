@@ -49,13 +49,17 @@ impl std::fmt::Debug for ProxyConfig {
 
 impl ProxyConfig {
     /// Creates a new configuration with default settings.
+    ///
+    /// Uses community rules for classification by default, which allows
+    /// configurable patterns through the UI.
     pub fn new() -> Result<Self> {
         let ca_manager = CaManager::with_default_dir().map_err(ProxyError::Ca)?;
 
         Ok(Self {
             addr: SocketAddr::from(([127, 0, 0, 1], DEFAULT_PROXY_PORT)),
             ca_manager,
-            classifier: Arc::new(RwLock::new(TieredClassifier::keyword_only())),
+            // Use default classifier which includes community rules
+            classifier: Arc::new(RwLock::new(TieredClassifier::with_defaults())),
             rule_engine: Arc::new(RuleEngine::with_defaults()),
             notifications: Some(Arc::new(NotificationManager::new())),
         })

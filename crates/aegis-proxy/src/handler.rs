@@ -133,9 +133,12 @@ impl ProxyHandler {
     }
 
     /// Creates a handler with default classifier and rules.
+    ///
+    /// Uses community rules for classification by default.
     pub fn with_defaults() -> Self {
         Self::new(HandlerConfig {
-            classifier: Arc::new(RwLock::new(TieredClassifier::keyword_only())),
+            // Use default classifier which includes community rules
+            classifier: Arc::new(RwLock::new(TieredClassifier::with_defaults())),
             rule_engine: Arc::new(RuleEngine::with_defaults()),
             notifications: Some(Arc::new(NotificationManager::new())),
             on_block: None,

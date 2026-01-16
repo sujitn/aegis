@@ -17,6 +17,9 @@ pub struct DashboardApp {
     /// Profile editor state.
     profile_editor: profiles::ProfileEditor,
 
+    /// Rules view state.
+    rules_state: rules::RulesState,
+
     /// Logs view state.
     logs_state: logs::LogsState,
 
@@ -36,6 +39,7 @@ impl DashboardApp {
         Self {
             state: AppState::new(db),
             profile_editor: profiles::ProfileEditor::default(),
+            rules_state: rules::RulesState::new(),
             logs_state: logs::LogsState::new(),
             system_logs_state: system_logs::SystemLogsState::default(),
             settings_state: settings::SettingsState::default(),
@@ -221,7 +225,7 @@ impl DashboardApp {
                 profiles::render(ui, &mut self.state, &mut self.profile_editor);
             }
             View::Rules => {
-                rules::render(ui, &mut self.state);
+                rules::render(ui, &mut self.state, &mut self.rules_state);
             }
             View::Logs => {
                 logs::render(ui, &mut self.state, &mut self.logs_state);

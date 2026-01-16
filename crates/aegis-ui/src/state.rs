@@ -88,6 +88,7 @@ pub enum RulesTab {
     #[default]
     Time,
     Content,
+    Community,
 }
 
 /// Filter options for logs.

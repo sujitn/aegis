@@ -121,8 +121,8 @@ impl KeywordClassifier {
 
     fn build_jailbreak_patterns() -> CategoryPatterns {
         let patterns = vec![
-            r"\bignore\s+(all\s+)?(previous|your)\s+(instructions|rules|guidelines)\b",
-            r"\bignore\s+your\s+(instructions|rules|guidelines)\b",
+            r"\bignore\s+(all\s+)?(previous|your)\s+(instructions?|rules?|guidelines?)\b",
+            r"\bignore\s+your\s+(instructions?|rules?|guidelines?)\b",
             r"\bpretend\s+(you\s+are|to\s+be|you're)\s+(evil|unrestricted|unfiltered)\b",
             r"\b(dan|developer)\s*mode\b",
             r"\byou\s+are\s+now\s+(free|unrestricted|unfiltered)\b",
@@ -131,6 +131,8 @@ impl KeywordClassifier {
             r"\bact\s+as\s+(an?\s+)?(evil|unethical|unrestricted)\b",
             r"\broleplay\s+as\s+(an?\s+)?(evil|villain|criminal)\b",
             r"\bjailbreak\s*(prompt|mode)?\b",
+            r"\bforget\s+(all\s+)?(previous|your)\s+(instructions?|rules?|context)\b",
+            r"\bdisregard\s+(all\s+)?(previous|your)\s+(instructions?|rules?)\b",
         ];
         Self::build_category_patterns(Category::Jailbreak, &patterns, 0.90)
     }
