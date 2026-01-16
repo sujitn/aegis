@@ -31,6 +31,8 @@ pub enum Category {
     Hate,
     /// Content promoting illegal activities.
     Illegal,
+    /// Profanity and offensive language.
+    Profanity,
 }
 
 impl Category {
@@ -43,6 +45,7 @@ impl Category {
             Category::Jailbreak,
             Category::Hate,
             Category::Illegal,
+            Category::Profanity,
         ]
     }
 
@@ -55,6 +58,7 @@ impl Category {
             Category::Jailbreak => "Jailbreak",
             Category::Hate => "Hate",
             Category::Illegal => "Illegal",
+            Category::Profanity => "Profanity",
         }
     }
 }
@@ -159,7 +163,7 @@ mod tests {
     #[test]
     fn category_all_returns_all_variants() {
         let all = Category::all();
-        assert_eq!(all.len(), 6);
+        assert_eq!(all.len(), 7);
     }
 
     #[test]

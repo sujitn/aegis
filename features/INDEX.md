@@ -12,7 +12,7 @@
 | [F006](F006-content-rules.md) | Content Rules | `complete` | high | core | F002 |
 | [F007](F007-rule-engine.md) | Rule Engine | `complete` | critical | core | F004-F006 |
 | [F008](F008-sqlite-storage.md) | SQLite Storage | `complete` | critical | storage | F001 |
-| [F025](F025-community-rules.md) | Community Rules | `ready` | high | core | F002, F006 |
+| [F025](F025-community-rules.md) | Community Rules | `complete` | high | core | F002, F006 |
 
 ## Interception
 
@@ -32,7 +32,7 @@
 | [F013](F013-authentication.md) | Authentication | `complete` | critical | core | F008 |
 | [F018](F018-protection-toggle.md) | Protection Toggle | `complete` | high | core | F011, F013 |
 | [F019](F019-user-profiles.md) | User Profiles | `complete` | critical | core | F005, F006, F008 |
-| [F029](F029-profile-aware-proxy.md) | Profile-Aware Proxy | `ready` | high | core | F016, F018, F019 |
+| [F029](F029-profile-aware-proxy.md) | Profile-Aware Proxy | `complete` | high | core | F016, F018, F019 |
 
 ## UI & Experience
 
@@ -44,7 +44,7 @@
 | [F015](F015-first-run-setup.md) | First-Run Setup | `complete` | high | ui | F012, F013, F017, F019 |
 | [F020](F020-clean-uninstall.md) | Clean Uninstall | `complete` | high | app | F013, F016 |
 | [F028](F028-background-service.md) | Background Service | `complete` | high | app | F011, F012 |
-| [F030](F030-autostart-persistence.md) | Autostart & Persistence | `ready` | high | app | F013, F020, F028 |
+| [F030](F030-autostart-persistence.md) | Autostart & Persistence | `complete` | high | app | F013, F020, F028 |
 
 ## Build & Distribution
 

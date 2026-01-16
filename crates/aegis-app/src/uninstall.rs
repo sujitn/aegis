@@ -1,6 +1,7 @@
 //! Clean uninstall functionality (F020).
 //!
 //! Provides functionality to cleanly remove all Aegis data, including:
+//! - Autostart entry (F030)
 //! - CA certificate and key files
 //! - Database file
 //! - Configuration files
@@ -32,6 +33,8 @@ use aegis_core::auth::AuthManager;
 use aegis_storage::Database;
 use directories::ProjectDirs;
 use thiserror::Error;
+
+use crate::autostart;
 
 /// Errors that can occur during uninstall.
 #[derive(Debug, Error)]
@@ -299,6 +302,11 @@ in your system's certificate store."#
             if let Err(e) = self.export_logs(&export_path) {
                 errors.push(format!("Failed to export logs: {}", e));
             }
+        }
+
+        // Remove autostart entry (F030)
+        if let Err(e) = autostart::remove_autostart_entry() {
+            errors.push(format!("Failed to remove autostart entry: {}", e));
         }
 
         // Delete CA certificate files

@@ -8,9 +8,47 @@
 //! 5. Profile creation
 //! 6. Complete
 
+use std::env;
+
+use auto_launch::{AutoLaunch, AutoLaunchBuilder};
 use eframe::egui::{self, Color32, RichText, TextEdit};
 
 use crate::state::AppState;
+
+/// App name for autostart.
+const APP_NAME: &str = "Aegis";
+
+/// Creates an AutoLaunch instance for Aegis.
+fn create_auto_launch() -> Option<AutoLaunch> {
+    let exe_path = env::current_exe().ok()?;
+    let exe_str = exe_path.to_str()?;
+    let args = &["--minimized"];
+
+    #[cfg(target_os = "macos")]
+    let launcher = AutoLaunchBuilder::new()
+        .set_app_name(APP_NAME)
+        .set_app_path(exe_str)
+        .set_args(args)
+        .set_use_launch_agent(true)
+        .build()
+        .ok()?;
+
+    #[cfg(not(target_os = "macos"))]
+    let launcher = AutoLaunchBuilder::new()
+        .set_app_name(APP_NAME)
+        .set_app_path(exe_str)
+        .set_args(args)
+        .build()
+        .ok()?;
+
+    Some(launcher)
+}
+
+/// Enables autostart.
+fn enable_autostart() -> Result<(), String> {
+    let launcher = create_auto_launch().ok_or("Failed to create autostart")?;
+    launcher.enable().map_err(|e| e.to_string())
+}
 
 /// Setup wizard steps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -126,12 +164,17 @@ pub struct SetupWizardState {
     pub ca_cert_path: Option<String>,
     /// Error message.
     pub error: Option<String>,
+    /// Whether to enable autostart (default: true).
+    pub enable_autostart: bool,
 }
 
 impl SetupWizardState {
     /// Creates a new setup wizard state.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            enable_autostart: true, // Default to enabled
+            ..Self::default()
+        }
     }
 
     /// Moves to the next step.
@@ -865,6 +908,18 @@ fn render_complete(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWi
 
         ui.add_space(16.0);
 
+        // Autostart option
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut wizard.enable_autostart, "Start Aegis when I log in");
+        });
+        ui.label(
+            RichText::new("Aegis will start automatically in the background when you log in.")
+                .size(11.0)
+                .weak(),
+        );
+
+        ui.add_space(16.0);
+
         // Next steps
         ui.label(RichText::new("Next Steps:").strong());
         ui.add_space(8.0);
@@ -909,6 +964,15 @@ fn finish_setup(state: &mut AppState, wizard: &SetupWizardState) {
     let _ = state
         .db
         .set_config("protection_level", &serde_json::json!(level_str));
+
+    // Enable autostart if requested
+    if wizard.enable_autostart {
+        if let Err(e) = enable_autostart() {
+            tracing::warn!("Failed to enable autostart: {}", e);
+        } else {
+            tracing::info!("Autostart enabled");
+        }
+    }
 
     // Mark setup as complete
     let _ = state

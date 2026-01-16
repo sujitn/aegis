@@ -29,5 +29,8 @@ directories.workspace = true
 # Open files/folders
 open = "5.3"
 
+# Autostart
+auto-launch = "0.5"
+
 [dev-dependencies]
 tokio-test.workspace = true

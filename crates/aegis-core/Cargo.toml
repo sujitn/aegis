@@ -14,8 +14,9 @@ notifications = ["dep:notify-rust"]
 [dependencies]
 thiserror.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 regex.workspace = true
-chrono.workspace = true
+chrono = { workspace = true, features = ["serde"] }
 argon2.workspace = true
 rand.workspace = true
 
@@ -29,4 +30,3 @@ notify-rust = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio-test.workspace = true
-serde_json.workspace = true

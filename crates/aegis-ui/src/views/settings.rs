@@ -1,5 +1,8 @@
 //! Settings view.
 
+use std::env;
+
+use auto_launch::{AutoLaunch, AutoLaunchBuilder};
 use eframe::egui::{self, Color32, RichText};
 
 use aegis_proxy::{
@@ -9,10 +12,61 @@ use aegis_proxy::{
 
 use crate::state::AppState;
 
+/// App name for autostart.
+const APP_NAME: &str = "Aegis";
+
+/// Config key for autostart lock state.
+const CONFIG_KEY_AUTOSTART_LOCKED: &str = "autostart_locked";
+
 /// Returns the CA certificate path.
 fn get_ca_cert_path() -> Option<std::path::PathBuf> {
     directories::ProjectDirs::from("com", "aegis", "aegis")
         .map(|dirs| dirs.data_dir().join("ca").join("aegis-ca.crt"))
+}
+
+/// Creates an AutoLaunch instance for Aegis.
+fn create_auto_launch() -> Option<AutoLaunch> {
+    let exe_path = env::current_exe().ok()?;
+    let exe_str = exe_path.to_str()?;
+    let args = &["--minimized"];
+
+    #[cfg(target_os = "macos")]
+    let launcher = AutoLaunchBuilder::new()
+        .set_app_name(APP_NAME)
+        .set_app_path(exe_str)
+        .set_args(args)
+        .set_use_launch_agent(true)
+        .build()
+        .ok()?;
+
+    #[cfg(not(target_os = "macos"))]
+    let launcher = AutoLaunchBuilder::new()
+        .set_app_name(APP_NAME)
+        .set_app_path(exe_str)
+        .set_args(args)
+        .build()
+        .ok()?;
+
+    Some(launcher)
+}
+
+/// Checks if autostart is enabled.
+fn is_autostart_enabled() -> bool {
+    create_auto_launch()
+        .map(|l| l.is_enabled().unwrap_or(false))
+        .unwrap_or(false)
+}
+
+/// Enables autostart.
+fn enable_autostart() -> Result<(), String> {
+    let launcher = create_auto_launch().ok_or("Failed to create autostart")?;
+    launcher.enable().map_err(|e| e.to_string())
+}
+
+/// Disables autostart.
+fn disable_autostart() -> Result<(), String> {
+    let launcher = create_auto_launch().ok_or("Failed to create autostart")?;
+    launcher.disable().map_err(|e| e.to_string())
 }
 
 /// State for the settings view.
@@ -34,6 +88,11 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, settings: &mut SettingsSt
         ui.heading("Settings");
         ui.add_space(16.0);
 
+        // General section (autostart)
+        render_general_section(ui, state);
+
+        ui.add_space(24.0);
+
         // Security section
         render_security_section(ui, state, settings);
 
@@ -47,6 +106,84 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, settings: &mut SettingsSt
         // About section
         render_about_section(ui);
     });
+}
+
+/// Renders the general settings section (autostart, etc.).
+fn render_general_section(ui: &mut egui::Ui, state: &mut AppState) {
+    ui.label(RichText::new("General").size(16.0).strong());
+    ui.add_space(8.0);
+
+    egui::Frame::none()
+        .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
+        .rounding(8.0)
+        .inner_margin(16.0)
+        .show(ui, |ui| {
+            // Autostart toggle
+            let autostart_enabled = is_autostart_enabled();
+            let is_locked = state
+                .db
+                .get_config(CONFIG_KEY_AUTOSTART_LOCKED)
+                .ok()
+                .flatten()
+                .and_then(|v| v.value.as_bool())
+                .unwrap_or(false);
+
+            ui.horizontal(|ui| {
+                ui.label("Start on login");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if is_locked {
+                        ui.label(RichText::new("🔒").size(14.0));
+                        ui.add_enabled(false, egui::Checkbox::without_text(&mut autostart_enabled.clone()));
+                    } else {
+                        let mut enabled = autostart_enabled;
+                        if ui.checkbox(&mut enabled, "").changed() {
+                            if enabled {
+                                match enable_autostart() {
+                                    Ok(()) => state.set_success("Autostart enabled"),
+                                    Err(e) => state.set_error(format!("Failed to enable autostart: {}", e)),
+                                }
+                            } else {
+                                match disable_autostart() {
+                                    Ok(()) => state.set_success("Autostart disabled"),
+                                    Err(e) => state.set_error(format!("Failed to disable autostart: {}", e)),
+                                }
+                            }
+                        }
+                    }
+                });
+            });
+
+            ui.label(
+                RichText::new("Aegis will start automatically when you log in.")
+                    .size(11.0)
+                    .weak(),
+            );
+
+            ui.add_space(12.0);
+
+            // Lock autostart setting
+            ui.horizontal(|ui| {
+                ui.label("Lock autostart setting");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let mut locked = is_locked;
+                    if ui.checkbox(&mut locked, "").changed() {
+                        if let Err(e) = state.db.set_config(CONFIG_KEY_AUTOSTART_LOCKED, &serde_json::json!(locked)) {
+                            state.set_error(format!("Failed to update lock setting: {}", e));
+                        } else if locked {
+                            state.set_success("Autostart setting locked");
+                        } else {
+                            state.set_success("Autostart setting unlocked");
+                        }
+                    }
+                });
+            });
+
+            ui.label(
+                RichText::new("When locked, the autostart setting cannot be changed without parent authentication.")
+                    .size(11.0)
+                    .weak(),
+            );
+        });
 }
 
 /// Renders the security section.

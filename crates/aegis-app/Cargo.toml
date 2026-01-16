@@ -25,7 +25,9 @@ clap.workspace = true
 anyhow.workspace = true
 directories.workspace = true
 thiserror.workspace = true
+serde_json.workspace = true
 open = "5.3"
+auto-launch = "0.5"
 chrono.workspace = true
 csv = "1.3"
 

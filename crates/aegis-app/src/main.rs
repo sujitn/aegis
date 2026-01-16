@@ -22,9 +22,9 @@ use aegis_ui::run_dashboard;
 use clap::Parser;
 use directories::ProjectDirs;
 use muda::MenuEvent;
-use tray_icon::TrayIconEvent;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tray_icon::TrayIconEvent;
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -50,6 +50,10 @@ struct Args {
     /// Start with dashboard visible (for first-run or debugging)
     #[arg(long)]
     show_dashboard: bool,
+
+    /// Start minimized to tray (used by autostart)
+    #[arg(long)]
+    minimized: bool,
 }
 
 /// Get the logs directory path.
@@ -305,8 +309,11 @@ fn run_with_tray(db: Database, show_dashboard: bool) -> anyhow::Result<()> {
 
             // Break inner loop if we need to open dashboard or quit
             if should_open_dashboard || !running.load(Ordering::SeqCst) {
-                tracing::debug!("Breaking tray loop: dashboard={}, running={}",
-                    should_open_dashboard, running.load(Ordering::SeqCst));
+                tracing::debug!(
+                    "Breaking tray loop: dashboard={}, running={}",
+                    should_open_dashboard,
+                    running.load(Ordering::SeqCst)
+                );
                 break;
             }
 
@@ -357,7 +364,11 @@ async fn main() -> anyhow::Result<()> {
 
     // Determine startup mode
     let first_run = is_first_run(&db);
-    let show_dashboard = args.show_dashboard || first_run;
+    // Show dashboard if:
+    // - First run (setup wizard needed) - always, even if --minimized is set
+    // - Explicitly requested via --show-dashboard
+    // When --minimized is set (autostart mode), start silently unless first_run
+    let show_dashboard = first_run || args.show_dashboard;
 
     if args.no_tray {
         // No tray mode: just run dashboard directly
@@ -366,9 +377,10 @@ async fn main() -> anyhow::Result<()> {
     } else {
         // Normal mode: tray icon with dashboard on demand
         tracing::info!(
-            "Running in tray mode (first_run={}, show_dashboard={})",
+            "Running in tray mode (first_run={}, show_dashboard={}, minimized={})",
             first_run,
-            show_dashboard
+            show_dashboard,
+            args.minimized
         );
         run_with_tray(db, show_dashboard)?;
     }

@@ -8,18 +8,22 @@
 //! - [`classifier`] - Content classification (keywords, ML, tiered pipeline)
 //! - [`time_rules`] - Time-based blocking rules (F005)
 //! - [`content_rules`] - Content-based filtering rules (F006)
+//! - [`community_rules`] - Layered community rules with tier priorities (F025)
 //! - [`rule_engine`] - Unified rule evaluation engine (F007)
 //! - [`profile`] - User profile management (F019)
+//! - [`profile_proxy`] - Profile-aware proxy control with OS user monitoring (F029)
 //! - [`protection`] - Protection state toggle with auth-guarded operations (F018)
 //! - [`notifications`] - Desktop notifications for blocked content (F014)
 //! - [`interception`] - Interception mode switching between extension and proxy (F017)
 
 pub mod auth;
 pub mod classifier;
+pub mod community_rules;
 pub mod content_rules;
 pub mod interception;
 pub mod notifications;
 pub mod profile;
+pub mod profile_proxy;
 pub mod protection;
 pub mod rule_engine;
 pub mod time_rules;

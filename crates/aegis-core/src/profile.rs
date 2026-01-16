@@ -34,6 +34,103 @@ use serde::{Deserialize, Serialize};
 use crate::content_rules::ContentRuleSet;
 use crate::time_rules::TimeRuleSet;
 
+/// Proxy behavior mode for a profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ProxyMode {
+    /// Proxy is enabled, filtering is active for this profile.
+    #[default]
+    Enabled,
+
+    /// Proxy is disabled, no filtering for this profile (parent mode).
+    Disabled,
+
+    /// Proxy is running but all traffic passes through without filtering.
+    Passthrough,
+}
+
+impl ProxyMode {
+    /// Returns the mode as a string.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Enabled => "enabled",
+            Self::Disabled => "disabled",
+            Self::Passthrough => "passthrough",
+        }
+    }
+
+    /// Returns a human-readable description.
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::Enabled => "Filtering enabled",
+            Self::Disabled => "Filtering disabled (unrestricted)",
+            Self::Passthrough => "Proxy active but not filtering",
+        }
+    }
+
+    /// Returns true if filtering is active.
+    pub fn is_filtering(&self) -> bool {
+        matches!(self, Self::Enabled)
+    }
+
+    /// Returns true if the system proxy should be enabled.
+    pub fn needs_system_proxy(&self) -> bool {
+        matches!(self, Self::Enabled | Self::Passthrough)
+    }
+}
+
+impl std::fmt::Display for ProxyMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// Profile type for categorization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ProfileType {
+    /// Child profile - filtering enabled by default.
+    #[default]
+    Child,
+
+    /// Parent profile - unrestricted access.
+    Parent,
+}
+
+impl ProfileType {
+    /// Returns the type as a string.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Child => "child",
+            Self::Parent => "parent",
+        }
+    }
+
+    /// Returns true if this is a child profile.
+    pub fn is_child(&self) -> bool {
+        matches!(self, Self::Child)
+    }
+
+    /// Returns true if this is a parent profile.
+    pub fn is_parent(&self) -> bool {
+        matches!(self, Self::Parent)
+    }
+
+    /// Returns the default proxy mode for this profile type.
+    pub fn default_proxy_mode(&self) -> ProxyMode {
+        match self {
+            Self::Child => ProxyMode::Enabled,
+            Self::Parent => ProxyMode::Disabled,
+        }
+    }
+}
+
+impl std::fmt::Display for ProfileType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// A user profile with associated rules.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserProfile {
@@ -49,6 +146,12 @@ pub struct UserProfile {
     pub content_rules: ContentRuleSet,
     /// Whether this profile is enabled.
     pub enabled: bool,
+    /// Profile type (child or parent).
+    #[serde(default)]
+    pub profile_type: ProfileType,
+    /// Proxy behavior mode for this profile.
+    #[serde(default)]
+    pub proxy_mode: ProxyMode,
 }
 
 impl UserProfile {
@@ -67,6 +170,8 @@ impl UserProfile {
             time_rules,
             content_rules,
             enabled: true,
+            profile_type: ProfileType::Child,
+            proxy_mode: ProxyMode::Enabled,
         }
     }
 
@@ -75,6 +180,7 @@ impl UserProfile {
     /// Includes:
     /// - School night and weekend bedtimes
     /// - Family-safe content filtering
+    /// - Filtering enabled (child profile type)
     pub fn with_child_defaults(name: impl Into<String>, os_username: Option<String>) -> Self {
         let name = name.into();
         let id = format!("profile_{}", name.to_lowercase().replace([' ', '-'], "_"));
@@ -86,10 +192,14 @@ impl UserProfile {
             time_rules: TimeRuleSet::with_defaults(),
             content_rules: ContentRuleSet::family_safe_defaults(),
             enabled: true,
+            profile_type: ProfileType::Child,
+            proxy_mode: ProxyMode::Enabled,
         }
     }
 
     /// Creates an unrestricted profile (parent mode).
+    ///
+    /// Parent profiles have filtering disabled by default.
     pub fn unrestricted(name: impl Into<String>, os_username: Option<String>) -> Self {
         let name = name.into();
         let id = format!("profile_{}", name.to_lowercase().replace([' ', '-'], "_"));
@@ -101,6 +211,8 @@ impl UserProfile {
             time_rules: TimeRuleSet::new(),
             content_rules: ContentRuleSet::new(),
             enabled: true,
+            profile_type: ProfileType::Parent,
+            proxy_mode: ProxyMode::Disabled,
         }
     }
 
@@ -130,6 +242,28 @@ impl UserProfile {
     pub fn with_content_rules(mut self, content_rules: ContentRuleSet) -> Self {
         self.content_rules = content_rules;
         self
+    }
+
+    /// Sets the profile type.
+    pub fn with_profile_type(mut self, profile_type: ProfileType) -> Self {
+        self.profile_type = profile_type;
+        self
+    }
+
+    /// Sets the proxy mode.
+    pub fn with_proxy_mode(mut self, proxy_mode: ProxyMode) -> Self {
+        self.proxy_mode = proxy_mode;
+        self
+    }
+
+    /// Returns true if this profile requires filtering (child with enabled proxy).
+    pub fn requires_filtering(&self) -> bool {
+        self.enabled && self.proxy_mode.is_filtering()
+    }
+
+    /// Returns true if this profile should have the system proxy enabled.
+    pub fn needs_system_proxy(&self) -> bool {
+        self.enabled && self.proxy_mode.needs_system_proxy()
     }
 
     /// Checks if this profile matches the given OS username.
