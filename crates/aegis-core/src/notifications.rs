@@ -261,7 +261,7 @@ impl NotificationManager {
     }
 
     /// Sends the actual notification using platform-specific API.
-    #[cfg(feature = "notifications")]
+    #[cfg(all(feature = "notifications", not(test)))]
     fn send_notification(&self, event: &BlockedEvent) -> NotificationResult {
         use notify_rust::Notification;
 
@@ -280,8 +280,14 @@ impl NotificationManager {
         }
     }
 
+    /// Test mock: always succeeds without sending actual notifications.
+    #[cfg(test)]
+    fn send_notification(&self, _event: &BlockedEvent) -> NotificationResult {
+        NotificationResult::Sent
+    }
+
     /// Fallback when notifications feature is disabled.
-    #[cfg(not(feature = "notifications"))]
+    #[cfg(all(not(feature = "notifications"), not(test)))]
     fn send_notification(&self, _event: &BlockedEvent) -> NotificationResult {
         // Silently succeed when notifications are compiled out
         NotificationResult::Sent
