@@ -52,7 +52,7 @@ pub use ca::{CaManager, CaManagerError};
 pub use domains::{get_bundled_sites, get_registry, is_llm_domain, parser_id, LLM_DOMAINS};
 pub use error::{ProxyError, Result};
 pub use extractor::{extract_prompt, PromptInfo};
-pub use handler::ProxyHandler;
+pub use handler::{FilteringState, HandlerConfig, ProxyHandler};
 pub use proxy::{ProxyConfig, ProxyServer};
 pub use setup::{
     disable_system_proxy, enable_system_proxy, install_ca_certificate, is_ca_installed,

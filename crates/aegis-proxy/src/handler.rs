@@ -2,7 +2,11 @@
 //!
 //! Processes intercepted requests, applies classification, and decides
 //! whether to block or forward.
+//!
+//! Supports profile-aware filtering - when filtering is disabled (e.g., parent
+//! profile active), requests pass through without classification.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use http_body_util::{BodyExt, Full};
@@ -93,6 +97,66 @@ const BLOCK_PAGE_HTML: &str = r#"<!DOCTYPE html>
 pub type OnBlockCallback = Arc<dyn Fn(&PromptInfo, &RuleEngineResult) + Send + Sync>;
 pub type OnAllowCallback = Arc<dyn Fn(&PromptInfo, &RuleEngineResult) + Send + Sync>;
 
+/// Shared filtering state that can be controlled by ProfileProxyController.
+///
+/// When filtering is disabled (e.g., parent profile is active), all requests
+/// pass through without classification.
+#[derive(Clone, Debug)]
+pub struct FilteringState {
+    /// Whether filtering is enabled.
+    enabled: Arc<AtomicBool>,
+    /// Current profile name (for logging).
+    profile_name: Arc<RwLock<Option<String>>>,
+}
+
+impl Default for FilteringState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FilteringState {
+    /// Creates a new filtering state with filtering enabled.
+    pub fn new() -> Self {
+        Self {
+            enabled: Arc::new(AtomicBool::new(true)),
+            profile_name: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Returns whether filtering is enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::SeqCst)
+    }
+
+    /// Enables filtering.
+    pub fn enable(&self) {
+        self.enabled.store(true, Ordering::SeqCst);
+        tracing::info!("Filtering enabled");
+    }
+
+    /// Disables filtering.
+    pub fn disable(&self) {
+        self.enabled.store(false, Ordering::SeqCst);
+        tracing::info!("Filtering disabled");
+    }
+
+    /// Sets the filtering state.
+    pub fn set_enabled(&self, enabled: bool) {
+        self.enabled.store(enabled, Ordering::SeqCst);
+    }
+
+    /// Sets the current profile name.
+    pub fn set_profile(&self, name: Option<String>) {
+        *self.profile_name.write() = name;
+    }
+
+    /// Returns the current profile name.
+    pub fn profile_name(&self) -> Option<String> {
+        self.profile_name.read().clone()
+    }
+}
+
 /// Handler configuration.
 #[derive(Clone)]
 pub struct HandlerConfig {
@@ -106,6 +170,8 @@ pub struct HandlerConfig {
     pub on_block: Option<OnBlockCallback>,
     /// Callback when a request is allowed.
     pub on_allow: Option<OnAllowCallback>,
+    /// Shared filtering state (controlled by ProfileProxyController).
+    pub filtering_state: FilteringState,
 }
 
 impl std::fmt::Debug for HandlerConfig {
@@ -116,6 +182,7 @@ impl std::fmt::Debug for HandlerConfig {
             .field("notifications", &self.notifications.is_some())
             .field("on_block", &self.on_block.is_some())
             .field("on_allow", &self.on_allow.is_some())
+            .field("filtering_state", &self.filtering_state)
             .finish()
     }
 }
@@ -135,6 +202,7 @@ impl ProxyHandler {
     /// Creates a handler with default classifier and rules.
     ///
     /// Uses community rules for classification by default.
+    /// Filtering is enabled by default.
     pub fn with_defaults() -> Self {
         Self::new(HandlerConfig {
             // Use default classifier which includes community rules
@@ -143,7 +211,32 @@ impl ProxyHandler {
             notifications: Some(Arc::new(NotificationManager::new())),
             on_block: None,
             on_allow: None,
+            filtering_state: FilteringState::new(),
         })
+    }
+
+    /// Creates a handler with the given filtering state.
+    ///
+    /// This allows external control of filtering (e.g., by ProfileProxyController).
+    pub fn with_filtering_state(filtering_state: FilteringState) -> Self {
+        Self::new(HandlerConfig {
+            classifier: Arc::new(RwLock::new(TieredClassifier::with_defaults())),
+            rule_engine: Arc::new(RuleEngine::with_defaults()),
+            notifications: Some(Arc::new(NotificationManager::new())),
+            on_block: None,
+            on_allow: None,
+            filtering_state,
+        })
+    }
+
+    /// Returns the filtering state.
+    pub fn filtering_state(&self) -> &FilteringState {
+        &self.config.filtering_state
+    }
+
+    /// Returns whether filtering is currently enabled.
+    pub fn is_filtering_enabled(&self) -> bool {
+        self.config.filtering_state.is_enabled()
     }
 
     /// Sets the callback for blocked requests.
@@ -196,6 +289,17 @@ impl ProxyHandler {
 
         // Only process POST requests (API calls)
         if method != hyper::Method::POST {
+            return RequestOrResponse::Request(req);
+        }
+
+        // Check if filtering is enabled (profile-aware)
+        if !self.config.filtering_state.is_enabled() {
+            let profile = self.config.filtering_state.profile_name();
+            tracing::debug!(
+                "Filtering disabled (profile: {:?}), passing through request to {}",
+                profile,
+                host
+            );
             return RequestOrResponse::Request(req);
         }
 
@@ -369,6 +473,7 @@ impl WebSocketHandler for ProxyHandler {
         let classifier = self.config.classifier.clone();
         let rule_engine = self.config.rule_engine.clone();
         let notifications = self.config.notifications.clone();
+        let filtering_state = self.config.filtering_state.clone();
 
         // Only inspect client-to-server messages (outgoing prompts)
         // Server-to-client messages (responses) pass through unchanged
@@ -388,6 +493,15 @@ impl WebSocketHandler for ProxyHandler {
 
             // Only inspect LLM domain WebSocket traffic
             if !is_llm_domain(&host) {
+                return Some(message);
+            }
+
+            // Check if filtering is enabled (profile-aware)
+            if !filtering_state.is_enabled() {
+                tracing::debug!(
+                    "Filtering disabled, passing through WebSocket message to {}",
+                    host
+                );
                 return Some(message);
             }
 
@@ -554,9 +668,48 @@ mod tests {
             notifications: None,
             on_block: None,
             on_allow: None,
+            filtering_state: FilteringState::new(),
         };
         let debug = format!("{:?}", config);
         assert!(debug.contains("HandlerConfig"));
+    }
+
+    #[test]
+    fn filtering_state_default_enabled() {
+        let state = FilteringState::new();
+        assert!(state.is_enabled());
+        assert!(state.profile_name().is_none());
+    }
+
+    #[test]
+    fn filtering_state_enable_disable() {
+        let state = FilteringState::new();
+        assert!(state.is_enabled());
+
+        state.disable();
+        assert!(!state.is_enabled());
+
+        state.enable();
+        assert!(state.is_enabled());
+    }
+
+    #[test]
+    fn filtering_state_profile_name() {
+        let state = FilteringState::new();
+        state.set_profile(Some("Alice".to_string()));
+        assert_eq!(state.profile_name(), Some("Alice".to_string()));
+
+        state.set_profile(None);
+        assert!(state.profile_name().is_none());
+    }
+
+    #[test]
+    fn handler_with_filtering_state() {
+        let filtering_state = FilteringState::new();
+        filtering_state.disable();
+
+        let handler = ProxyHandler::with_filtering_state(filtering_state);
+        assert!(!handler.is_filtering_enabled());
     }
 
     #[test]

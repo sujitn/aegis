@@ -14,7 +14,12 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use aegis_proxy::{ProxyConfig, ProxyServer};
+use aegis_core::content_rules::ContentRuleSet;
+use aegis_core::profile::{ProfileManager, ProxyMode, UserProfile};
+use aegis_core::profile_proxy::{ProfileProxyConfig, ProfileProxyController, ProxyAction};
+use aegis_core::protection::ProtectionManager;
+use aegis_core::time_rules::TimeRuleSet;
+use aegis_proxy::{FilteringState, ProxyConfig, ProxyServer};
 use aegis_server::{Server, ServerConfig};
 use aegis_storage::Database;
 use aegis_tray::{MenuAction, SystemTray, TrayConfig, TrayEvent, TrayStatus};
@@ -151,9 +156,62 @@ fn pump_windows_messages() {
     // No-op on non-Windows
 }
 
-/// Start the background servers (API and Proxy).
+/// Load profiles from database and convert to ProfileManager.
+fn load_profiles_from_db(db: &Database) -> ProfileManager {
+    let mut manager = ProfileManager::new();
+
+    match db.get_all_profiles() {
+        Ok(profiles) => {
+            for profile in profiles {
+                // Convert storage Profile to core UserProfile
+                let time_rules: TimeRuleSet = serde_json::from_value(profile.time_rules.clone())
+                    .unwrap_or_else(|_| TimeRuleSet::new());
+                let content_rules: ContentRuleSet =
+                    serde_json::from_value(profile.content_rules.clone())
+                        .unwrap_or_else(|_| ContentRuleSet::new());
+
+                // Determine proxy mode based on profile name heuristic
+                // Profiles with "parent" in the name disable filtering; others enable it
+                // This is because profiles in the database are typically child profiles
+                let is_parent = profile.name.to_lowercase().contains("parent");
+                let proxy_mode = if is_parent {
+                    ProxyMode::Disabled
+                } else {
+                    ProxyMode::Enabled
+                };
+
+                let mut user_profile = UserProfile::new(
+                    format!("profile_{}", profile.id),
+                    &profile.name,
+                    profile.os_username.clone(),
+                    time_rules,
+                    content_rules,
+                );
+                user_profile.enabled = profile.enabled;
+                user_profile.proxy_mode = proxy_mode;
+
+                manager.add_profile(user_profile);
+                tracing::debug!(
+                    "Loaded profile: {} (os_username: {:?}, proxy_mode: {:?})",
+                    profile.name,
+                    profile.os_username,
+                    proxy_mode
+                );
+            }
+            tracing::info!("Loaded {} profiles from database", manager.profile_count());
+        }
+        Err(e) => {
+            tracing::warn!("Failed to load profiles from database: {}", e);
+        }
+    }
+
+    manager
+}
+
+/// Start the background servers (API and Proxy) with profile-aware filtering.
 async fn start_servers(db: Database) {
     let server_db = db.clone();
+    let profile_db = db.clone();
 
     // Start HTTP API server in background (for browser extension)
     let server_config = ServerConfig::default();
@@ -173,9 +231,71 @@ async fn start_servers(db: Database) {
         }
     });
 
-    // Start MITM proxy server in background (for system-wide protection)
+    // Load profiles and create profile-aware filtering
+    let profiles = load_profiles_from_db(&profile_db);
+    let protection = ProtectionManager::new();
+    let filtering_state = FilteringState::new();
+
+    // Create profile proxy controller with callback to control filtering
+    let filtering_state_clone = filtering_state.clone();
+    let controller = ProfileProxyController::new(
+        profiles,
+        protection,
+        ProfileProxyConfig::default(),
+    )
+    .on_switch(move |event| {
+        tracing::info!(
+            "Profile switch: {} -> {} (action: {})",
+            event.previous_profile.as_deref().unwrap_or("none"),
+            event.new_profile.as_deref().unwrap_or("none"),
+            event.proxy_action
+        );
+
+        // Update filtering state based on proxy action
+        match event.proxy_action {
+            ProxyAction::Enabled => {
+                filtering_state_clone.enable();
+                filtering_state_clone.set_profile(event.new_profile.clone());
+            }
+            ProxyAction::Disabled | ProxyAction::Passthrough => {
+                filtering_state_clone.disable();
+                filtering_state_clone.set_profile(event.new_profile.clone());
+            }
+            ProxyAction::NoChange => {}
+        }
+    });
+
+    // Initialize controller to detect current user and set initial filtering state
+    if let Some(event) = controller.initialize() {
+        tracing::info!(
+            "Initial profile: {:?} (proxy action: {})",
+            event.new_profile,
+            event.proxy_action
+        );
+    }
+
+    // Start monitoring for user changes
+    controller.start_monitoring();
+    let poll_interval = controller.poll_interval();
+
+    // Spawn profile monitoring task
     tokio::spawn(async move {
-        match ProxyConfig::new() {
+        loop {
+            tokio::time::sleep(poll_interval).await;
+            if let Some(event) = controller.poll_once() {
+                tracing::info!(
+                    "Profile change detected: {} -> {}",
+                    event.previous_profile.as_deref().unwrap_or("none"),
+                    event.new_profile.as_deref().unwrap_or("none")
+                );
+            }
+        }
+    });
+
+    // Start MITM proxy server in background (for system-wide protection)
+    // Use the shared filtering state so ProfileProxyController can control filtering
+    tokio::spawn(async move {
+        match ProxyConfig::with_filtering_state(filtering_state) {
             Ok(config) => {
                 let proxy_addr = config.addr;
                 match ProxyServer::new(config) {

@@ -17,7 +17,9 @@ use aegis_core::rule_engine::RuleEngine;
 use crate::ca::CaManager;
 use crate::error::{ProxyError, Result};
 use crate::extractor::PromptInfo;
-use crate::handler::{HandlerConfig, OnAllowCallback, OnBlockCallback, ProxyHandler};
+use crate::handler::{
+    FilteringState, HandlerConfig, OnAllowCallback, OnBlockCallback, ProxyHandler,
+};
 use crate::DEFAULT_PROXY_PORT;
 
 /// Proxy server configuration.
@@ -33,6 +35,8 @@ pub struct ProxyConfig {
     pub rule_engine: Arc<RuleEngine>,
     /// Optional notification manager.
     pub notifications: Option<Arc<NotificationManager>>,
+    /// Shared filtering state (controlled by ProfileProxyController).
+    pub filtering_state: FilteringState,
 }
 
 impl std::fmt::Debug for ProxyConfig {
@@ -43,6 +47,7 @@ impl std::fmt::Debug for ProxyConfig {
             .field("classifier", &"TieredClassifier")
             .field("rule_engine", &"RuleEngine")
             .field("notifications", &self.notifications.is_some())
+            .field("filtering_state", &self.filtering_state)
             .finish()
     }
 }
@@ -62,7 +67,30 @@ impl ProxyConfig {
             classifier: Arc::new(RwLock::new(TieredClassifier::with_defaults())),
             rule_engine: Arc::new(RuleEngine::with_defaults()),
             notifications: Some(Arc::new(NotificationManager::new())),
+            filtering_state: FilteringState::new(),
         })
+    }
+
+    /// Creates a new configuration with the given filtering state.
+    ///
+    /// This allows external control of filtering (e.g., by ProfileProxyController).
+    pub fn with_filtering_state(filtering_state: FilteringState) -> Result<Self> {
+        let ca_manager = CaManager::with_default_dir().map_err(ProxyError::Ca)?;
+
+        Ok(Self {
+            addr: SocketAddr::from(([127, 0, 0, 1], DEFAULT_PROXY_PORT)),
+            ca_manager,
+            classifier: Arc::new(RwLock::new(TieredClassifier::with_defaults())),
+            rule_engine: Arc::new(RuleEngine::with_defaults()),
+            notifications: Some(Arc::new(NotificationManager::new())),
+            filtering_state,
+        })
+    }
+
+    /// Sets the filtering state.
+    pub fn set_filtering_state(mut self, filtering_state: FilteringState) -> Self {
+        self.filtering_state = filtering_state;
+        self
     }
 
     /// Sets the listen address.
@@ -175,6 +203,13 @@ impl ProxyServer {
             .map_err(ProxyError::Ca)
     }
 
+    /// Returns the filtering state.
+    ///
+    /// This can be used to control filtering externally (e.g., by ProfileProxyController).
+    pub fn filtering_state(&self) -> &FilteringState {
+        &self.config.filtering_state
+    }
+
     /// Starts the proxy server.
     ///
     /// This will block until the server is shut down.
@@ -188,6 +223,7 @@ impl ProxyServer {
             notifications: self.config.notifications.clone(),
             on_block: self.on_block.clone(),
             on_allow: self.on_allow.clone(),
+            filtering_state: self.config.filtering_state.clone(),
         };
 
         let handler = ProxyHandler::new(handler_config);
@@ -231,6 +267,7 @@ impl ProxyServer {
             notifications: self.config.notifications.clone(),
             on_block: self.on_block.clone(),
             on_allow: self.on_allow.clone(),
+            filtering_state: self.config.filtering_state.clone(),
         };
 
         let config_addr = self.config.addr;
@@ -320,6 +357,7 @@ mod tests {
             classifier: Arc::new(RwLock::new(TieredClassifier::keyword_only())),
             rule_engine: Arc::new(RuleEngine::with_defaults()),
             notifications: None,
+            filtering_state: FilteringState::new(),
         }
     }
 
