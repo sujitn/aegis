@@ -112,10 +112,10 @@ pub fn install_ca_certificate(cert_path: &Path) -> SetupResult {
 }
 
 /// Uninstalls the CA certificate from the system trust store.
-pub fn uninstall_ca_certificate(cert_path: &Path) -> SetupResult {
+pub fn uninstall_ca_certificate(_cert_path: &Path) -> SetupResult {
     #[cfg(target_os = "windows")]
     {
-        uninstall_ca_windows(cert_path)
+        uninstall_ca_windows(_cert_path)
     }
 
     #[cfg(target_os = "macos")]
@@ -130,7 +130,7 @@ pub fn uninstall_ca_certificate(cert_path: &Path) -> SetupResult {
 
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
-        let _ = cert_path;
+        let _ = _cert_path;
         SetupResult::failure("Unsupported operating system")
     }
 }
