@@ -547,10 +547,7 @@ fn render_ca_install(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut Setup
             }
         } else {
             // Show success and path
-            ui.colored_label(
-                status::SUCCESS,
-                "✓ CA Certificate Generated",
-            );
+            ui.colored_label(status::SUCCESS, "✓ CA Certificate Generated");
 
             if let Some(ref path) = wizard.ca_cert_path {
                 ui.add_space(8.0);
@@ -879,10 +876,7 @@ fn render_complete(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWi
     ui.vertical_centered(|ui| {
         ui.label(RichText::new("Setup Complete!").size(24.0).strong());
         ui.add_space(8.0);
-        ui.colored_label(
-            status::SUCCESS,
-            "Aegis is ready to protect your family.",
-        );
+        ui.colored_label(status::SUCCESS, "Aegis is ready to protect your family.");
 
         ui.add_space(24.0);
 

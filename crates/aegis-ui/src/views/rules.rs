@@ -161,7 +161,11 @@ impl RulesState {
     pub fn load_from_profile(&mut self, profile: &aegis_storage::Profile) {
         // Load content rules
         self.content_rules.clear();
-        if let Some(rules) = profile.content_rules.get("categories").and_then(|v| v.as_object()) {
+        if let Some(rules) = profile
+            .content_rules
+            .get("categories")
+            .and_then(|v| v.as_object())
+        {
             for (cat_str, config) in rules {
                 if let Some(category) = parse_category(cat_str) {
                     let state = ContentRuleState {
@@ -186,13 +190,13 @@ impl RulesState {
 
         // Initialize defaults for missing categories
         for category in all_categories() {
-            self.content_rules.entry(category).or_insert_with(|| {
-                ContentRuleState {
+            self.content_rules
+                .entry(category)
+                .or_insert_with(|| ContentRuleState {
                     action: ContentAction::Block,
                     threshold: default_threshold(category),
                     enabled: true,
-                }
-            });
+                });
         }
 
         // Load time rules
@@ -275,10 +279,8 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, rules_state: &mut RulesSt
         ui.heading(format!("Rules: {}", profile_name));
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let save_btn = ui.add_enabled(
-                rules_state.has_changes,
-                egui::Button::new("Save Changes"),
-            );
+            let save_btn =
+                ui.add_enabled(rules_state.has_changes, egui::Button::new("Save Changes"));
             if save_btn.clicked() {
                 save_changes = true;
             }
@@ -322,12 +324,10 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, rules_state: &mut RulesSt
     ui.add_space(8.0);
 
     // Content based on selected tab
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        match state.rules_tab {
-            RulesTab::Time => render_time_rules(ui, state, rules_state),
-            RulesTab::Content => render_content_rules(ui, rules_state),
-            RulesTab::Community => render_community_rules(ui, rules_state),
-        }
+    egui::ScrollArea::vertical().show(ui, |ui| match state.rules_tab {
+        RulesTab::Time => render_time_rules(ui, state, rules_state),
+        RulesTab::Content => render_content_rules(ui, rules_state),
+        RulesTab::Community => render_community_rules(ui, rules_state),
     });
 
     // Time rule editor dialog
@@ -395,12 +395,8 @@ fn render_time_rules(ui: &mut egui::Ui, state: &mut AppState, rules_state: &mut 
         render_empty_time_rules(ui);
     } else {
         // Clone rules for iteration to avoid borrow issues
-        let rules_snapshot: Vec<(usize, TimeRule)> = rules_state
-            .time_rules
-            .iter()
-            .cloned()
-            .enumerate()
-            .collect();
+        let rules_snapshot: Vec<(usize, TimeRule)> =
+            rules_state.time_rules.iter().cloned().enumerate().collect();
 
         let mut delete_index = None;
         let mut edit_action: Option<(usize, TimeRule)> = None;
@@ -555,18 +551,36 @@ fn render_time_rule_editor(ui: &mut egui::Ui, rules_state: &mut RulesState) {
             // Time range
             ui.horizontal(|ui| {
                 ui.label("Start:");
-                ui.add(egui::TextEdit::singleline(&mut rules_state.time_editor.rule.start_time).desired_width(60.0));
+                ui.add(
+                    egui::TextEdit::singleline(&mut rules_state.time_editor.rule.start_time)
+                        .desired_width(60.0),
+                );
                 ui.label("End:");
-                ui.add(egui::TextEdit::singleline(&mut rules_state.time_editor.rule.end_time).desired_width(60.0));
+                ui.add(
+                    egui::TextEdit::singleline(&mut rules_state.time_editor.rule.end_time)
+                        .desired_width(60.0),
+                );
             });
-            ui.label(RichText::new("Use 24-hour format (HH:MM)").size(11.0).weak());
+            ui.label(
+                RichText::new("Use 24-hour format (HH:MM)")
+                    .size(11.0)
+                    .weak(),
+            );
 
             ui.add_space(8.0);
 
             // Days
             ui.label("Days:");
             ui.horizontal_wrapped(|ui| {
-                let all_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+                let all_days = [
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                ];
                 for day in all_days {
                     let mut checked = rules_state.time_editor.rule.days.contains(&day.to_string());
                     if ui.checkbox(&mut checked, day).changed() {
@@ -587,8 +601,16 @@ fn render_time_rule_editor(ui: &mut egui::Ui, rules_state: &mut RulesState) {
                 egui::ComboBox::from_id_salt("time_action")
                     .selected_text(&rules_state.time_editor.rule.action)
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut rules_state.time_editor.rule.action, "block".to_string(), "Block");
-                        ui.selectable_value(&mut rules_state.time_editor.rule.action, "warn".to_string(), "Warn");
+                        ui.selectable_value(
+                            &mut rules_state.time_editor.rule.action,
+                            "block".to_string(),
+                            "Block",
+                        );
+                        ui.selectable_value(
+                            &mut rules_state.time_editor.rule.action,
+                            "warn".to_string(),
+                            "Warn",
+                        );
                     });
             });
 
@@ -606,7 +628,9 @@ fn render_time_rule_editor(ui: &mut egui::Ui, rules_state: &mut RulesState) {
                         if let Some(idx) = rules_state.time_editor.editing_index {
                             rules_state.time_rules[idx] = rules_state.time_editor.rule.clone();
                         } else {
-                            rules_state.time_rules.push(rules_state.time_editor.rule.clone());
+                            rules_state
+                                .time_rules
+                                .push(rules_state.time_editor.rule.clone());
                         }
                         rules_state.has_changes = true;
                         rules_state.time_editor.close();
@@ -631,13 +655,48 @@ fn render_content_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
 
     // Category rules
     let categories = [
-        (Category::Violence, "Violence", "Violent content and threats", status::ERROR),
-        (Category::SelfHarm, "Self-Harm", "Self-harm and suicide content", status::ERROR),
-        (Category::Adult, "Adult Content", "Sexual and adult material", status::WARNING),
-        (Category::Jailbreak, "Jailbreak", "AI manipulation attempts", status::WARNING),
-        (Category::Hate, "Hate Speech", "Discriminatory content", status::ERROR),
-        (Category::Illegal, "Illegal", "Illegal activities", status::ERROR),
-        (Category::Profanity, "Profanity", "Offensive language", Color32::GRAY),
+        (
+            Category::Violence,
+            "Violence",
+            "Violent content and threats",
+            status::ERROR,
+        ),
+        (
+            Category::SelfHarm,
+            "Self-Harm",
+            "Self-harm and suicide content",
+            status::ERROR,
+        ),
+        (
+            Category::Adult,
+            "Adult Content",
+            "Sexual and adult material",
+            status::WARNING,
+        ),
+        (
+            Category::Jailbreak,
+            "Jailbreak",
+            "AI manipulation attempts",
+            status::WARNING,
+        ),
+        (
+            Category::Hate,
+            "Hate Speech",
+            "Discriminatory content",
+            status::ERROR,
+        ),
+        (
+            Category::Illegal,
+            "Illegal",
+            "Illegal activities",
+            status::ERROR,
+        ),
+        (
+            Category::Profanity,
+            "Profanity",
+            "Offensive language",
+            Color32::GRAY,
+        ),
     ];
 
     for (category, name, description, color) in categories {
@@ -659,10 +718,7 @@ fn render_content_rule_card(
 ) -> bool {
     let mut changed = false;
 
-    let state = rules_state
-        .content_rules
-        .entry(category)
-        .or_default();
+    let state = rules_state.content_rules.entry(category).or_default();
 
     egui::Frame::none()
         .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
@@ -755,7 +811,11 @@ fn render_community_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
         .rounding(8.0)
         .inner_margin(12.0)
         .show(ui, |ui| {
-            ui.label(RichText::new("Rule Priority (highest to lowest):").strong().size(12.0));
+            ui.label(
+                RichText::new("Rule Priority (highest to lowest):")
+                    .strong()
+                    .size(12.0),
+            );
             ui.horizontal(|ui| {
                 ui.colored_label(brand::PRIMARY, "●");
                 ui.label("Parent (your customizations)");
@@ -784,8 +844,12 @@ fn render_community_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
         ui.horizontal(|ui| {
             ui.text_edit_singleline(&mut rules_state.whitelist_input);
             if ui.button("Add").clicked() && !rules_state.whitelist_input.trim().is_empty() {
-                rules_state.overrides.add_whitelist(rules_state.whitelist_input.trim());
-                rules_state.community_manager.set_overrides(rules_state.overrides.clone());
+                rules_state
+                    .overrides
+                    .add_whitelist(rules_state.whitelist_input.trim());
+                rules_state
+                    .community_manager
+                    .set_overrides(rules_state.overrides.clone());
                 rules_state.whitelist_input.clear();
                 rules_state.has_changes = true;
             }
@@ -816,7 +880,9 @@ fn render_community_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
                 }
                 if let Some(term) = to_remove {
                     rules_state.overrides.remove_whitelist(&term);
-                    rules_state.community_manager.set_overrides(rules_state.overrides.clone());
+                    rules_state
+                        .community_manager
+                        .set_overrides(rules_state.overrides.clone());
                     rules_state.has_changes = true;
                 }
             });
@@ -851,7 +917,9 @@ fn render_community_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
                     rules_state.blacklist_input.trim(),
                     rules_state.blacklist_category,
                 );
-                rules_state.community_manager.set_overrides(rules_state.overrides.clone());
+                rules_state
+                    .community_manager
+                    .set_overrides(rules_state.overrides.clone());
                 rules_state.blacklist_input.clear();
                 rules_state.has_changes = true;
             }
@@ -860,7 +928,12 @@ fn render_community_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
         ui.add_space(8.0);
 
         // Display blacklist
-        let blacklist: Vec<_> = rules_state.overrides.blacklist.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        let blacklist: Vec<_> = rules_state
+            .overrides
+            .blacklist
+            .iter()
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
         if blacklist.is_empty() {
             ui.label(RichText::new("No blacklisted terms").weak().size(11.0));
         } else {
@@ -882,7 +955,9 @@ fn render_community_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
                 }
                 if let Some(term) = to_remove {
                     rules_state.overrides.remove_blacklist(&term);
-                    rules_state.community_manager.set_overrides(rules_state.overrides.clone());
+                    rules_state
+                        .community_manager
+                        .set_overrides(rules_state.overrides.clone());
                     rules_state.has_changes = true;
                 }
             });
@@ -900,7 +975,12 @@ fn render_community_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
         );
         ui.add_space(8.0);
 
-        let disabled: Vec<_> = rules_state.overrides.disabled_rules.iter().cloned().collect();
+        let disabled: Vec<_> = rules_state
+            .overrides
+            .disabled_rules
+            .iter()
+            .cloned()
+            .collect();
         if disabled.is_empty() {
             ui.label(RichText::new("No disabled rules").weak().size(11.0));
         } else {
@@ -915,7 +995,9 @@ fn render_community_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
             }
             if let Some(rule_id) = to_enable {
                 rules_state.overrides.enable_rule(&rule_id);
-                rules_state.community_manager.set_overrides(rules_state.overrides.clone());
+                rules_state
+                    .community_manager
+                    .set_overrides(rules_state.overrides.clone());
                 rules_state.has_changes = true;
             }
         }
@@ -971,9 +1053,13 @@ fn render_community_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
                 ui.vertical(|ui| {
                     ui.label(RichText::new(&rule_id).size(11.0));
                     ui.label(
-                        RichText::new(format!("{} | {}", category.name(), truncate_pattern(&pattern, 40)))
-                            .size(10.0)
-                            .weak(),
+                        RichText::new(format!(
+                            "{} | {}",
+                            category.name(),
+                            truncate_pattern(&pattern, 40)
+                        ))
+                        .size(10.0)
+                        .weak(),
                     );
                 });
 
@@ -1002,7 +1088,9 @@ fn render_community_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
             } else {
                 rules_state.overrides.disable_rule(&rule_id);
             }
-            rules_state.community_manager.set_overrides(rules_state.overrides.clone());
+            rules_state
+                .community_manager
+                .set_overrides(rules_state.overrides.clone());
             rules_state.has_changes = true;
         }
     });
@@ -1104,7 +1192,9 @@ fn action_to_str(action: ContentAction) -> &'static str {
 
 fn category_color(category: Category) -> Color32 {
     match category {
-        Category::Violence | Category::SelfHarm | Category::Hate | Category::Illegal => status::ERROR,
+        Category::Violence | Category::SelfHarm | Category::Hate | Category::Illegal => {
+            status::ERROR
+        }
         Category::Adult | Category::Jailbreak => status::WARNING,
         Category::Profanity => Color32::GRAY,
     }

@@ -127,7 +127,8 @@ impl SettingsState {
             .and_then(|v| v.value.as_bool())
             .unwrap_or(false);
         self.ca_path = get_ca_cert_path();
-        self.ca_installed = self.ca_path
+        self.ca_installed = self
+            .ca_path
             .as_ref()
             .map(|p| is_ca_installed(p))
             .unwrap_or(false);

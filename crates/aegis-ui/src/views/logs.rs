@@ -332,10 +332,7 @@ fn render_clear_dialog(ui: &mut egui::Ui, state: &mut AppState, logs_state: &mut
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .show(ui.ctx(), |ui| {
-            ui.colored_label(
-                status::ERROR,
-                "This action cannot be undone!",
-            );
+            ui.colored_label(status::ERROR, "This action cannot be undone!");
             ui.add_space(8.0);
 
             ui.label("Enter your password to confirm:");

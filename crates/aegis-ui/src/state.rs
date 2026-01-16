@@ -36,9 +36,9 @@ impl ProtectionStatus {
     pub fn color(&self) -> egui::Color32 {
         use crate::theme::status;
         match self {
-            Self::Active => status::SUCCESS,  // Friendly green
-            Self::Paused => status::WARNING,  // Warm amber
-            Self::Disabled => status::ERROR,  // Soft red
+            Self::Active => status::SUCCESS, // Friendly green
+            Self::Paused => status::WARNING, // Warm amber
+            Self::Disabled => status::ERROR, // Soft red
         }
     }
 }

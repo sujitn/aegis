@@ -239,32 +239,30 @@ async fn start_servers(db: Database) {
 
     // Create profile proxy controller with callback to control filtering
     let filtering_state_clone = filtering_state.clone();
-    let controller = ProfileProxyController::new(
-        profiles,
-        protection,
-        ProfileProxyConfig::default(),
-    )
-    .on_switch(move |event| {
-        tracing::info!(
-            "Profile switch: {} -> {} (action: {})",
-            event.previous_profile.as_deref().unwrap_or("none"),
-            event.new_profile.as_deref().unwrap_or("none"),
-            event.proxy_action
-        );
+    let controller =
+        ProfileProxyController::new(profiles, protection, ProfileProxyConfig::default()).on_switch(
+            move |event| {
+                tracing::info!(
+                    "Profile switch: {} -> {} (action: {})",
+                    event.previous_profile.as_deref().unwrap_or("none"),
+                    event.new_profile.as_deref().unwrap_or("none"),
+                    event.proxy_action
+                );
 
-        // Update filtering state based on proxy action
-        match event.proxy_action {
-            ProxyAction::Enabled => {
-                filtering_state_clone.enable();
-                filtering_state_clone.set_profile(event.new_profile.clone());
-            }
-            ProxyAction::Disabled | ProxyAction::Passthrough => {
-                filtering_state_clone.disable();
-                filtering_state_clone.set_profile(event.new_profile.clone());
-            }
-            ProxyAction::NoChange => {}
-        }
-    });
+                // Update filtering state based on proxy action
+                match event.proxy_action {
+                    ProxyAction::Enabled => {
+                        filtering_state_clone.enable();
+                        filtering_state_clone.set_profile(event.new_profile.clone());
+                    }
+                    ProxyAction::Disabled | ProxyAction::Passthrough => {
+                        filtering_state_clone.disable();
+                        filtering_state_clone.set_profile(event.new_profile.clone());
+                    }
+                    ProxyAction::NoChange => {}
+                }
+            },
+        );
 
     // Initialize controller to detect current user and set initial filtering state
     if let Some(event) = controller.initialize() {

@@ -26,7 +26,11 @@ const TRAY_SIZES: &[u32] = &[16, 22, 24, 32, 48];
 #[command(about = "Generate Aegis application icons from SVG")]
 struct Args {
     /// Input SVG file path.
-    #[arg(short, long, default_value = "crates/aegis-app/assets/icons/aegis-logo.svg")]
+    #[arg(
+        short,
+        long,
+        default_value = "crates/aegis-app/assets/icons/aegis-logo.svg"
+    )]
     input: PathBuf,
 
     /// Output directory for generated icons.
@@ -154,7 +158,9 @@ fn save_png(pixmap: &Pixmap, path: &Path) -> Result<()> {
     encoder.set_color(ColorType::Rgba);
     encoder.set_depth(BitDepth::Eight);
 
-    let mut writer = encoder.write_header().context("Failed to write PNG header")?;
+    let mut writer = encoder
+        .write_header()
+        .context("Failed to write PNG header")?;
 
     // Convert from premultiplied alpha to straight alpha
     let data = pixmap.data();
@@ -294,7 +300,8 @@ fn draw_status_dot(pixmap: &mut Pixmap, r: u8, g: u8, b: u8) {
                     let pr = (255.0 * alpha_f) as u8;
                     let pg = (255.0 * alpha_f) as u8;
                     let pb = (255.0 * alpha_f) as u8;
-                    if let Some(color) = tiny_skia::PremultipliedColorU8::from_rgba(pr, pg, pb, alpha)
+                    if let Some(color) =
+                        tiny_skia::PremultipliedColorU8::from_rgba(pr, pg, pb, alpha)
                     {
                         pixels[idx] = color;
                     }
@@ -303,7 +310,8 @@ fn draw_status_dot(pixmap: &mut Pixmap, r: u8, g: u8, b: u8) {
                     let pr = (r as f32 * alpha_f) as u8;
                     let pg = (g as f32 * alpha_f) as u8;
                     let pb = (b as f32 * alpha_f) as u8;
-                    if let Some(color) = tiny_skia::PremultipliedColorU8::from_rgba(pr, pg, pb, alpha)
+                    if let Some(color) =
+                        tiny_skia::PremultipliedColorU8::from_rgba(pr, pg, pb, alpha)
                     {
                         pixels[idx] = color;
                     }
