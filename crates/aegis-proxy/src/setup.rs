@@ -136,10 +136,10 @@ pub fn uninstall_ca_certificate(_cert_path: &Path) -> SetupResult {
 }
 
 /// Checks if the CA certificate is installed.
-pub fn is_ca_installed(cert_path: &Path) -> bool {
+pub fn is_ca_installed(_cert_path: &Path) -> bool {
     #[cfg(target_os = "windows")]
     {
-        is_ca_installed_windows(cert_path)
+        is_ca_installed_windows(_cert_path)
     }
 
     #[cfg(target_os = "macos")]
@@ -154,7 +154,7 @@ pub fn is_ca_installed(cert_path: &Path) -> bool {
 
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
-        let _ = cert_path;
+        let _ = _cert_path;
         false
     }
 }
