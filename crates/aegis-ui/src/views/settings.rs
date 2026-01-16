@@ -175,9 +175,9 @@ fn render_general_section(ui: &mut egui::Ui, state: &mut AppState, settings: &mu
     ui.label(RichText::new("General").size(16.0).strong());
     ui.add_space(8.0);
 
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(16.0)
         .show(ui, |ui| {
             // Use cached values
@@ -256,9 +256,9 @@ fn render_security_section(ui: &mut egui::Ui, state: &mut AppState, settings: &m
     ui.label(RichText::new("Security").size(16.0).strong());
     ui.add_space(8.0);
 
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(16.0)
         .show(ui, |ui| {
             if settings.show_change_password {
@@ -360,9 +360,9 @@ fn render_mode_section(ui: &mut egui::Ui, state: &mut AppState, settings: &mut S
     ui.label(RichText::new("Proxy Protection").size(16.0).strong());
     ui.add_space(8.0);
 
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(16.0)
         .show(ui, |ui| {
             ui.label(
@@ -389,9 +389,9 @@ fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState, settings: &mut Se
     let proxy_enabled = settings.proxy_enabled;
 
     // Status overview
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(ui.style().visuals.faint_bg_color)
-        .rounding(4.0)
+        .corner_radius(4.0)
         .inner_margin(8.0)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -607,9 +607,9 @@ fn render_about_section(ui: &mut egui::Ui) {
     ui.label(RichText::new("About").size(16.0).strong());
     ui.add_space(8.0);
 
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(16.0)
         .show(ui, |ui| {
             ui.label(RichText::new("Aegis").size(18.0).strong());

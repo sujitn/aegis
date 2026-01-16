@@ -216,9 +216,9 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWizardS
         ui.add_space(24.0);
 
         // Step content in a frame
-        egui::Frame::none()
+        egui::Frame::new()
             .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-            .rounding(8.0)
+            .corner_radius(8.0)
             .inner_margin(32.0)
             .show(ui, |ui| {
                 ui.set_min_width(450.0);
@@ -477,9 +477,9 @@ fn render_protection_level(ui: &mut egui::Ui, wizard: &mut SetupWizardState) {
                 ui.style().visuals.widgets.inactive.bg_fill
             };
 
-            let response = egui::Frame::none()
+            let response = egui::Frame::new()
                 .fill(frame_fill)
-                .rounding(6.0)
+                .corner_radius(6.0)
                 .inner_margin(12.0)
                 .show(ui, |ui| {
                     ui.set_min_width(380.0);
@@ -884,9 +884,9 @@ fn render_complete(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWi
         ui.label(RichText::new("Your Configuration:").strong());
         ui.add_space(8.0);
 
-        egui::Frame::none()
+        egui::Frame::new()
             .fill(ui.style().visuals.widgets.inactive.bg_fill)
-            .rounding(4.0)
+            .corner_radius(4.0)
             .inner_margin(12.0)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {

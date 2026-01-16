@@ -268,13 +268,9 @@ jobs:
       - name: Build release
         run: cargo build --release --package aegis-app
 
-      - name: Initialize WiX
-        run: cargo wix init --package aegis-app
-        continue-on-error: true
-
       - name: Build MSI
         run: |
-          cargo wix --package aegis-app --nocapture || echo "WiX build had issues, checking for output..."
+          cargo wix --package aegis-app --no-build --nocapture
 
       - name: Find and rename MSI
         shell: bash
@@ -528,17 +524,17 @@ jobs:
           # Copy binary
           cp target/release/aegis "$APPDIR/usr/bin/"
 
-          # Copy desktop entry
-          cp crates/aegis-app/appimage/aegis.desktop "$APPDIR/"
-          cp crates/aegis-app/appimage/aegis.desktop "$APPDIR/usr/share/applications/"
+          # Copy desktop entry (using properly named file)
+          cp crates/aegis-app/appimage/com.aegis.app.desktop "$APPDIR/"
+          cp crates/aegis-app/appimage/com.aegis.app.desktop "$APPDIR/usr/share/applications/"
 
-          # Copy AppStream metadata
-          cp crates/aegis-app/appimage/aegis.appdata.xml "$APPDIR/usr/share/metainfo/"
+          # Copy AppStream metadata (using properly named file)
+          cp crates/aegis-app/appimage/com.aegis.app.appdata.xml "$APPDIR/usr/share/metainfo/"
 
-          # Create icon
+          # Create icon with matching name
           convert -size 256x256 xc:#4A90D9 -fill white -gravity center \
-            -pointsize 80 -annotate 0 'A' "$APPDIR/aegis.png"
-          cp "$APPDIR/aegis.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/"
+            -pointsize 80 -annotate 0 'A' "$APPDIR/com.aegis.app.png"
+          cp "$APPDIR/com.aegis.app.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/"
 
           # Create AppRun
           cat > "$APPDIR/AppRun" << 'EOF'

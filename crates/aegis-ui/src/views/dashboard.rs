@@ -72,9 +72,9 @@ fn render_summary_cards(ui: &mut egui::Ui, state: &AppState) {
 
 /// Renders a single statistics card.
 fn render_stat_card(ui: &mut egui::Ui, label: &str, value: i64, color: Color32) {
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(16.0)
         .show(ui, |ui| {
             ui.set_min_size(Vec2::new(100.0, 70.0));
@@ -101,9 +101,9 @@ fn render_quick_actions(ui: &mut egui::Ui, state: &mut AppState) {
 
         let status_color = state.protection_status.color();
 
-        egui::Frame::none()
+        egui::Frame::new()
             .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-            .rounding(8.0)
+            .corner_radius(8.0)
             .inner_margin(12.0)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -119,15 +119,15 @@ fn render_quick_actions(ui: &mut egui::Ui, state: &mut AppState) {
             let pause_menu = |ui: &mut egui::Ui| {
                 if ui.button("15 minutes").clicked() {
                     state.protection_status = ProtectionStatus::Paused;
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.button("1 hour").clicked() {
                     state.protection_status = ProtectionStatus::Paused;
-                    ui.close_menu();
+                    ui.close();
                 }
                 if ui.button("Until tomorrow").clicked() {
                     state.protection_status = ProtectionStatus::Paused;
-                    ui.close_menu();
+                    ui.close();
                 }
             };
 
@@ -159,9 +159,9 @@ fn render_recent_activity(ui: &mut egui::Ui, state: &AppState) {
     ui.add_space(8.0);
 
     if state.recent_events.is_empty() {
-        egui::Frame::none()
+        egui::Frame::new()
             .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-            .rounding(8.0)
+            .corner_radius(8.0)
             .inner_margin(24.0)
             .show(ui, |ui| {
                 ui.vertical_centered(|ui| {
@@ -174,9 +174,9 @@ fn render_recent_activity(ui: &mut egui::Ui, state: &AppState) {
                 });
             });
     } else {
-        egui::Frame::none()
+        egui::Frame::new()
             .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-            .rounding(8.0)
+            .corner_radius(8.0)
             .inner_margin(12.0)
             .show(ui, |ui| {
                 for event in state.recent_events.iter().take(10) {

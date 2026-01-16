@@ -349,9 +349,9 @@ fn render_log_entry(ui: &mut egui::Ui, entry: &LogEntry) {
         let level_text = entry.level.as_str();
         let level_color = entry.level.color();
 
-        egui::Frame::none()
+        egui::Frame::new()
             .fill(level_color.gamma_multiply(0.15))
-            .rounding(2.0)
+            .corner_radius(2.0)
             .inner_margin(egui::vec2(4.0, 1.0))
             .show(ui, |ui| {
                 ui.label(

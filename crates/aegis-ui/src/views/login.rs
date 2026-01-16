@@ -17,9 +17,9 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState) {
         ui.add_space(40.0);
 
         // Login form in a frame
-        egui::Frame::none()
+        egui::Frame::new()
             .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-            .rounding(8.0)
+            .corner_radius(8.0)
             .inner_margin(24.0)
             .show(ui, |ui| {
                 ui.set_min_width(300.0);

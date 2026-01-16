@@ -6,6 +6,10 @@
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
 
+  <developer id="com.aegis">
+    <name>Aegis Team</name>
+  </developer>
+
   <description>
     <p>
       Aegis provides parental controls for AI chatbots like ChatGPT, Claude, and Gemini.
@@ -24,6 +28,7 @@
   <categories>
     <category>Utility</category>
     <category>Security</category>
+    <category>System</category>
   </categories>
 
   <keywords>
@@ -35,10 +40,10 @@
     <keyword>family safety</keyword>
   </keywords>
 
-  <url type="homepage">https://github.com/aegis/aegis</url>
-  <url type="bugtracker">https://github.com/aegis/aegis/issues</url>
+  <url type="homepage">https://github.com/sujitn/aegis</url>
+  <url type="bugtracker">https://github.com/sujitn/aegis/issues</url>
 
-  <launchable type="desktop-id">aegis.desktop</launchable>
+  <launchable type="desktop-id">com.aegis.app.desktop</launchable>
 
   <provides>
     <binary>aegis</binary>

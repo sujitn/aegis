@@ -446,9 +446,9 @@ enum TimeRuleAction {
 
 /// Renders empty state for time rules.
 fn render_empty_time_rules(ui: &mut egui::Ui) {
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(24.0)
         .show(ui, |ui| {
             ui.vertical_centered(|ui| {
@@ -471,9 +471,9 @@ fn render_time_rule_card_simple(
 ) -> TimeRuleAction {
     let mut action = TimeRuleAction::None;
 
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(12.0)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -720,9 +720,9 @@ fn render_content_rule_card(
 
     let state = rules_state.content_rules.entry(category).or_default();
 
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(12.0)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -806,9 +806,9 @@ fn render_community_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
     ui.add_space(12.0);
 
     // Tier explanation
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(12.0)
         .show(ui, |ui| {
             ui.label(
@@ -866,9 +866,9 @@ fn render_community_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
                 let mut to_remove = None;
                 for term in &whitelist {
                     ui.horizontal(|ui| {
-                        egui::Frame::none()
+                        egui::Frame::new()
                             .fill(Color32::from_rgb(0x22, 0xc5, 0x5e).gamma_multiply(0.2))
-                            .rounding(4.0)
+                            .corner_radius(4.0)
                             .inner_margin(4.0)
                             .show(ui, |ui| {
                                 ui.label(term);
@@ -941,9 +941,9 @@ fn render_community_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
                 let mut to_remove = None;
                 for (term, category) in &blacklist {
                     ui.horizontal(|ui| {
-                        egui::Frame::none()
+                        egui::Frame::new()
                             .fill(Color32::from_rgb(0xef, 0x44, 0x44).gamma_multiply(0.2))
-                            .rounding(4.0)
+                            .corner_radius(4.0)
                             .inner_margin(4.0)
                             .show(ui, |ui| {
                                 ui.label(format!("{} ({})", term, category.name()));

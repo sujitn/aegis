@@ -136,7 +136,7 @@ fn render_logs_table(ui: &mut egui::Ui, state: &AppState, logs_state: &LogsState
         .max_height(400.0)
         .show(ui, |ui| {
             // Table header
-            egui::Frame::none()
+            egui::Frame::new()
                 .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
                 .inner_margin(8.0)
                 .show(ui, |ui| {
@@ -217,9 +217,9 @@ fn render_log_row(ui: &mut egui::Ui, event: &aegis_storage::Event) {
             aegis_storage::Action::Flagged => ("Warned", status::WARNING),
         };
 
-        egui::Frame::none()
+        egui::Frame::new()
             .fill(action_color.gamma_multiply(0.2))
-            .rounding(4.0)
+            .corner_radius(4.0)
             .inner_margin(egui::vec2(6.0, 2.0))
             .show(ui, |ui| {
                 ui.label(RichText::new(action_text).size(11.0).color(action_color));

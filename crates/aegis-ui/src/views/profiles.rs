@@ -109,9 +109,9 @@ fn render_profile_card(
     state: &mut AppState,
     editor: &mut ProfileEditor,
 ) {
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .rounding(8.0)
+        .corner_radius(8.0)
         .inner_margin(16.0)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
