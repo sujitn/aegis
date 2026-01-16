@@ -8,7 +8,6 @@
 use std::path::Path;
 use std::process::Command;
 
-
 /// Proxy setup configuration.
 #[derive(Debug, Clone)]
 pub struct ProxySetup {
@@ -22,7 +21,11 @@ pub struct ProxySetup {
 
 impl ProxySetup {
     /// Creates a new setup configuration.
-    pub fn new(host: impl Into<String>, port: u16, ca_cert_path: impl Into<std::path::PathBuf>) -> Self {
+    pub fn new(
+        host: impl Into<String>,
+        port: u16,
+        ca_cert_path: impl Into<std::path::PathBuf>,
+    ) -> Self {
         Self {
             host: host.into(),
             port,
@@ -64,6 +67,7 @@ impl SetupResult {
         }
     }
 
+    #[allow(dead_code)]
     fn needs_admin(message: impl Into<String>) -> Self {
         Self {
             success: false,
@@ -306,7 +310,13 @@ fn install_ca_windows(cert_path: &Path) -> SetupResult {
     );
 
     let output = Command::new("powershell")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &ps_script,
+        ])
         .creation_flags(CREATE_NO_WINDOW)
         .output();
 
@@ -325,7 +335,9 @@ fn install_ca_windows(cert_path: &Path) -> SetupResult {
             match user_output {
                 Ok(u_out) => {
                     if u_out.status.success() {
-                        SetupResult::success("CA certificate installed to user trust store (current user only)")
+                        SetupResult::success(
+                            "CA certificate installed to user trust store (current user only)",
+                        )
                     } else {
                         let stderr = String::from_utf8_lossy(&u_out.stderr);
                         SetupResult::failure(format!(
@@ -373,7 +385,13 @@ fn uninstall_ca_windows(_cert_path: &Path) -> SetupResult {
     );
 
     let output = Command::new("powershell")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &elevated_script])
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &elevated_script,
+        ])
         .creation_flags(CREATE_NO_WINDOW)
         .output();
 
@@ -394,15 +412,10 @@ fn uninstall_ca_windows(_cert_path: &Path) -> SetupResult {
 #[cfg(target_os = "windows")]
 fn is_ca_installed_windows(_cert_path: &Path) -> bool {
     // Check both user and machine stores for "Aegis Root CA"
-    let stores = [
-        vec!["-store", "Root"],
-        vec!["-store", "-user", "Root"],
-    ];
+    let stores = [vec!["-store", "Root"], vec!["-store", "-user", "Root"]];
 
     for store_args in &stores {
-        let output = Command::new("certutil")
-            .args(store_args)
-            .output();
+        let output = Command::new("certutil").args(store_args).output();
 
         if let Ok(out) = output {
             let stdout = String::from_utf8_lossy(&out.stdout);
@@ -436,7 +449,13 @@ fn enable_proxy_windows(host: &str, port: u16) -> SetupResult {
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
     let output = Command::new("powershell")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &ps_script,
+        ])
         .creation_flags(CREATE_NO_WINDOW)
         .output();
 
@@ -473,7 +492,13 @@ fn disable_proxy_windows() -> SetupResult {
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
     let output = Command::new("powershell")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script])
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            ps_script,
+        ])
         .creation_flags(CREATE_NO_WINDOW)
         .output();
 
@@ -504,7 +529,13 @@ fn is_proxy_enabled_windows(host: &str, port: u16) -> bool {
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
     let output = Command::new("powershell")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script])
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            ps_script,
+        ])
         .creation_flags(CREATE_NO_WINDOW)
         .output();
 
@@ -533,9 +564,7 @@ fn install_ca_macos(cert_path: &Path) -> SetupResult {
         cert_path_str.replace('\'', "'\\''")
     );
 
-    let output = Command::new("osascript")
-        .args(["-e", &script])
-        .output();
+    let output = Command::new("osascript").args(["-e", &script]).output();
 
     match output {
         Ok(out) => {
@@ -547,8 +576,13 @@ fn install_ca_macos(cert_path: &Path) -> SetupResult {
             let user_output = Command::new("security")
                 .args([
                     "add-trusted-cert",
-                    "-r", "trustRoot",
-                    "-k", &format!("{}/Library/Keychains/login.keychain-db", std::env::var("HOME").unwrap_or_default()),
+                    "-r",
+                    "trustRoot",
+                    "-k",
+                    &format!(
+                        "{}/Library/Keychains/login.keychain-db",
+                        std::env::var("HOME").unwrap_or_default()
+                    ),
                     &cert_path_str,
                 ])
                 .output();
@@ -556,7 +590,9 @@ fn install_ca_macos(cert_path: &Path) -> SetupResult {
             match user_output {
                 Ok(u_out) => {
                     if u_out.status.success() {
-                        SetupResult::success("CA certificate installed to user keychain (current user only)")
+                        SetupResult::success(
+                            "CA certificate installed to user keychain (current user only)",
+                        )
                     } else {
                         let stderr = String::from_utf8_lossy(&u_out.stderr);
                         SetupResult::failure(format!(
@@ -577,9 +613,7 @@ fn uninstall_ca_macos() -> SetupResult {
     // Try to remove from system keychain with admin prompt
     let script = r#"do shell script "security delete-certificate -c 'Aegis Root CA' /Library/Keychains/System.keychain 2>/dev/null; security delete-certificate -c 'rcgen self signed cert' /Library/Keychains/System.keychain 2>/dev/null" with administrator privileges"#;
 
-    let output = Command::new("osascript")
-        .args(["-e", script])
-        .output();
+    let output = Command::new("osascript").args(["-e", script]).output();
 
     // Also try to remove from user keychain (doesn't need admin)
     let _ = Command::new("security")
@@ -658,9 +692,9 @@ fn enable_proxy_macos(host: &str, port: u16) -> SetupResult {
         .output();
 
     match (http_result, https_result) {
-        (Ok(h), Ok(s)) if h.status.success() && s.status.success() => {
-            SetupResult::success(format!("System proxy enabled on {} ({}:{})", service, host, port))
-        }
+        (Ok(h), Ok(s)) if h.status.success() && s.status.success() => SetupResult::success(
+            format!("System proxy enabled on {} ({}:{})", service, host, port),
+        ),
         _ => SetupResult::needs_admin("Failed to set proxy. May need administrator privileges."),
     }
 }
@@ -713,11 +747,12 @@ fn install_ca_linux(cert_path: &Path) -> SetupResult {
     let cert_path_str = cert_path.to_string_lossy();
 
     // Determine which elevation tool to use (pkexec for GUI, sudo for terminal)
-    let elevation_cmd = if std::env::var("DISPLAY").is_ok() || std::env::var("WAYLAND_DISPLAY").is_ok() {
-        "pkexec" // GUI environment - use PolicyKit for graphical prompt
-    } else {
-        "sudo" // Terminal - use sudo
-    };
+    let elevation_cmd =
+        if std::env::var("DISPLAY").is_ok() || std::env::var("WAYLAND_DISPLAY").is_ok() {
+            "pkexec" // GUI environment - use PolicyKit for graphical prompt
+        } else {
+            "sudo" // Terminal - use sudo
+        };
 
     // Detect distro and use appropriate method
     if Path::new("/usr/local/share/ca-certificates").exists() {
@@ -814,18 +849,21 @@ fn install_ca_linux(cert_path: &Path) -> SetupResult {
             Err(e) => SetupResult::failure(format!("Failed to run {}: {}", elevation_cmd, e)),
         }
     } else {
-        SetupResult::failure("Unknown Linux distribution. Please install the CA certificate manually.")
+        SetupResult::failure(
+            "Unknown Linux distribution. Please install the CA certificate manually.",
+        )
     }
 }
 
 #[cfg(target_os = "linux")]
 fn uninstall_ca_linux() -> SetupResult {
     // Determine which elevation tool to use (pkexec for GUI, sudo for terminal)
-    let elevation_cmd = if std::env::var("DISPLAY").is_ok() || std::env::var("WAYLAND_DISPLAY").is_ok() {
-        "pkexec" // GUI environment - use PolicyKit for graphical prompt
-    } else {
-        "sudo" // Terminal - use sudo
-    };
+    let elevation_cmd =
+        if std::env::var("DISPLAY").is_ok() || std::env::var("WAYLAND_DISPLAY").is_ok() {
+            "pkexec" // GUI environment - use PolicyKit for graphical prompt
+        } else {
+            "sudo" // Terminal - use sudo
+        };
 
     // Try all known locations
     let locations = [
@@ -848,13 +886,19 @@ fn uninstall_ca_linux() -> SetupResult {
 
     // Update certificates based on distro
     if Path::new("/usr/local/share/ca-certificates").exists() {
-        let _ = Command::new(elevation_cmd).args(["update-ca-certificates"]).output();
+        let _ = Command::new(elevation_cmd)
+            .args(["update-ca-certificates"])
+            .output();
     }
     if Path::new("/etc/pki/ca-trust").exists() {
-        let _ = Command::new(elevation_cmd).args(["update-ca-trust", "extract"]).output();
+        let _ = Command::new(elevation_cmd)
+            .args(["update-ca-trust", "extract"])
+            .output();
     }
     if Path::new("/etc/ca-certificates/trust-source").exists() {
-        let _ = Command::new(elevation_cmd).args(["trust", "extract-compat"]).output();
+        let _ = Command::new(elevation_cmd)
+            .args(["trust", "extract-compat"])
+            .output();
     }
 
     if removed {
@@ -889,13 +933,23 @@ fn enable_proxy_linux(host: &str, port: u16) -> SetupResult {
             .args(["set", "org.gnome.system.proxy.http", "host", host])
             .output();
         let _ = Command::new("gsettings")
-            .args(["set", "org.gnome.system.proxy.http", "port", &port.to_string()])
+            .args([
+                "set",
+                "org.gnome.system.proxy.http",
+                "port",
+                &port.to_string(),
+            ])
             .output();
         let _ = Command::new("gsettings")
             .args(["set", "org.gnome.system.proxy.https", "host", host])
             .output();
         let _ = Command::new("gsettings")
-            .args(["set", "org.gnome.system.proxy.https", "port", &port.to_string()])
+            .args([
+                "set",
+                "org.gnome.system.proxy.https",
+                "port",
+                &port.to_string(),
+            ])
             .output();
 
         return SetupResult::success(format!("GNOME proxy configured: {}", proxy_url));

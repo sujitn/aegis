@@ -1,19 +1,18 @@
 //! Settings view.
 
-use eframe::egui::{self, RichText, Color32};
+use eframe::egui::{self, Color32, RichText};
 
 use aegis_proxy::{
-    install_ca_certificate, uninstall_ca_certificate, is_ca_installed, is_proxy_enabled,
-    enable_system_proxy, disable_system_proxy, DEFAULT_PROXY_PORT,
+    disable_system_proxy, enable_system_proxy, install_ca_certificate, is_ca_installed,
+    is_proxy_enabled, uninstall_ca_certificate, DEFAULT_PROXY_PORT,
 };
 
 use crate::state::AppState;
 
 /// Returns the CA certificate path.
 fn get_ca_cert_path() -> Option<std::path::PathBuf> {
-    directories::ProjectDirs::from("com", "aegis", "aegis").map(|dirs| {
-        dirs.data_dir().join("ca").join("aegis-ca.crt")
-    })
+    directories::ProjectDirs::from("com", "aegis", "aegis")
+        .map(|dirs| dirs.data_dir().join("ca").join("aegis-ca.crt"))
 }
 
 /// State for the settings view.
@@ -165,9 +164,11 @@ fn render_mode_section(ui: &mut egui::Ui, state: &mut AppState) {
         .inner_margin(16.0)
         .show(ui, |ui| {
             ui.label(
-                RichText::new("Aegis uses a MITM proxy to filter AI prompts from all applications.")
-                    .size(12.0)
-                    .weak(),
+                RichText::new(
+                    "Aegis uses a MITM proxy to filter AI prompts from all applications.",
+                )
+                .size(12.0)
+                .weak(),
             );
 
             ui.add_space(12.0);
@@ -182,7 +183,10 @@ fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState) {
     ui.add_space(8.0);
 
     let ca_path = get_ca_cert_path();
-    let ca_installed = ca_path.as_ref().map(|p| is_ca_installed(p)).unwrap_or(false);
+    let ca_installed = ca_path
+        .as_ref()
+        .map(|p| is_ca_installed(p))
+        .unwrap_or(false);
     let proxy_enabled = is_proxy_enabled("127.0.0.1", DEFAULT_PROXY_PORT);
 
     // Status overview
@@ -229,17 +233,27 @@ fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState) {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Path:").weak());
             if ui
-                .link(RichText::new(ca_path.display().to_string()).monospace().size(10.0))
+                .link(
+                    RichText::new(ca_path.display().to_string())
+                        .monospace()
+                        .size(10.0),
+                )
                 .on_hover_text("Click to open folder")
                 .clicked()
             {
                 if let Some(parent) = ca_path.parent() {
                     #[cfg(target_os = "windows")]
-                    { let _ = std::process::Command::new("explorer").arg(parent).spawn(); }
+                    {
+                        let _ = std::process::Command::new("explorer").arg(parent).spawn();
+                    }
                     #[cfg(target_os = "macos")]
-                    { let _ = std::process::Command::new("open").arg(parent).spawn(); }
+                    {
+                        let _ = std::process::Command::new("open").arg(parent).spawn();
+                    }
                     #[cfg(target_os = "linux")]
-                    { let _ = std::process::Command::new("xdg-open").arg(parent).spawn(); }
+                    {
+                        let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+                    }
                 }
             }
         });
@@ -311,7 +325,11 @@ fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState) {
                 }
             });
             if !can_enable {
-                ui.label(RichText::new("Install CA certificate first").weak().size(11.0));
+                ui.label(
+                    RichText::new("Install CA certificate first")
+                        .weak()
+                        .size(11.0),
+                );
             }
         }
     });
@@ -351,7 +369,11 @@ fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState) {
                     state.set_error(format!("Proxy setup failed: {}", proxy_result.message));
                 }
             }
-            ui.label(RichText::new("Installs CA certificate and enables system proxy").weak().size(11.0));
+            ui.label(
+                RichText::new("Installs CA certificate and enables system proxy")
+                    .weak()
+                    .size(11.0),
+            );
         });
     }
 

@@ -213,7 +213,12 @@ impl ProxyHandler {
             Some(info) => info,
             None => {
                 // No prompt extracted, forward request
-                tracing::info!("No prompt extracted from {}{} ({} bytes)", host, path, body_bytes.len());
+                tracing::info!(
+                    "No prompt extracted from {}{} ({} bytes)",
+                    host,
+                    path,
+                    body_bytes.len()
+                );
                 return RequestOrResponse::Request(Request::from_parts(
                     parts,
                     bytes_to_body(body_bytes),
@@ -337,7 +342,11 @@ impl HttpHandler for ProxyHandler {
             return RequestOrResponse::Request(req);
         }
 
-        tracing::info!("Intercepting {} request to LLM domain: {}", req.method(), host);
+        tracing::info!(
+            "Intercepting {} request to LLM domain: {}",
+            req.method(),
+            host
+        );
 
         self.handle_llm_request(&host, req).await
     }
@@ -396,7 +405,11 @@ impl WebSocketHandler for ProxyHandler {
             // Try to extract prompt from WebSocket message
             // ChatGPT WebSocket messages contain JSON with message content
             if let Some(prompt) = extract_websocket_prompt(&text) {
-                tracing::info!("WebSocket prompt extracted from {}: {} chars", host, prompt.len());
+                tracing::info!(
+                    "WebSocket prompt extracted from {}: {} chars",
+                    host,
+                    prompt.len()
+                );
 
                 // Classify the prompt
                 let classification = classifier.write().classify(&prompt);
@@ -406,10 +419,7 @@ impl WebSocketHandler for ProxyHandler {
 
                 match result.action {
                     RuleAction::Block => {
-                        let reason = result
-                            .source
-                            .rule_name()
-                            .unwrap_or("Policy violation");
+                        let reason = result.source.rule_name().unwrap_or("Policy violation");
 
                         tracing::info!(
                             "Blocked WebSocket message to {} - reason: {}",
@@ -507,7 +517,11 @@ fn extract_websocket_prompt(text: &str) -> Option<String> {
             if let Some(messages) = json.get("messages").and_then(|m| m.as_array()) {
                 let mut prompts = Vec::new();
                 for msg in messages {
-                    if let Some(content) = msg.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
+                    if let Some(content) = msg
+                        .get("content")
+                        .and_then(|c| c.get("parts"))
+                        .and_then(|p| p.as_array())
+                    {
                         for part in content {
                             if let Some(text) = part.as_str() {
                                 prompts.push(text.to_string());

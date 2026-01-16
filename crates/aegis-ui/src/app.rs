@@ -6,7 +6,7 @@ use egui::{Color32, RichText, Vec2};
 use aegis_storage::Database;
 
 use crate::state::{AppState, View};
-use crate::views::{dashboard, login, logs, profiles, rules, settings, setup};
+use crate::views::{dashboard, login, logs, profiles, rules, settings, setup, system_logs};
 
 /// Main dashboard application.
 pub struct DashboardApp {
@@ -18,6 +18,9 @@ pub struct DashboardApp {
 
     /// Logs view state.
     logs_state: logs::LogsState,
+
+    /// System logs view state.
+    system_logs_state: system_logs::SystemLogsState,
 
     /// Settings view state.
     settings_state: settings::SettingsState,
@@ -33,6 +36,7 @@ impl DashboardApp {
             state: AppState::new(db),
             profile_editor: profiles::ProfileEditor::default(),
             logs_state: logs::LogsState::new(),
+            system_logs_state: system_logs::SystemLogsState::default(),
             settings_state: settings::SettingsState::default(),
             setup_wizard: setup::SetupWizardState::new(),
         }
@@ -83,7 +87,8 @@ impl DashboardApp {
             // Navigation items
             self.render_nav_item(ui, "Dashboard", View::Dashboard);
             self.render_nav_item(ui, "Profiles", View::Profiles);
-            self.render_nav_item(ui, "Logs", View::Logs);
+            self.render_nav_item(ui, "Activity", View::Logs);
+            self.render_nav_item(ui, "System Logs", View::SystemLogs);
             self.render_nav_item(ui, "Settings", View::Settings);
 
             // Spacer
@@ -173,6 +178,7 @@ impl DashboardApp {
                 View::Profiles => "Profiles",
                 View::Rules => "Rules",
                 View::Logs => "Activity Logs",
+                View::SystemLogs => "System Logs",
                 View::Settings => "Settings",
             };
             ui.heading(title);
@@ -203,6 +209,9 @@ impl DashboardApp {
             }
             View::Logs => {
                 logs::render(ui, &mut self.state, &mut self.logs_state);
+            }
+            View::SystemLogs => {
+                system_logs::render(ui, &mut self.system_logs_state);
             }
             View::Settings => {
                 settings::render(ui, &mut self.state, &mut self.settings_state);

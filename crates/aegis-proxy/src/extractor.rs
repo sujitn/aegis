@@ -123,8 +123,7 @@ fn looks_like_id(s: &str) -> bool {
 fn is_metadata_key(key: &str) -> bool {
     matches!(
         key,
-        "id"
-            | "uuid"
+        "id" | "uuid"
             | "token"
             | "access_token"
             | "model"
@@ -182,10 +181,8 @@ fn extract_openai(json: &Value) -> Option<String> {
                     }
                     // Handle ChatGPT web format: content.parts as array of strings
                     if let Some(parts) = content.get("parts").and_then(|p| p.as_array()) {
-                        let text_parts: Vec<&str> = parts
-                            .iter()
-                            .filter_map(|part| part.as_str())
-                            .collect();
+                        let text_parts: Vec<&str> =
+                            parts.iter().filter_map(|part| part.as_str()).collect();
                         if !text_parts.is_empty() {
                             return Some(text_parts.join(" "));
                         }

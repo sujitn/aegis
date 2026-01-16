@@ -7,3 +7,4 @@ pub mod profiles;
 pub mod rules;
 pub mod settings;
 pub mod setup;
+pub mod system_logs;

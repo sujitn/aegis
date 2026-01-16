@@ -73,8 +73,10 @@ pub enum View {
     Profiles,
     /// Rule configuration for selected profile.
     Rules,
-    /// Event logs.
+    /// Event logs (activity).
     Logs,
+    /// System logs (application logs from file).
+    SystemLogs,
     /// Application settings.
     Settings,
 }

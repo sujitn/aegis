@@ -3,30 +3,152 @@
 //! This is the main binary that runs the full Aegis application:
 //! - HTTP API server (for browser extension)
 //! - MITM Proxy server (for system-wide protection)
-//! - Parent Dashboard GUI (for management)
+//! - System tray (primary interface)
+//! - Parent Dashboard GUI (opens on demand)
+
+// Hide console window on Windows in release builds
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+use std::panic;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use aegis_proxy::{ProxyConfig, ProxyServer};
 use aegis_server::{Server, ServerConfig};
 use aegis_storage::Database;
+use aegis_tray::{MenuAction, SystemTray, TrayConfig, TrayEvent, TrayStatus};
 use aegis_ui::run_dashboard;
+use clap::Parser;
+use directories::ProjectDirs;
+use muda::MenuEvent;
+use tray_icon::TrayIconEvent;
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("aegis=info".parse().unwrap()),
-        )
-        .init();
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
+};
 
-    tracing::info!("Starting Aegis...");
+/// Aegis - AI safety platform for filtering LLM interactions
+#[derive(Parser, Debug)]
+#[command(name = "aegis", version, about)]
+struct Args {
+    /// Skip tray icon, open dashboard directly
+    #[arg(long)]
+    no_tray: bool,
 
-    // Open the database (creates if doesn't exist)
-    let db = Database::new().map_err(|e| anyhow::anyhow!("Database error: {}", e))?;
-    tracing::info!("Database opened at {:?}", Database::default_db_path()?);
+    /// Enable debug logging
+    #[arg(long)]
+    debug: bool,
 
-    // Clone for servers (servers need their own handles)
+    /// Set log level (error, warn, info, debug, trace)
+    #[arg(long, default_value = "info")]
+    log_level: String,
+
+    /// Start with dashboard visible (for first-run or debugging)
+    #[arg(long)]
+    show_dashboard: bool,
+}
+
+/// Get the logs directory path.
+fn logs_dir() -> Option<PathBuf> {
+    ProjectDirs::from("", "aegis", "Aegis").map(|dirs| dirs.data_dir().join("logs"))
+}
+
+/// Initialize logging with file rotation.
+fn init_logging(args: &Args) -> Option<tracing_appender::non_blocking::WorkerGuard> {
+    let log_level = if args.debug { "debug" } else { &args.log_level };
+
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(format!("aegis={},warn", log_level)));
+
+    // Try to set up file logging
+    if let Some(log_dir) = logs_dir() {
+        // Create logs directory if it doesn't exist
+        if std::fs::create_dir_all(&log_dir).is_ok() {
+            // Create rolling file appender (rotates daily, keeps files)
+            let file_appender = RollingFileAppender::builder()
+                .rotation(Rotation::DAILY)
+                .max_log_files(5)
+                .filename_prefix("aegis")
+                .filename_suffix("log")
+                .build(&log_dir)
+                .ok();
+
+            if let Some(appender) = file_appender {
+                let (non_blocking, guard) = tracing_appender::non_blocking(appender);
+
+                // In debug mode, also log to console
+                if args.debug || args.no_tray {
+                    tracing_subscriber::registry()
+                        .with(env_filter)
+                        .with(fmt::layer().with_writer(std::io::stdout))
+                        .with(fmt::layer().with_writer(non_blocking).with_ansi(false))
+                        .init();
+                } else {
+                    // Release mode: file only (no console since we're windowless)
+                    tracing_subscriber::registry()
+                        .with(env_filter)
+                        .with(fmt::layer().with_writer(non_blocking).with_ansi(false))
+                        .init();
+                }
+
+                tracing::info!("Logging to {:?}", log_dir);
+                return Some(guard);
+            }
+        }
+    }
+
+    // Fallback: console logging only
+    tracing_subscriber::fmt().with_env_filter(env_filter).init();
+
+    tracing::warn!("File logging unavailable, using console only");
+    None
+}
+
+/// Check if this is the first run (setup not completed).
+fn is_first_run(db: &Database) -> bool {
+    db.get_config("setup_completed").ok().flatten().is_none()
+}
+
+/// Drain any stale events from global event receivers.
+/// This prevents old events from affecting newly created tray instances.
+fn drain_stale_events() {
+    // Drain menu events
+    let menu_receiver = MenuEvent::receiver();
+    while menu_receiver.try_recv().is_ok() {}
+
+    // Drain tray icon events
+    let tray_receiver = TrayIconEvent::receiver();
+    while tray_receiver.try_recv().is_ok() {}
+
+    tracing::debug!("Drained stale events from global receivers");
+}
+
+/// Pump Windows messages to allow tray icon to receive events.
+/// On Windows, the tray icon requires the message loop to be pumped.
+#[cfg(target_os = "windows")]
+fn pump_windows_messages() {
+    unsafe {
+        let mut msg: MSG = std::mem::zeroed();
+        // Process all pending messages without blocking
+        while PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+}
+
+/// No-op on non-Windows platforms.
+#[cfg(not(target_os = "windows"))]
+fn pump_windows_messages() {
+    // No-op on non-Windows
+}
+
+/// Start the background servers (API and Proxy).
+async fn start_servers(db: Database) {
     let server_db = db.clone();
 
     // Start HTTP API server in background (for browser extension)
@@ -75,15 +197,181 @@ async fn main() -> anyhow::Result<()> {
 
     // Give servers a moment to start
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+}
 
-    tracing::info!("Launching Dashboard UI...");
+/// Run the application with tray icon as primary interface.
+fn run_with_tray(db: Database, show_dashboard: bool) -> anyhow::Result<()> {
+    // Set up panic hook to log panics to file
+    let default_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        tracing::error!("PANIC: {}", panic_info);
+        default_hook(panic_info);
+    }));
 
-    // Run the dashboard UI (blocking - this is the main event loop)
-    // The dashboard handles:
-    // - First-run setup wizard (if not configured)
-    // - Login screen (if configured)
-    // - Full dashboard after login
-    run_dashboard(db).map_err(|e| anyhow::anyhow!("UI error: {}", e))?;
+    let running = Arc::new(AtomicBool::new(true));
+
+    // Track if we should open dashboard
+    let mut should_open_dashboard = show_dashboard;
+    let mut tray_status = TrayStatus::Protected;
+
+    // Main loop - reinitialize tray after each dashboard session
+    while running.load(Ordering::SeqCst) {
+        // Drain any stale events from previous tray instance
+        drain_stale_events();
+
+        // Small delay to let resources clean up
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Create and initialize the system tray
+        tracing::debug!("Creating new system tray...");
+        let (mut tray, tray_rx) =
+            SystemTray::with_config(TrayConfig::new().with_initial_status(tray_status))?;
+
+        tracing::debug!("Initializing system tray...");
+        tray.init()?;
+        tracing::info!("System tray initialized");
+
+        // If we should open dashboard immediately, do it and skip tray loop
+        if should_open_dashboard {
+            should_open_dashboard = false;
+            tracing::debug!("Shutting down tray for dashboard...");
+            tray.shutdown();
+
+            // Drain events after shutdown
+            drain_stale_events();
+
+            tracing::info!("Opening dashboard...");
+            let db_clone = db.clone();
+            if let Err(e) = run_dashboard(db_clone) {
+                tracing::error!("Dashboard error: {}", e);
+            }
+            tracing::info!("Dashboard closed, returning to tray");
+            continue;
+        }
+
+        // Tray event loop
+        tracing::debug!("Entering tray event loop...");
+        loop {
+            // Pump Windows messages to allow tray to receive events
+            pump_windows_messages();
+
+            // Poll tray events
+            let events = tray.poll_events();
+
+            for event in events {
+                match event {
+                    TrayEvent::MenuAction(action) => {
+                        tracing::debug!("Tray menu action: {:?}", action);
+                        match action {
+                            MenuAction::Dashboard | MenuAction::Settings => {
+                                should_open_dashboard = true;
+                            }
+                            MenuAction::Logs => {
+                                // Open logs folder
+                                if let Some(log_dir) = logs_dir() {
+                                    let _ = open::that(&log_dir);
+                                }
+                            }
+                            MenuAction::Pause => {
+                                tray_status = TrayStatus::Paused;
+                                let _ = tray.set_status(tray_status);
+                            }
+                            MenuAction::Resume => {
+                                tray_status = TrayStatus::Protected;
+                                let _ = tray.set_status(tray_status);
+                            }
+                            MenuAction::Quit => {
+                                tracing::info!("Quit requested from tray");
+                                running.store(false, Ordering::SeqCst);
+                            }
+                        }
+                    }
+                    TrayEvent::DoubleClick => {
+                        should_open_dashboard = true;
+                    }
+                    TrayEvent::StatusChanged(status) => {
+                        tracing::info!("Protection status changed: {:?}", status);
+                        tray_status = status;
+                    }
+                }
+            }
+
+            // Check for events from channel
+            while let Ok(event) = tray_rx.try_recv() {
+                if let TrayEvent::MenuAction(MenuAction::Quit) = event {
+                    running.store(false, Ordering::SeqCst);
+                }
+            }
+
+            // Break inner loop if we need to open dashboard or quit
+            if should_open_dashboard || !running.load(Ordering::SeqCst) {
+                tracing::debug!("Breaking tray loop: dashboard={}, running={}",
+                    should_open_dashboard, running.load(Ordering::SeqCst));
+                break;
+            }
+
+            // Small sleep to prevent busy loop
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+
+        // Shutdown tray before opening dashboard or quitting
+        tracing::debug!("Shutting down tray...");
+        tray.shutdown();
+
+        // Drain events after shutdown
+        drain_stale_events();
+
+        // Open dashboard if requested
+        if should_open_dashboard && running.load(Ordering::SeqCst) {
+            should_open_dashboard = false;
+            tracing::info!("Opening dashboard...");
+
+            let db_clone = db.clone();
+            if let Err(e) = run_dashboard(db_clone) {
+                tracing::error!("Dashboard error: {}", e);
+            }
+            tracing::info!("Dashboard closed, returning to tray");
+        }
+    }
+
+    tracing::debug!("Exiting run_with_tray");
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
+    // Initialize logging (keep guard alive for the duration of the program)
+    let _log_guard = init_logging(&args);
+
+    tracing::info!("Starting Aegis...");
+    tracing::info!("Args: {:?}", args);
+
+    // Open the database (creates if doesn't exist)
+    let db = Database::new().map_err(|e| anyhow::anyhow!("Database error: {}", e))?;
+    tracing::info!("Database opened at {:?}", Database::default_db_path()?);
+
+    // Start background servers
+    start_servers(db.clone()).await;
+
+    // Determine startup mode
+    let first_run = is_first_run(&db);
+    let show_dashboard = args.show_dashboard || first_run;
+
+    if args.no_tray {
+        // No tray mode: just run dashboard directly
+        tracing::info!("Running in no-tray mode (dashboard only)");
+        run_dashboard(db).map_err(|e| anyhow::anyhow!("UI error: {}", e))?;
+    } else {
+        // Normal mode: tray icon with dashboard on demand
+        tracing::info!(
+            "Running in tray mode (first_run={}, show_dashboard={})",
+            first_run,
+            show_dashboard
+        );
+        run_with_tray(db, show_dashboard)?;
+    }
 
     tracing::info!("Aegis shutting down");
     Ok(())

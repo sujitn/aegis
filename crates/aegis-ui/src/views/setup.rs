@@ -105,7 +105,6 @@ impl ProtectionLevel {
     }
 }
 
-
 /// State for the setup wizard.
 #[derive(Debug, Default)]
 pub struct SetupWizardState {

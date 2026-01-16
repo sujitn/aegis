@@ -43,7 +43,7 @@
 | [F014](F014-notifications.md) | Notifications | `complete` | medium | core | F007 |
 | [F015](F015-first-run-setup.md) | First-Run Setup | `complete` | high | ui | F012, F013, F017, F019 |
 | [F020](F020-clean-uninstall.md) | Clean Uninstall | `complete` | high | app | F013, F016 |
-| [F028](F028-background-service.md) | Background Service | `ready` | high | app | F011, F012 |
+| [F028](F028-background-service.md) | Background Service | `complete` | high | app | F011, F012 |
 | [F030](F030-autostart-persistence.md) | Autostart & Persistence | `ready` | high | app | F013, F020, F028 |
 
 ## Build & Distribution

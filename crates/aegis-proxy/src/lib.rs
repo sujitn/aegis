@@ -48,9 +48,9 @@ pub use extractor::{extract_prompt, PromptInfo};
 pub use handler::ProxyHandler;
 pub use proxy::{ProxyConfig, ProxyServer};
 pub use setup::{
-    disable_system_proxy, enable_system_proxy, install_ca_certificate,
-    is_ca_installed, is_proxy_enabled, setup_proxy, teardown_proxy,
-    uninstall_ca_certificate, ProxySetup, SetupResult,
+    disable_system_proxy, enable_system_proxy, install_ca_certificate, is_ca_installed,
+    is_proxy_enabled, setup_proxy, teardown_proxy, uninstall_ca_certificate, ProxySetup,
+    SetupResult,
 };
 
 /// Default proxy port.
