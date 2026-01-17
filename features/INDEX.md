@@ -13,6 +13,7 @@
 | [F007](F007-rule-engine.md) | Rule Engine | `complete` | critical | core | F004-F006 |
 | [F008](F008-sqlite-storage.md) | SQLite Storage | `complete` | critical | storage | F001 |
 | [F025](F025-community-rules.md) | Community Rules | `complete` | high | core | F002, F006 |
+| [F031](F031-sentiment-analysis.md) | Sentiment Analysis | `complete` | medium | core | F004, F008, F012 |
 
 ## Interception
 

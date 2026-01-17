@@ -23,7 +23,9 @@ fn bytes_to_body(bytes: Bytes) -> Body {
     Body::from(Full::new(bytes))
 }
 
-use aegis_core::classifier::{ClassificationResult, TieredClassifier};
+use aegis_core::classifier::{
+    ClassificationResult, SentimentAnalyzer, SentimentConfig, SentimentFlag, TieredClassifier,
+};
 use aegis_core::content_rules::ContentRuleSet;
 use aegis_core::notifications::{BlockedEvent, NotificationManager};
 use aegis_core::rule_engine::{RuleAction, RuleEngine, RuleEngineResult};
@@ -106,14 +108,32 @@ pub type OnAllowCallback = Arc<dyn Fn(&PromptInfo, &RuleEngineResult) + Send + S
 /// pass through without classification.
 ///
 /// Also holds the shared rule engine that can be updated when profile rules change.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct FilteringState {
     /// Whether filtering is enabled.
     enabled: Arc<AtomicBool>,
     /// Current profile name (for logging).
     profile_name: Arc<RwLock<Option<String>>>,
+    /// Current profile ID (for sentiment flagging).
+    profile_id: Arc<RwLock<Option<i64>>>,
     /// Shared rule engine that can be updated when rules change.
     rule_engine: Arc<RwLock<RuleEngine>>,
+    /// Sentiment analyzer for emotional content flagging.
+    sentiment_analyzer: Arc<RwLock<Option<SentimentAnalyzer>>>,
+}
+
+impl std::fmt::Debug for FilteringState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FilteringState")
+            .field("enabled", &self.enabled.load(Ordering::SeqCst))
+            .field("profile_name", &*self.profile_name.read())
+            .field("profile_id", &*self.profile_id.read())
+            .field(
+                "sentiment_enabled",
+                &self.sentiment_analyzer.read().is_some(),
+            )
+            .finish()
+    }
 }
 
 impl Default for FilteringState {
@@ -128,7 +148,9 @@ impl FilteringState {
         Self {
             enabled: Arc::new(AtomicBool::new(true)),
             profile_name: Arc::new(RwLock::new(None)),
+            profile_id: Arc::new(RwLock::new(None)),
             rule_engine: Arc::new(RwLock::new(RuleEngine::with_defaults())),
+            sentiment_analyzer: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -137,7 +159,20 @@ impl FilteringState {
         Self {
             enabled: Arc::new(AtomicBool::new(true)),
             profile_name: Arc::new(RwLock::new(None)),
+            profile_id: Arc::new(RwLock::new(None)),
             rule_engine: Arc::new(RwLock::new(rule_engine)),
+            sentiment_analyzer: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Creates a new filtering state with sentiment analysis enabled.
+    pub fn with_sentiment_analysis(config: SentimentConfig) -> Self {
+        Self {
+            enabled: Arc::new(AtomicBool::new(true)),
+            profile_name: Arc::new(RwLock::new(None)),
+            profile_id: Arc::new(RwLock::new(None)),
+            rule_engine: Arc::new(RwLock::new(RuleEngine::with_defaults())),
+            sentiment_analyzer: Arc::new(RwLock::new(Some(SentimentAnalyzer::new(config)))),
         }
     }
 
@@ -168,14 +203,47 @@ impl FilteringState {
         *self.profile_name.write() = name;
     }
 
+    /// Sets the current profile name and ID.
+    pub fn set_profile_with_id(&self, name: Option<String>, id: Option<i64>) {
+        *self.profile_name.write() = name;
+        *self.profile_id.write() = id;
+    }
+
     /// Returns the current profile name.
     pub fn profile_name(&self) -> Option<String> {
         self.profile_name.read().clone()
     }
 
+    /// Returns the current profile ID.
+    pub fn profile_id(&self) -> Option<i64> {
+        *self.profile_id.read()
+    }
+
     /// Returns a reference to the shared rule engine.
     pub fn rule_engine(&self) -> &Arc<RwLock<RuleEngine>> {
         &self.rule_engine
+    }
+
+    /// Returns a reference to the sentiment analyzer.
+    pub fn sentiment_analyzer(&self) -> &Arc<RwLock<Option<SentimentAnalyzer>>> {
+        &self.sentiment_analyzer
+    }
+
+    /// Enables sentiment analysis with the given configuration.
+    pub fn enable_sentiment_analysis(&self, config: SentimentConfig) {
+        *self.sentiment_analyzer.write() = Some(SentimentAnalyzer::new(config));
+        tracing::info!("Sentiment analysis enabled");
+    }
+
+    /// Disables sentiment analysis.
+    pub fn disable_sentiment_analysis(&self) {
+        *self.sentiment_analyzer.write() = None;
+        tracing::info!("Sentiment analysis disabled");
+    }
+
+    /// Returns whether sentiment analysis is enabled.
+    pub fn is_sentiment_enabled(&self) -> bool {
+        self.sentiment_analyzer.read().is_some()
     }
 
     /// Updates the rule engine with new time and content rules.
@@ -338,6 +406,66 @@ impl ProxyHandler {
         }
     }
 
+    /// Analyzes sentiment and records flagged events.
+    ///
+    /// This runs after classification to detect emotional content that may
+    /// warrant parental review. Flagged events don't affect blocking decisions.
+    fn analyze_and_flag_sentiment(&self, prompt: &PromptInfo) {
+        // Check if we have a profile ID (required for flagging)
+        let profile_id = match self.config.filtering_state.profile_id() {
+            Some(id) => id,
+            None => {
+                tracing::debug!("No profile ID set, skipping sentiment analysis");
+                return;
+            }
+        };
+
+        // Get the sentiment analyzer
+        let mut analyzer_guard = self.config.filtering_state.sentiment_analyzer.write();
+        let analyzer = match analyzer_guard.as_mut() {
+            Some(a) => a,
+            None => {
+                tracing::debug!("Sentiment analysis not enabled");
+                return;
+            }
+        };
+
+        // Analyze the prompt
+        let result = analyzer.analyze(&prompt.text);
+
+        // Record any flags to the database
+        if result.has_flags() {
+            if let Some(ref db) = self.config.database {
+                for flag in &result.flags {
+                    let flag_type = match flag.flag {
+                        SentimentFlag::Distress => "distress",
+                        SentimentFlag::CrisisIndicator => "crisis_indicator",
+                        SentimentFlag::Bullying => "bullying",
+                        SentimentFlag::NegativeSentiment => "negative_sentiment",
+                    };
+
+                    if let Err(e) = db.log_flagged_event(
+                        profile_id,
+                        flag_type,
+                        flag.confidence,
+                        &prompt.text,
+                        Some(prompt.service.clone()),
+                        flag.matched_phrases.clone(),
+                    ) {
+                        tracing::warn!("Failed to record flagged event: {}", e);
+                    } else {
+                        tracing::info!(
+                            "Flagged {} content from {} (confidence: {:.2})",
+                            flag.flag.name(),
+                            prompt.service,
+                            flag.confidence
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     /// Creates a block response.
     fn create_block_response(&self, reason: &str, service: &str) -> Response<Body> {
         let html = BLOCK_PAGE_HTML
@@ -412,6 +540,9 @@ impl ProxyHandler {
 
         // Classify the prompt
         let classification = self.classify_prompt(&prompt_info.text);
+
+        // Analyze sentiment for parental review flagging (runs regardless of blocking)
+        self.analyze_and_flag_sentiment(&prompt_info);
 
         // Evaluate rules
         let result = self.evaluate_rules(&classification);
@@ -847,5 +978,160 @@ mod tests {
 
         // Note: We can't easily test the callback being called without
         // setting up a full async request context
+    }
+
+    #[test]
+    fn filtering_state_sentiment_analysis() {
+        let state = FilteringState::new();
+
+        // Initially, sentiment analysis is not enabled
+        assert!(!state.is_sentiment_enabled());
+        assert!(state.profile_id().is_none());
+
+        // Set profile with ID
+        state.set_profile_with_id(Some("TestChild".to_string()), Some(1));
+        assert_eq!(state.profile_name(), Some("TestChild".to_string()));
+        assert_eq!(state.profile_id(), Some(1));
+
+        // Enable sentiment analysis with default config
+        let config = SentimentConfig::default();
+        state.enable_sentiment_analysis(config);
+        assert!(state.is_sentiment_enabled());
+
+        // Verify analyzer is present and can analyze
+        {
+            let mut analyzer_guard = state.sentiment_analyzer.write();
+            let analyzer = analyzer_guard.as_mut().expect("analyzer should be present");
+
+            // Test with distressing content
+            let result = analyzer.analyze("I feel so alone and nobody cares about me");
+            assert!(result.has_flags(), "Should flag distressing content");
+            assert!(
+                result
+                    .flags
+                    .iter()
+                    .any(|f| f.flag == SentimentFlag::Distress),
+                "Should detect distress"
+            );
+        }
+
+        // Disable sentiment analysis
+        state.disable_sentiment_analysis();
+        assert!(!state.is_sentiment_enabled());
+    }
+
+    #[test]
+    fn filtering_state_with_sentiment_analysis() {
+        // Create filtering state with sentiment analysis from the start
+        let state = FilteringState::with_sentiment_analysis(SentimentConfig::default());
+
+        assert!(state.is_enabled());
+        assert!(state.is_sentiment_enabled());
+
+        // Verify it can analyze emotional content
+        {
+            let mut analyzer_guard = state.sentiment_analyzer.write();
+            let analyzer = analyzer_guard.as_mut().expect("analyzer should be present");
+
+            // Test with crisis indicator content
+            let result = analyzer.analyze("I don't want to be here anymore, I want to disappear");
+            assert!(result.has_flags(), "Should flag crisis indicator content");
+        }
+    }
+
+    #[test]
+    fn sentiment_analysis_full_integration() {
+        use aegis_storage::{models::ProfileSentimentConfig, NewProfile};
+        use std::collections::HashSet;
+
+        // Create an in-memory database
+        let db = Database::in_memory().expect("Failed to create in-memory database");
+
+        // Create a profile with sentiment analysis enabled
+        let profile = NewProfile {
+            name: "TestChild".to_string(),
+            os_username: None,
+            time_rules: serde_json::json!({"rules": []}),
+            content_rules: serde_json::json!({"rules": []}),
+            enabled: true,
+            sentiment_config: ProfileSentimentConfig {
+                enabled: true,
+                sensitivity: 0.5,
+                detect_distress: true,
+                detect_crisis: true,
+                detect_bullying: true,
+                detect_negative: true,
+            },
+        };
+        let profile_id = db
+            .create_profile(profile)
+            .expect("Failed to create profile");
+
+        // Create filtering state with the profile
+        let filtering_state = FilteringState::new();
+        filtering_state.set_profile_with_id(Some("TestChild".to_string()), Some(profile_id));
+
+        // Build enabled flags from config
+        let mut enabled_flags = HashSet::new();
+        enabled_flags.insert(SentimentFlag::Distress);
+        enabled_flags.insert(SentimentFlag::CrisisIndicator);
+        enabled_flags.insert(SentimentFlag::Bullying);
+        enabled_flags.insert(SentimentFlag::NegativeSentiment);
+
+        let sentiment_config = SentimentConfig {
+            enabled: true,
+            threshold: 0.5,
+            enabled_flags,
+            notify_on_flag: true,
+        };
+        filtering_state.enable_sentiment_analysis(sentiment_config);
+
+        // Create handler with database via HandlerConfig
+        let db_arc = Arc::new(db.clone());
+        let handler = ProxyHandler::new(HandlerConfig {
+            classifier: Arc::new(RwLock::new(TieredClassifier::with_defaults())),
+            notifications: None,
+            on_block: None,
+            on_allow: None,
+            filtering_state,
+            database: Some(db_arc),
+        });
+
+        // Simulate analyzing emotional content
+        let prompt = PromptInfo::new(
+            "I feel so alone and nobody cares about me. I'm so sad and hopeless.",
+            "TestService",
+            "/v1/chat/completions",
+        );
+        handler.analyze_and_flag_sentiment(&prompt);
+
+        // Check that the flagged event was stored in the database
+        let filter = aegis_storage::FlaggedEventFilter::default();
+        let events = db
+            .get_flagged_events(filter)
+            .expect("Failed to get flagged events");
+
+        assert!(!events.is_empty(), "Should have flagged events");
+        assert_eq!(events[0].profile_id, profile_id);
+        // The analyzer may flag as distress, negative_sentiment, or both
+        // depending on which patterns match - just verify it's a valid flag type
+        assert!(
+            [
+                "distress",
+                "negative_sentiment",
+                "crisis_indicator",
+                "bullying"
+            ]
+            .contains(&events[0].flag_type.as_str()),
+            "Should be a valid flag type, got: {}",
+            events[0].flag_type
+        );
+        println!("Successfully flagged {} event(s):", events.len());
+        for event in &events {
+            println!(
+                "  - {} (confidence: {:.2})",
+                event.flag_type, event.confidence
+            );
+        }
     }
 }

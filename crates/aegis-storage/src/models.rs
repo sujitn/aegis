@@ -173,6 +173,50 @@ pub struct Auth {
     pub last_login: Option<DateTime<Utc>>,
 }
 
+/// Configuration for sentiment analysis on a profile.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileSentimentConfig {
+    /// Whether sentiment analysis is enabled for this profile.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Sensitivity threshold (0.0 to 1.0, lower = more sensitive).
+    #[serde(default = "default_sensitivity")]
+    pub sensitivity: f32,
+    /// Whether to detect distress signals.
+    #[serde(default = "default_true")]
+    pub detect_distress: bool,
+    /// Whether to detect crisis indicators.
+    #[serde(default = "default_true")]
+    pub detect_crisis: bool,
+    /// Whether to detect bullying.
+    #[serde(default = "default_true")]
+    pub detect_bullying: bool,
+    /// Whether to detect negative sentiment.
+    #[serde(default = "default_true")]
+    pub detect_negative: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_sensitivity() -> f32 {
+    0.5
+}
+
+impl Default for ProfileSentimentConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            sensitivity: 0.5,
+            detect_distress: true,
+            detect_crisis: true,
+            detect_bullying: true,
+            detect_negative: true,
+        }
+    }
+}
+
 /// A user profile stored in the database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
@@ -188,6 +232,8 @@ pub struct Profile {
     pub content_rules: serde_json::Value,
     /// Whether this profile is enabled.
     pub enabled: bool,
+    /// Sentiment analysis configuration.
+    pub sentiment_config: ProfileSentimentConfig,
     /// Created timestamp.
     pub created_at: DateTime<Utc>,
     /// Updated timestamp.
@@ -207,6 +253,8 @@ pub struct NewProfile {
     pub content_rules: serde_json::Value,
     /// Whether this profile is enabled.
     pub enabled: bool,
+    /// Sentiment analysis configuration.
+    pub sentiment_config: ProfileSentimentConfig,
 }
 
 /// A site entry stored in the database.
@@ -260,4 +308,83 @@ pub struct DisabledBundledSite {
     pub pattern: String,
     /// When it was disabled.
     pub disabled_at: DateTime<Utc>,
+}
+
+/// A flagged event for parental review.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlaggedEvent {
+    /// Unique identifier.
+    pub id: i64,
+    /// Profile ID that triggered this flag.
+    pub profile_id: i64,
+    /// Profile name (for display).
+    pub profile_name: Option<String>,
+    /// Sentiment flag type.
+    pub flag_type: String,
+    /// Confidence score (0.0 to 1.0).
+    pub confidence: f32,
+    /// Short preview of the content (privacy-preserving).
+    pub content_snippet: String,
+    /// Source application/site.
+    pub source: Option<String>,
+    /// Matched phrases that triggered the flag.
+    pub matched_phrases: Vec<String>,
+    /// Whether this has been acknowledged by parent.
+    pub acknowledged: bool,
+    /// When it was acknowledged.
+    pub acknowledged_at: Option<DateTime<Utc>>,
+    /// Timestamp.
+    pub created_at: DateTime<Utc>,
+}
+
+/// Parameters for creating a new flagged event.
+#[derive(Debug, Clone)]
+pub struct NewFlaggedEvent {
+    /// Profile ID that triggered this flag.
+    pub profile_id: i64,
+    /// Sentiment flag type (distress, crisis_indicator, bullying, negative_sentiment).
+    pub flag_type: String,
+    /// Confidence score (0.0 to 1.0).
+    pub confidence: f32,
+    /// Short preview of the content.
+    pub content_snippet: String,
+    /// Source application/site.
+    pub source: Option<String>,
+    /// Matched phrases that triggered the flag.
+    pub matched_phrases: Vec<String>,
+}
+
+/// Filter options for querying flagged events.
+#[derive(Debug, Clone, Default)]
+pub struct FlaggedEventFilter {
+    /// Filter by profile ID.
+    pub profile_id: Option<i64>,
+    /// Filter by flag type.
+    pub flag_type: Option<String>,
+    /// Filter by acknowledgment status.
+    pub acknowledged: Option<bool>,
+    /// Maximum number of results.
+    pub limit: Option<i64>,
+    /// Offset for pagination.
+    pub offset: Option<i64>,
+}
+
+/// Summary statistics for flagged events.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FlaggedEventStats {
+    /// Total flagged events.
+    pub total: i64,
+    /// Unacknowledged flagged events.
+    pub unacknowledged: i64,
+    /// Breakdown by flag type.
+    pub by_type: FlaggedTypeCounts,
+}
+
+/// Breakdown of flagged events by type.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FlaggedTypeCounts {
+    pub distress: i64,
+    pub crisis_indicator: i64,
+    pub bullying: i64,
+    pub negative_sentiment: i64,
 }

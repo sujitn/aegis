@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 
 use crate::error::{Result, StorageError};
+#[cfg(test)]
+use crate::models::ProfileSentimentConfig;
 use crate::models::{NewProfile, Profile};
 
 /// Repository for profile operations.
@@ -14,16 +16,18 @@ impl ProfileRepo {
     pub fn insert(conn: &Connection, profile: NewProfile) -> Result<i64> {
         let time_rules_json = serde_json::to_string(&profile.time_rules)?;
         let content_rules_json = serde_json::to_string(&profile.content_rules)?;
+        let sentiment_config_json = serde_json::to_string(&profile.sentiment_config)?;
 
         conn.execute(
-            "INSERT INTO profiles (name, os_username, time_rules, content_rules, enabled)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO profiles (name, os_username, time_rules, content_rules, enabled, sentiment_config)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 profile.name,
                 profile.os_username,
                 time_rules_json,
                 content_rules_json,
-                profile.enabled as i32
+                profile.enabled as i32,
+                sentiment_config_json
             ],
         )?;
 
@@ -33,7 +37,7 @@ impl ProfileRepo {
     /// Get a profile by ID.
     pub fn get_by_id(conn: &Connection, id: i64) -> Result<Option<Profile>> {
         let mut stmt = conn.prepare(
-            "SELECT id, name, os_username, time_rules, content_rules, enabled, created_at, updated_at
+            "SELECT id, name, os_username, time_rules, content_rules, enabled, sentiment_config, created_at, updated_at
              FROM profiles WHERE id = ?1",
         )?;
 
@@ -41,6 +45,7 @@ impl ProfileRepo {
             .query_row([id], |row| {
                 let time_rules_str: String = row.get(3)?;
                 let content_rules_str: String = row.get(4)?;
+                let sentiment_config_str: String = row.get(6)?;
                 Ok(Profile {
                     id: row.get(0)?,
                     name: row.get(1)?,
@@ -50,8 +55,10 @@ impl ProfileRepo {
                     content_rules: serde_json::from_str(&content_rules_str)
                         .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
                     enabled: row.get::<_, i32>(5)? != 0,
-                    created_at: parse_datetime(&row.get::<_, String>(6)?),
-                    updated_at: parse_datetime(&row.get::<_, String>(7)?),
+                    sentiment_config: serde_json::from_str(&sentiment_config_str)
+                        .unwrap_or_default(),
+                    created_at: parse_datetime(&row.get::<_, String>(7)?),
+                    updated_at: parse_datetime(&row.get::<_, String>(8)?),
                 })
             })
             .ok();
@@ -62,7 +69,7 @@ impl ProfileRepo {
     /// Get a profile by OS username.
     pub fn get_by_os_username(conn: &Connection, os_username: &str) -> Result<Option<Profile>> {
         let mut stmt = conn.prepare(
-            "SELECT id, name, os_username, time_rules, content_rules, enabled, created_at, updated_at
+            "SELECT id, name, os_username, time_rules, content_rules, enabled, sentiment_config, created_at, updated_at
              FROM profiles WHERE os_username = ?1 AND enabled = 1",
         )?;
 
@@ -70,6 +77,7 @@ impl ProfileRepo {
             .query_row([os_username], |row| {
                 let time_rules_str: String = row.get(3)?;
                 let content_rules_str: String = row.get(4)?;
+                let sentiment_config_str: String = row.get(6)?;
                 Ok(Profile {
                     id: row.get(0)?,
                     name: row.get(1)?,
@@ -79,8 +87,10 @@ impl ProfileRepo {
                     content_rules: serde_json::from_str(&content_rules_str)
                         .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
                     enabled: row.get::<_, i32>(5)? != 0,
-                    created_at: parse_datetime(&row.get::<_, String>(6)?),
-                    updated_at: parse_datetime(&row.get::<_, String>(7)?),
+                    sentiment_config: serde_json::from_str(&sentiment_config_str)
+                        .unwrap_or_default(),
+                    created_at: parse_datetime(&row.get::<_, String>(7)?),
+                    updated_at: parse_datetime(&row.get::<_, String>(8)?),
                 })
             })
             .ok();
@@ -91,7 +101,7 @@ impl ProfileRepo {
     /// Get all profiles.
     pub fn get_all(conn: &Connection) -> Result<Vec<Profile>> {
         let mut stmt = conn.prepare(
-            "SELECT id, name, os_username, time_rules, content_rules, enabled, created_at, updated_at
+            "SELECT id, name, os_username, time_rules, content_rules, enabled, sentiment_config, created_at, updated_at
              FROM profiles ORDER BY name ASC",
         )?;
 
@@ -99,6 +109,7 @@ impl ProfileRepo {
             .query_map([], |row| {
                 let time_rules_str: String = row.get(3)?;
                 let content_rules_str: String = row.get(4)?;
+                let sentiment_config_str: String = row.get(6)?;
                 Ok(Profile {
                     id: row.get(0)?,
                     name: row.get(1)?,
@@ -108,8 +119,10 @@ impl ProfileRepo {
                     content_rules: serde_json::from_str(&content_rules_str)
                         .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
                     enabled: row.get::<_, i32>(5)? != 0,
-                    created_at: parse_datetime(&row.get::<_, String>(6)?),
-                    updated_at: parse_datetime(&row.get::<_, String>(7)?),
+                    sentiment_config: serde_json::from_str(&sentiment_config_str)
+                        .unwrap_or_default(),
+                    created_at: parse_datetime(&row.get::<_, String>(7)?),
+                    updated_at: parse_datetime(&row.get::<_, String>(8)?),
                 })
             })?
             .filter_map(|r| r.ok())
@@ -121,7 +134,7 @@ impl ProfileRepo {
     /// Get all enabled profiles.
     pub fn get_enabled(conn: &Connection) -> Result<Vec<Profile>> {
         let mut stmt = conn.prepare(
-            "SELECT id, name, os_username, time_rules, content_rules, enabled, created_at, updated_at
+            "SELECT id, name, os_username, time_rules, content_rules, enabled, sentiment_config, created_at, updated_at
              FROM profiles WHERE enabled = 1 ORDER BY name ASC",
         )?;
 
@@ -129,6 +142,7 @@ impl ProfileRepo {
             .query_map([], |row| {
                 let time_rules_str: String = row.get(3)?;
                 let content_rules_str: String = row.get(4)?;
+                let sentiment_config_str: String = row.get(6)?;
                 Ok(Profile {
                     id: row.get(0)?,
                     name: row.get(1)?,
@@ -138,8 +152,10 @@ impl ProfileRepo {
                     content_rules: serde_json::from_str(&content_rules_str)
                         .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
                     enabled: row.get::<_, i32>(5)? != 0,
-                    created_at: parse_datetime(&row.get::<_, String>(6)?),
-                    updated_at: parse_datetime(&row.get::<_, String>(7)?),
+                    sentiment_config: serde_json::from_str(&sentiment_config_str)
+                        .unwrap_or_default(),
+                    created_at: parse_datetime(&row.get::<_, String>(7)?),
+                    updated_at: parse_datetime(&row.get::<_, String>(8)?),
                 })
             })?
             .filter_map(|r| r.ok())
@@ -152,16 +168,18 @@ impl ProfileRepo {
     pub fn update(conn: &Connection, id: i64, profile: NewProfile) -> Result<()> {
         let time_rules_json = serde_json::to_string(&profile.time_rules)?;
         let content_rules_json = serde_json::to_string(&profile.content_rules)?;
+        let sentiment_config_json = serde_json::to_string(&profile.sentiment_config)?;
 
         let updated = conn.execute(
             "UPDATE profiles SET name = ?1, os_username = ?2, time_rules = ?3, content_rules = ?4,
-             enabled = ?5, updated_at = datetime('now') WHERE id = ?6",
+             enabled = ?5, sentiment_config = ?6, updated_at = datetime('now') WHERE id = ?7",
             params![
                 profile.name,
                 profile.os_username,
                 time_rules_json,
                 content_rules_json,
                 profile.enabled as i32,
+                sentiment_config_json,
                 id
             ],
         )?;
@@ -237,6 +255,7 @@ mod tests {
             time_rules: json!({"rules": []}),
             content_rules: json!({"rules": []}),
             enabled: true,
+            sentiment_config: ProfileSentimentConfig::default(),
         };
 
         let id = ProfileRepo::insert(&conn, profile).unwrap();
@@ -257,6 +276,7 @@ mod tests {
             time_rules: json!({}),
             content_rules: json!({}),
             enabled: true,
+            sentiment_config: ProfileSentimentConfig::default(),
         };
 
         ProfileRepo::insert(&conn, profile).unwrap();
@@ -277,6 +297,7 @@ mod tests {
             time_rules: json!({}),
             content_rules: json!({}),
             enabled: false,
+            sentiment_config: ProfileSentimentConfig::default(),
         };
 
         ProfileRepo::insert(&conn, profile).unwrap();
@@ -298,6 +319,7 @@ mod tests {
                 time_rules: json!({}),
                 content_rules: json!({}),
                 enabled: true,
+                sentiment_config: ProfileSentimentConfig::default(),
             },
         )
         .unwrap();
@@ -310,6 +332,7 @@ mod tests {
                 time_rules: json!({}),
                 content_rules: json!({}),
                 enabled: true,
+                sentiment_config: ProfileSentimentConfig::default(),
             },
         )
         .unwrap();
@@ -330,6 +353,7 @@ mod tests {
                 time_rules: json!({}),
                 content_rules: json!({}),
                 enabled: true,
+                sentiment_config: ProfileSentimentConfig::default(),
             },
         )
         .unwrap();
@@ -342,6 +366,7 @@ mod tests {
                 time_rules: json!({}),
                 content_rules: json!({}),
                 enabled: false,
+                sentiment_config: ProfileSentimentConfig::default(),
             },
         )
         .unwrap();
@@ -361,6 +386,7 @@ mod tests {
             time_rules: json!({}),
             content_rules: json!({}),
             enabled: true,
+            sentiment_config: ProfileSentimentConfig::default(),
         };
 
         let id = ProfileRepo::insert(&conn, profile).unwrap();
@@ -374,6 +400,7 @@ mod tests {
                 time_rules: json!({"updated": true}),
                 content_rules: json!({}),
                 enabled: false,
+                sentiment_config: ProfileSentimentConfig::default(),
             },
         )
         .unwrap();
@@ -394,6 +421,7 @@ mod tests {
             time_rules: json!({}),
             content_rules: json!({}),
             enabled: true,
+            sentiment_config: ProfileSentimentConfig::default(),
         };
 
         let id = ProfileRepo::insert(&conn, profile).unwrap();
@@ -413,6 +441,7 @@ mod tests {
             time_rules: json!({}),
             content_rules: json!({}),
             enabled: true,
+            sentiment_config: ProfileSentimentConfig::default(),
         };
 
         let id = ProfileRepo::insert(&conn, profile).unwrap();
@@ -435,6 +464,7 @@ mod tests {
                 time_rules: json!({}),
                 content_rules: json!({}),
                 enabled: true,
+                sentiment_config: ProfileSentimentConfig::default(),
             },
         )
         .unwrap();
@@ -452,6 +482,7 @@ mod tests {
             time_rules: json!({}),
             content_rules: json!({}),
             enabled: true,
+            sentiment_config: ProfileSentimentConfig::default(),
         };
 
         let id = ProfileRepo::insert(&conn, profile).unwrap();

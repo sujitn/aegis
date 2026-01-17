@@ -6,7 +6,7 @@ use tracing::info;
 use crate::error::Result;
 
 /// Current schema version.
-pub const SCHEMA_VERSION: i32 = 3;
+pub const SCHEMA_VERSION: i32 = 5;
 
 /// Run all pending migrations.
 pub fn run_migrations(conn: &Connection) -> Result<()> {
@@ -28,6 +28,14 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
         if current_version < 3 {
             migrate_v3(conn)?;
+        }
+
+        if current_version < 4 {
+            migrate_v4(conn)?;
+        }
+
+        if current_version < 5 {
+            migrate_v5(conn)?;
         }
 
         set_schema_version(conn, SCHEMA_VERSION)?;
@@ -220,6 +228,69 @@ fn migrate_v3(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Migration to version 4: Flagged events for sentiment analysis.
+fn migrate_v4(conn: &Connection) -> Result<()> {
+    info!("Applying migration v4: Flagged events for sentiment analysis");
+
+    // Flagged events table - stores sentiment analysis flags for parental review
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS flagged_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            profile_id INTEGER NOT NULL,
+            flag_type TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            content_snippet TEXT NOT NULL,
+            source TEXT,
+            matched_phrases TEXT NOT NULL DEFAULT '[]',
+            acknowledged INTEGER NOT NULL DEFAULT 0,
+            acknowledged_at TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+
+    // Index for querying by profile
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_flagged_events_profile ON flagged_events (profile_id)",
+        [],
+    )?;
+
+    // Index for querying by timestamp
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_flagged_events_created_at ON flagged_events (created_at)",
+        [],
+    )?;
+
+    // Index for unacknowledged flags (partial index)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_flagged_events_unacknowledged ON flagged_events (acknowledged) WHERE acknowledged = 0",
+        [],
+    )?;
+
+    // Index for flag type filtering
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_flagged_events_flag_type ON flagged_events (flag_type)",
+        [],
+    )?;
+
+    Ok(())
+}
+
+/// Migration to version 5: Sentiment configuration per profile.
+fn migrate_v5(conn: &Connection) -> Result<()> {
+    info!("Applying migration v5: Sentiment configuration per profile");
+
+    // Add sentiment_config column to profiles table
+    // Default is enabled with standard sensitivity
+    conn.execute(
+        "ALTER TABLE profiles ADD COLUMN sentiment_config TEXT NOT NULL DEFAULT '{\"enabled\":true,\"sensitivity\":0.5,\"detect_distress\":true,\"detect_crisis\":true,\"detect_bullying\":true,\"detect_negative\":true}'",
+        [],
+    )?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,5 +323,31 @@ mod tests {
         conn.execute("SELECT * FROM sites LIMIT 1", []).ok();
         conn.execute("SELECT * FROM disabled_bundled_sites LIMIT 1", [])
             .ok();
+        conn.execute("SELECT * FROM flagged_events LIMIT 1", [])
+            .ok();
+    }
+
+    #[test]
+    fn test_flagged_events_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        // Create a profile first (required for foreign key)
+        conn.execute(
+            "INSERT INTO profiles (name, os_username, time_rules, content_rules) VALUES ('Test', 'testuser', '{}', '{}')",
+            [],
+        ).unwrap();
+
+        // Insert a flagged event
+        conn.execute(
+            "INSERT INTO flagged_events (profile_id, flag_type, confidence, content_snippet, matched_phrases) VALUES (1, 'distress', 0.85, 'I feel sad...', '[\"feel sad\"]')",
+            [],
+        ).unwrap();
+
+        // Verify it was inserted
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM flagged_events", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
     }
 }

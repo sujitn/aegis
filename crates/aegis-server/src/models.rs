@@ -152,3 +152,93 @@ pub struct UpdateRulesResponse {
     pub success: bool,
     pub updated_count: usize,
 }
+
+// ===== Flagged Events API =====
+
+/// Query parameters for GET /api/flagged.
+#[derive(Debug, Deserialize)]
+pub struct FlaggedQuery {
+    /// Maximum number of items to return (default: 50).
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+    /// Offset for pagination (default: 0).
+    #[serde(default)]
+    pub offset: i64,
+    /// Filter by flag type (optional).
+    pub flag_type: Option<String>,
+    /// Include acknowledged items (default: false).
+    #[serde(default)]
+    pub include_acknowledged: bool,
+}
+
+/// Flagged event entry in the response.
+#[derive(Debug, Serialize)]
+pub struct FlaggedEntry {
+    pub id: i64,
+    pub profile_id: i64,
+    pub profile_name: Option<String>,
+    pub flag_type: String,
+    pub confidence: f32,
+    pub content_snippet: String,
+    pub source: Option<String>,
+    pub matched_phrases: Vec<String>,
+    pub acknowledged: bool,
+    pub acknowledged_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Response body for GET /api/flagged.
+#[derive(Debug, Serialize)]
+pub struct FlaggedResponse {
+    pub items: Vec<FlaggedEntry>,
+    pub total: i64,
+    pub unacknowledged: i64,
+}
+
+/// Response body for GET /api/flagged/stats.
+#[derive(Debug, Serialize)]
+pub struct FlaggedStatsResponse {
+    pub total: i64,
+    pub unacknowledged: i64,
+    pub by_type: FlaggedTypeCounts,
+}
+
+/// Counts by flag type.
+#[derive(Debug, Serialize)]
+pub struct FlaggedTypeCounts {
+    pub distress: i64,
+    pub crisis_indicator: i64,
+    pub bullying: i64,
+    pub negative_sentiment: i64,
+}
+
+/// Request body for POST /api/flagged/:id/acknowledge.
+#[derive(Debug, Deserialize)]
+pub struct AcknowledgeRequest {
+    /// Session token for authentication.
+    pub session_token: String,
+}
+
+/// Request body for POST /api/flagged/acknowledge-all.
+#[derive(Debug, Deserialize)]
+pub struct AcknowledgeAllRequest {
+    /// Session token for authentication.
+    pub session_token: String,
+    /// Optional list of IDs to acknowledge (if empty, acknowledges all).
+    #[serde(default)]
+    pub ids: Vec<i64>,
+}
+
+/// Response body for acknowledge operations.
+#[derive(Debug, Serialize)]
+pub struct AcknowledgeResponse {
+    pub success: bool,
+    pub acknowledged_count: usize,
+}
+
+/// Request body for DELETE /api/flagged/:id.
+#[derive(Debug, Deserialize)]
+pub struct DeleteFlaggedRequest {
+    /// Session token for authentication.
+    pub session_token: String,
+}

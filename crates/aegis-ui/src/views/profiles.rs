@@ -261,6 +261,7 @@ fn save_profile(state: &mut AppState, editor: &mut ProfileEditor) {
         time_rules: serde_json::json!({"rules": []}),
         content_rules: serde_json::json!({"rules": []}),
         enabled: editor.enabled,
+        sentiment_config: aegis_storage::ProfileSentimentConfig::default(),
     };
 
     let result = if let Some(id) = editor.editing_id {

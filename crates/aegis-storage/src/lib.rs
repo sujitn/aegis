@@ -39,11 +39,12 @@ mod schema;
 pub use database::Database;
 pub use error::{Result, StorageError};
 pub use models::{
-    Action, Auth, CategoryCounts, Config, DailyStats, DisabledBundledSite, Event, NewEvent,
-    NewProfile, NewRule, NewSite, Profile, Rule, Site,
+    Action, Auth, CategoryCounts, Config, DailyStats, DisabledBundledSite, Event, FlaggedEvent,
+    FlaggedEventFilter, FlaggedEventStats, FlaggedTypeCounts, NewEvent, NewFlaggedEvent,
+    NewProfile, NewRule, NewSite, Profile, ProfileSentimentConfig, Rule, Site,
 };
 pub use pool::ConnectionPool;
-pub use repository::{create_preview, hash_prompt};
+pub use repository::{create_preview, create_snippet, hash_prompt, FlaggedEventsRepo};
 
 // Re-export for backwards compatibility
 pub mod db {

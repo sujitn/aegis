@@ -3,7 +3,7 @@
 use std::sync::{Arc, RwLock};
 
 use aegis_core::auth::AuthManager;
-use aegis_core::classifier::TieredClassifier;
+use aegis_core::classifier::{SentimentAnalyzer, SentimentConfig, TieredClassifier};
 use aegis_core::profile::ProfileManager;
 use aegis_core::rule_engine::RuleEngine;
 use aegis_storage::Database;
@@ -21,6 +21,8 @@ pub struct AppState {
     pub rules: Arc<RwLock<RuleEngine>>,
     /// User profiles for per-user rules.
     pub profiles: Arc<RwLock<ProfileManager>>,
+    /// Sentiment analyzer for emotional content flagging.
+    pub sentiment_analyzer: Arc<RwLock<SentimentAnalyzer>>,
 }
 
 impl AppState {
@@ -32,6 +34,9 @@ impl AppState {
             classifier: Arc::new(RwLock::new(TieredClassifier::keyword_only())),
             rules: Arc::new(RwLock::new(RuleEngine::with_defaults())),
             profiles: Arc::new(RwLock::new(ProfileManager::new())),
+            sentiment_analyzer: Arc::new(RwLock::new(SentimentAnalyzer::new(
+                SentimentConfig::default(),
+            ))),
         }
     }
 
@@ -54,6 +59,9 @@ impl AppState {
             classifier: Arc::new(RwLock::new(classifier)),
             rules: Arc::new(RwLock::new(rules)),
             profiles: Arc::new(RwLock::new(profiles)),
+            sentiment_analyzer: Arc::new(RwLock::new(SentimentAnalyzer::new(
+                SentimentConfig::default(),
+            ))),
         }
     }
 }

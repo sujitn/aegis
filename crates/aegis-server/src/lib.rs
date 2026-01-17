@@ -11,6 +11,14 @@
 //! - `PUT /api/rules` - Update rules (requires auth)
 //! - `POST /api/auth/verify` - Verify password and get session token
 //!
+//! ### Flagged Events
+//!
+//! - `GET /api/flagged` - Get flagged events with pagination
+//! - `GET /api/flagged/stats` - Get flagged event statistics
+//! - `POST /api/flagged/:id/acknowledge` - Acknowledge a flagged event (requires auth)
+//! - `POST /api/flagged/acknowledge-all` - Acknowledge all flagged events (requires auth)
+//! - `DELETE /api/flagged/:id` - Delete a flagged event (requires auth)
+//!
 //! ## Example
 //!
 //! ```no_run
@@ -30,7 +38,7 @@ pub mod state;
 
 use std::net::SocketAddr;
 
-use axum::routing::{get, post, put};
+use axum::routing::{delete, get, post, put};
 use axum::Router;
 use socket2::{Domain, Protocol, Socket, Type};
 use thiserror::Error;
@@ -157,6 +165,18 @@ impl Server {
             .route("/api/rules", get(handlers::get_rules))
             .route("/api/rules", put(handlers::update_rules))
             .route("/api/auth/verify", post(handlers::verify_auth))
+            // Flagged events endpoints
+            .route("/api/flagged", get(handlers::get_flagged))
+            .route("/api/flagged/stats", get(handlers::get_flagged_stats))
+            .route(
+                "/api/flagged/{id}/acknowledge",
+                post(handlers::acknowledge_flagged),
+            )
+            .route(
+                "/api/flagged/acknowledge-all",
+                post(handlers::acknowledge_all_flagged),
+            )
+            .route("/api/flagged/{id}", delete(handlers::delete_flagged))
             .layer(cors)
             .with_state(state);
 
@@ -234,6 +254,17 @@ mod tests {
             .route("/api/rules", get(handlers::get_rules))
             .route("/api/rules", put(handlers::update_rules))
             .route("/api/auth/verify", post(handlers::verify_auth))
+            .route("/api/flagged", get(handlers::get_flagged))
+            .route("/api/flagged/stats", get(handlers::get_flagged_stats))
+            .route(
+                "/api/flagged/{id}/acknowledge",
+                post(handlers::acknowledge_flagged),
+            )
+            .route(
+                "/api/flagged/acknowledge-all",
+                post(handlers::acknowledge_all_flagged),
+            )
+            .route("/api/flagged/{id}", delete(handlers::delete_flagged))
             .with_state(state)
     }
 

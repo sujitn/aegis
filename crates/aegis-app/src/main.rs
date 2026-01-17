@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use aegis_core::classifier::{SentimentConfig, SentimentFlag};
 use aegis_core::content_rules::ContentRuleSet;
 use aegis_core::profile::{ProfileManager, ProxyMode, UserProfile};
 use aegis_core::profile_proxy::{ProfileProxyConfig, ProfileProxyController, ProxyAction};
@@ -22,12 +23,14 @@ use aegis_core::rule_engine::RuleEngine;
 use aegis_core::time_rules::TimeRuleSet;
 use aegis_proxy::{FilteringState, ProxyConfig, ProxyServer};
 use aegis_server::{Server, ServerConfig};
+use aegis_storage::models::ProfileSentimentConfig;
 use aegis_storage::Database;
 use aegis_tray::{MenuAction, SystemTray, TrayConfig, TrayEvent, TrayStatus};
 use aegis_ui::run_dashboard_with_filtering;
 use clap::Parser;
 use directories::ProjectDirs;
 use muda::MenuEvent;
+use std::collections::HashSet;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use tray_icon::TrayIconEvent;
@@ -378,6 +381,7 @@ fn load_initial_rules(db: &Database) -> RuleEngine {
 }
 
 /// Loads rules for a specific profile by name and updates the filtering state.
+/// Also sets the profile ID and enables sentiment analysis based on the profile's config.
 fn load_profile_rules_by_name(db: &Database, profile_name: &str, filtering_state: &FilteringState) {
     match db.get_all_profiles() {
         Ok(profiles) => {
@@ -388,13 +392,21 @@ fn load_profile_rules_by_name(db: &Database, profile_name: &str, filtering_state
                     serde_json::from_value(profile.content_rules.clone()).unwrap_or_default();
 
                 tracing::info!(
-                    "Loading rules for profile '{}': {} time rules, {} content rules",
+                    "Loading rules for profile '{}' (id={}): {} time rules, {} content rules",
                     profile.name,
+                    profile.id,
                     time_rules.rules.len(),
                     content_rules.rules.len()
                 );
 
+                // Set profile ID for sentiment flagging
+                filtering_state.set_profile_with_id(Some(profile.name.clone()), Some(profile.id));
+
+                // Update rules
                 filtering_state.update_rules(time_rules, content_rules);
+
+                // Configure sentiment analysis based on profile settings
+                configure_sentiment_analysis(filtering_state, &profile.sentiment_config);
             } else {
                 tracing::warn!("Profile '{}' not found in database", profile_name);
             }
@@ -402,6 +414,46 @@ fn load_profile_rules_by_name(db: &Database, profile_name: &str, filtering_state
         Err(e) => {
             tracing::warn!("Failed to load profile '{}' rules: {}", profile_name, e);
         }
+    }
+}
+
+/// Configure sentiment analysis based on profile settings.
+fn configure_sentiment_analysis(filtering_state: &FilteringState, config: &ProfileSentimentConfig) {
+    if config.enabled {
+        // Build enabled flags set from the profile config
+        let mut enabled_flags = HashSet::new();
+        if config.detect_distress {
+            enabled_flags.insert(SentimentFlag::Distress);
+        }
+        if config.detect_crisis {
+            enabled_flags.insert(SentimentFlag::CrisisIndicator);
+        }
+        if config.detect_bullying {
+            enabled_flags.insert(SentimentFlag::Bullying);
+        }
+        if config.detect_negative {
+            enabled_flags.insert(SentimentFlag::NegativeSentiment);
+        }
+
+        let sentiment_config = SentimentConfig {
+            enabled: true,
+            threshold: config.sensitivity,
+            enabled_flags,
+            notify_on_flag: true,
+        };
+
+        filtering_state.enable_sentiment_analysis(sentiment_config);
+        tracing::info!(
+            "Sentiment analysis enabled (sensitivity={}, distress={}, crisis={}, bullying={}, negative={})",
+            config.sensitivity,
+            config.detect_distress,
+            config.detect_crisis,
+            config.detect_bullying,
+            config.detect_negative
+        );
+    } else {
+        filtering_state.disable_sentiment_analysis();
+        tracing::info!("Sentiment analysis disabled for profile");
     }
 }
 

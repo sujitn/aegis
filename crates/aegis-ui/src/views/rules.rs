@@ -1110,6 +1110,7 @@ fn save_rules(state: &mut AppState, rules_state: &mut RulesState) {
                 time_rules: time_rules_json.clone(),
                 content_rules: content_rules_json.clone(),
                 enabled: profile.enabled,
+                sentiment_config: profile.sentiment_config.clone(),
             };
 
             match state.db.update_profile(profile_id, updated) {

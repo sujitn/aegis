@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use aegis_core::auth::{AuthManager, SessionToken, SESSION_TIMEOUT};
 use aegis_proxy::FilteringState;
-use aegis_storage::{DailyStats, Database, Event, Profile};
+use aegis_storage::{DailyStats, Database, Event, FlaggedEvent, FlaggedEventStats, Profile};
 use chrono::{Local, NaiveDate};
 use eframe::egui;
 
@@ -77,6 +77,8 @@ pub enum View {
     Rules,
     /// Event logs (activity).
     Logs,
+    /// Flagged items for parental review.
+    Flagged,
     /// System logs (application logs from file).
     SystemLogs,
     /// Application settings.
@@ -147,6 +149,12 @@ pub struct AppState {
     /// Cached recent events.
     pub recent_events: Vec<Event>,
 
+    /// Cached flagged events for parental review.
+    pub flagged_events: Vec<FlaggedEvent>,
+
+    /// Cached flagged event statistics.
+    pub flagged_stats: Option<FlaggedEventStats>,
+
     /// Cached profiles list.
     pub profiles: Vec<Profile>,
 
@@ -207,6 +215,8 @@ impl AppState {
             log_filter: LogFilter::default(),
             today_stats: None,
             recent_events: Vec::new(),
+            flagged_events: Vec::new(),
+            flagged_stats: None,
             profiles: Vec::new(),
             error_message: None,
             success_message: None,
@@ -321,9 +331,56 @@ impl AppState {
         // Load recent events
         self.recent_events = self.db.get_recent_events(10, 0)?;
 
+        // Load flagged events
+        self.flagged_events = self.db.get_recent_flagged_events(50, 0)?;
+        self.flagged_stats = self.db.get_flagged_event_stats().ok();
+
         // Load profiles
         self.profiles = self.load_profiles()?;
 
+        Ok(())
+    }
+
+    /// Returns the count of unacknowledged flagged events.
+    pub fn unacknowledged_flagged_count(&self) -> i64 {
+        self.flagged_stats
+            .as_ref()
+            .map(|s| s.unacknowledged)
+            .unwrap_or(0)
+    }
+
+    /// Acknowledges a flagged event.
+    pub fn acknowledge_flagged(&mut self, id: i64) -> Result<()> {
+        self.db.acknowledge_flagged_event(id)?;
+        // Refresh flagged events
+        self.flagged_events = self.db.get_recent_flagged_events(50, 0)?;
+        self.flagged_stats = self.db.get_flagged_event_stats().ok();
+        Ok(())
+    }
+
+    /// Acknowledges all flagged events.
+    pub fn acknowledge_all_flagged(&mut self) -> Result<()> {
+        let ids: Vec<i64> = self
+            .flagged_events
+            .iter()
+            .filter(|e| !e.acknowledged)
+            .map(|e| e.id)
+            .collect();
+        if !ids.is_empty() {
+            self.db.acknowledge_flagged_events(&ids)?;
+        }
+        // Refresh flagged events
+        self.flagged_events = self.db.get_recent_flagged_events(50, 0)?;
+        self.flagged_stats = self.db.get_flagged_event_stats().ok();
+        Ok(())
+    }
+
+    /// Deletes a flagged event.
+    pub fn delete_flagged(&mut self, id: i64) -> Result<()> {
+        self.db.delete_flagged_event(id)?;
+        // Refresh flagged events
+        self.flagged_events = self.db.get_recent_flagged_events(50, 0)?;
+        self.flagged_stats = self.db.get_flagged_event_stats().ok();
         Ok(())
     }
 

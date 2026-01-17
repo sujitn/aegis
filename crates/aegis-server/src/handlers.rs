@@ -1,17 +1,20 @@
 //! API route handlers.
 
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::Json;
 use tracing::{debug, info};
 
 use aegis_core::auth::SessionToken;
+use aegis_core::classifier::SentimentFlag;
 use aegis_storage::{models::Action, NewRule};
 
 use crate::error::{ApiError, Result};
 use crate::models::{
-    AuthVerifyRequest, AuthVerifyResponse, CategoryCountsResponse, CategoryMatchResponse,
-    CheckRequest, CheckResponse, LogEntry, LogsQuery, LogsResponse, RuleEntry, RulesResponse,
-    StatsResponse, UpdateRulesRequest, UpdateRulesResponse,
+    AcknowledgeAllRequest, AcknowledgeRequest, AcknowledgeResponse, AuthVerifyRequest,
+    AuthVerifyResponse, CategoryCountsResponse, CategoryMatchResponse, CheckRequest, CheckResponse,
+    DeleteFlaggedRequest, FlaggedEntry, FlaggedQuery, FlaggedResponse, FlaggedStatsResponse,
+    FlaggedTypeCounts, LogEntry, LogsQuery, LogsResponse, RuleEntry, RulesResponse, StatsResponse,
+    UpdateRulesRequest, UpdateRulesResponse,
 };
 use crate::state::AppState;
 
@@ -71,6 +74,60 @@ pub async fn check_prompt(
         action,
         Some("api".to_string()),
     );
+
+    // Run sentiment analysis and flag emotional content
+    // Get profile ID - use provided os_username or auto-detect current user
+    let effective_username = req.os_username.clone().or_else(|| {
+        std::env::var("USERNAME")
+            .or_else(|_| std::env::var("USER"))
+            .ok()
+    });
+
+    let profile_id = if let Some(ref username) = effective_username {
+        state.db.get_all_profiles().ok().and_then(|profiles| {
+            profiles
+                .iter()
+                .find(|p| p.os_username.as_ref() == Some(username))
+                .map(|p| p.id)
+        })
+    } else {
+        None
+    };
+
+    // Run sentiment analysis if we have a profile
+    if let Some(pid) = profile_id {
+        let sentiment_result = {
+            let analyzer = state.sentiment_analyzer.write().unwrap();
+            analyzer.analyze(&req.prompt)
+        };
+
+        // Store flagged events
+        for flag in &sentiment_result.flags {
+            let flag_type = match flag.flag {
+                SentimentFlag::Distress => "distress",
+                SentimentFlag::CrisisIndicator => "crisis_indicator",
+                SentimentFlag::Bullying => "bullying",
+                SentimentFlag::NegativeSentiment => "negative_sentiment",
+            };
+
+            if let Err(e) = state.db.log_flagged_event(
+                pid,
+                flag_type,
+                flag.confidence,
+                &req.prompt,
+                Some("browser-extension".to_string()),
+                flag.matched_phrases.clone(),
+            ) {
+                debug!("Failed to log flagged event: {}", e);
+            } else {
+                info!(
+                    "Flagged {} content from browser-extension (confidence: {:.2})",
+                    flag.flag.name(),
+                    flag.confidence
+                );
+            }
+        }
+    }
 
     // Build response
     let reason = if rule_result.source.has_rule() {
@@ -264,4 +321,154 @@ fn parse_action(s: &str) -> Result<Action> {
         "flagged" | "warned" => Ok(Action::Flagged),
         _ => Err(ApiError::BadRequest(format!("invalid action: {}", s))),
     }
+}
+
+// ===== Flagged Events Handlers =====
+
+/// GET /api/flagged - Get flagged events with pagination.
+pub async fn get_flagged(
+    State(state): State<AppState>,
+    Query(query): Query<FlaggedQuery>,
+) -> Result<Json<FlaggedResponse>> {
+    let events = state
+        .db
+        .get_recent_flagged_events(query.limit, query.offset)?;
+
+    // Filter by type and acknowledged status
+    let items: Vec<FlaggedEntry> = events
+        .into_iter()
+        .filter(|e| {
+            // Filter by type if specified
+            if let Some(ref flag_type) = query.flag_type {
+                if e.flag_type != *flag_type {
+                    return false;
+                }
+            }
+            // Filter by acknowledged status
+            if !query.include_acknowledged && e.acknowledged {
+                return false;
+            }
+            true
+        })
+        .map(|e| FlaggedEntry {
+            id: e.id,
+            profile_id: e.profile_id,
+            profile_name: e.profile_name,
+            flag_type: e.flag_type,
+            confidence: e.confidence,
+            content_snippet: e.content_snippet,
+            source: e.source,
+            matched_phrases: e.matched_phrases,
+            acknowledged: e.acknowledged,
+            acknowledged_at: e.acknowledged_at,
+            created_at: e.created_at,
+        })
+        .collect();
+
+    let stats = state.db.get_flagged_event_stats()?;
+
+    Ok(Json(FlaggedResponse {
+        items,
+        total: stats.total,
+        unacknowledged: stats.unacknowledged,
+    }))
+}
+
+/// GET /api/flagged/stats - Get flagged event statistics.
+pub async fn get_flagged_stats(
+    State(state): State<AppState>,
+) -> Result<Json<FlaggedStatsResponse>> {
+    let stats = state.db.get_flagged_event_stats()?;
+
+    Ok(Json(FlaggedStatsResponse {
+        total: stats.total,
+        unacknowledged: stats.unacknowledged,
+        by_type: FlaggedTypeCounts {
+            distress: stats.by_type.distress,
+            crisis_indicator: stats.by_type.crisis_indicator,
+            bullying: stats.by_type.bullying,
+            negative_sentiment: stats.by_type.negative_sentiment,
+        },
+    }))
+}
+
+/// POST /api/flagged/:id/acknowledge - Acknowledge a flagged event.
+pub async fn acknowledge_flagged(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(req): Json<AcknowledgeRequest>,
+) -> Result<Json<AcknowledgeResponse>> {
+    // Validate session token
+    let token = SessionToken::from_string(req.session_token);
+    if !state.auth.validate_session(&token) {
+        return Err(ApiError::SessionExpired);
+    }
+
+    let success = state.db.acknowledge_flagged_event(id)?;
+
+    info!(id, success, "Flagged event acknowledged");
+
+    Ok(Json(AcknowledgeResponse {
+        success,
+        acknowledged_count: if success { 1 } else { 0 },
+    }))
+}
+
+/// POST /api/flagged/acknowledge-all - Acknowledge multiple flagged events.
+pub async fn acknowledge_all_flagged(
+    State(state): State<AppState>,
+    Json(req): Json<AcknowledgeAllRequest>,
+) -> Result<Json<AcknowledgeResponse>> {
+    // Validate session token
+    let token = SessionToken::from_string(req.session_token);
+    if !state.auth.validate_session(&token) {
+        return Err(ApiError::SessionExpired);
+    }
+
+    let ids = if req.ids.is_empty() {
+        // Get all unacknowledged event IDs
+        let events = state.db.get_recent_flagged_events(1000, 0)?;
+        events
+            .into_iter()
+            .filter(|e| !e.acknowledged)
+            .map(|e| e.id)
+            .collect()
+    } else {
+        req.ids
+    };
+
+    if !ids.is_empty() {
+        state.db.acknowledge_flagged_events(&ids)?;
+    }
+
+    let count = ids.len();
+
+    info!(count, "Flagged events acknowledged");
+
+    Ok(Json(AcknowledgeResponse {
+        success: true,
+        acknowledged_count: count,
+    }))
+}
+
+/// DELETE /api/flagged/:id - Delete a flagged event.
+pub async fn delete_flagged(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(req): Json<DeleteFlaggedRequest>,
+) -> Result<Json<AcknowledgeResponse>> {
+    // Validate session token
+    let token = SessionToken::from_string(req.session_token);
+    if !state.auth.validate_session(&token) {
+        return Err(ApiError::SessionExpired);
+    }
+
+    let success = state.db.delete_flagged_event(id)?;
+
+    info!(id, success, "Flagged event deleted");
+
+    Ok(Json(AcknowledgeResponse {
+        success,
+        acknowledged_count: if success { 1 } else { 0 },
+    }))
 }

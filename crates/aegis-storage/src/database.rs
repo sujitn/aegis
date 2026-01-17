@@ -9,13 +9,14 @@ use tracing::info;
 
 use crate::error::{Result, StorageError};
 use crate::models::{
-    Action, Auth, Config, DailyStats, DisabledBundledSite, Event, NewEvent, NewProfile, NewRule,
-    NewSite, Profile, Rule, Site,
+    Action, Auth, Config, DailyStats, DisabledBundledSite, Event, FlaggedEvent, FlaggedEventFilter,
+    FlaggedEventStats, NewEvent, NewFlaggedEvent, NewProfile, NewRule, NewSite, Profile, Rule,
+    Site,
 };
 use crate::pool::ConnectionPool;
 use crate::repository::{
-    create_preview, hash_prompt, AuthRepo, ConfigRepo, DisabledBundledRepo, EventsRepo,
-    ProfileRepo, RulesRepo, SiteRepo, StatsRepo,
+    create_preview, create_snippet, hash_prompt, AuthRepo, ConfigRepo, DisabledBundledRepo,
+    EventsRepo, FlaggedEventsRepo, ProfileRepo, RulesRepo, SiteRepo, StatsRepo,
 };
 
 /// High-level database interface for Aegis.
@@ -454,6 +455,92 @@ impl Database {
     pub fn clear_disabled_bundled_sites(&self) -> Result<()> {
         let conn = self.pool.get()?;
         DisabledBundledRepo::clear(&conn)
+    }
+
+    // === Flagged Events (Sentiment Analysis) ===
+
+    /// Log a flagged event from sentiment analysis.
+    pub fn log_flagged_event(
+        &self,
+        profile_id: i64,
+        flag_type: &str,
+        confidence: f32,
+        content: &str,
+        source: Option<String>,
+        matched_phrases: Vec<String>,
+    ) -> Result<i64> {
+        let conn = self.pool.get()?;
+
+        let event = NewFlaggedEvent {
+            profile_id,
+            flag_type: flag_type.to_string(),
+            confidence,
+            content_snippet: create_snippet(content),
+            source,
+            matched_phrases,
+        };
+
+        FlaggedEventsRepo::insert(&conn, event)
+    }
+
+    /// Get a flagged event by ID.
+    pub fn get_flagged_event(&self, id: i64) -> Result<Option<FlaggedEvent>> {
+        let conn = self.pool.get()?;
+        FlaggedEventsRepo::get_by_id(&conn, id)
+    }
+
+    /// Get flagged events with filtering.
+    pub fn get_flagged_events(&self, filter: FlaggedEventFilter) -> Result<Vec<FlaggedEvent>> {
+        let conn = self.pool.get()?;
+        FlaggedEventsRepo::get_filtered(&conn, filter)
+    }
+
+    /// Get recent flagged events.
+    pub fn get_recent_flagged_events(&self, limit: i64, offset: i64) -> Result<Vec<FlaggedEvent>> {
+        let conn = self.pool.get()?;
+        FlaggedEventsRepo::get_recent(&conn, limit, offset)
+    }
+
+    /// Get unacknowledged flagged events.
+    pub fn get_unacknowledged_flagged_events(&self, limit: i64) -> Result<Vec<FlaggedEvent>> {
+        let conn = self.pool.get()?;
+        FlaggedEventsRepo::get_unacknowledged(&conn, limit)
+    }
+
+    /// Acknowledge a flagged event.
+    pub fn acknowledge_flagged_event(&self, id: i64) -> Result<bool> {
+        let conn = self.pool.get()?;
+        FlaggedEventsRepo::acknowledge(&conn, id)
+    }
+
+    /// Acknowledge multiple flagged events.
+    pub fn acknowledge_flagged_events(&self, ids: &[i64]) -> Result<i64> {
+        let conn = self.pool.get()?;
+        FlaggedEventsRepo::acknowledge_many(&conn, ids)
+    }
+
+    /// Delete a flagged event.
+    pub fn delete_flagged_event(&self, id: i64) -> Result<bool> {
+        let conn = self.pool.get()?;
+        FlaggedEventsRepo::delete(&conn, id)
+    }
+
+    /// Count flagged events.
+    pub fn count_flagged_events(&self) -> Result<i64> {
+        let conn = self.pool.get()?;
+        FlaggedEventsRepo::count(&conn)
+    }
+
+    /// Count unacknowledged flagged events.
+    pub fn count_unacknowledged_flagged_events(&self) -> Result<i64> {
+        let conn = self.pool.get()?;
+        FlaggedEventsRepo::count_unacknowledged(&conn)
+    }
+
+    /// Get flagged event statistics.
+    pub fn get_flagged_event_stats(&self) -> Result<FlaggedEventStats> {
+        let conn = self.pool.get()?;
+        FlaggedEventsRepo::get_stats(&conn)
     }
 }
 

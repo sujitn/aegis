@@ -927,6 +927,7 @@ fn create_profile(state: &mut AppState, wizard: &mut SetupWizardState) {
         time_rules,
         content_rules,
         enabled: true,
+        sentiment_config: aegis_storage::ProfileSentimentConfig::default(),
     };
 
     match state.db.create_profile(new_profile) {

@@ -20,11 +20,15 @@
 mod category;
 mod keyword;
 mod prompt_guard;
+mod sentiment;
 mod tiered;
 
 pub use category::{Category, CategoryMatch, ClassificationResult, ClassificationTier};
 pub use keyword::KeywordClassifier;
 pub use prompt_guard::{
     PromptGuardClassifier, PromptGuardConfig, PromptGuardError, PromptGuardResult,
+};
+pub use sentiment::{
+    SentimentAnalyzer, SentimentConfig, SentimentFlag, SentimentMatch, SentimentResult,
 };
 pub use tiered::{ClassificationStats, SafetyClassifier, TieredClassifier, TieredClassifierConfig};

@@ -1,6 +1,7 @@
 //! UI views for the parent dashboard.
 
 pub mod dashboard;
+pub mod flagged;
 pub mod login;
 pub mod logs;
 pub mod profiles;

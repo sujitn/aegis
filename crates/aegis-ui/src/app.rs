@@ -8,7 +8,9 @@ use aegis_storage::Database;
 
 use crate::state::{AppState, View};
 use crate::theme::status;
-use crate::views::{dashboard, login, logs, profiles, rules, settings, setup, system_logs};
+use crate::views::{
+    dashboard, flagged, login, logs, profiles, rules, settings, setup, system_logs,
+};
 
 /// Main dashboard application.
 pub struct DashboardApp {
@@ -29,6 +31,9 @@ pub struct DashboardApp {
 
     /// Settings view state.
     settings_state: settings::SettingsState,
+
+    /// Flagged items view state.
+    flagged_state: flagged::FlaggedState,
 
     /// Setup wizard state.
     setup_wizard: setup::SetupWizardState,
@@ -52,6 +57,7 @@ impl DashboardApp {
             logs_state: logs::LogsState::new(),
             system_logs_state: system_logs::SystemLogsState::default(),
             settings_state: settings::SettingsState::default(),
+            flagged_state: flagged::FlaggedState::new(),
             setup_wizard: setup::SetupWizardState::new(),
         }
     }
@@ -117,6 +123,7 @@ impl DashboardApp {
             self.render_nav_item(ui, "Dashboard", View::Dashboard);
             self.render_nav_item(ui, "Profiles", View::Profiles);
             self.render_nav_item(ui, "Activity", View::Logs);
+            self.render_nav_item_with_badge(ui, "Flagged", View::Flagged);
             self.render_nav_item(ui, "System Logs", View::SystemLogs);
             self.render_nav_item(ui, "Settings", View::Settings);
 
@@ -199,6 +206,72 @@ impl DashboardApp {
         }
     }
 
+    /// Renders a navigation item with an optional badge for unacknowledged count.
+    fn render_nav_item_with_badge(&mut self, ui: &mut egui::Ui, label: &str, view: View) {
+        let is_selected = self.state.view == view;
+        let badge_count = self.state.unacknowledged_flagged_count();
+
+        let response =
+            ui.allocate_response(Vec2::new(ui.available_width(), 36.0), egui::Sense::click());
+
+        // Highlight background if selected or hovered
+        let bg_color = if is_selected {
+            ui.style().visuals.selection.bg_fill
+        } else if response.hovered() {
+            ui.style().visuals.widgets.hovered.bg_fill
+        } else {
+            Color32::TRANSPARENT
+        };
+
+        ui.painter().rect_filled(response.rect, 4.0, bg_color);
+
+        // Draw text
+        let text_color = if is_selected {
+            ui.style().visuals.selection.stroke.color
+        } else {
+            ui.style().visuals.text_color()
+        };
+
+        ui.painter().text(
+            response.rect.left_center() + Vec2::new(24.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            label,
+            egui::FontId::default(),
+            text_color,
+        );
+
+        // Draw badge if there are unacknowledged items
+        if badge_count > 0 {
+            let badge_text = if badge_count > 99 {
+                "99+".to_string()
+            } else {
+                badge_count.to_string()
+            };
+            let badge_pos = response.rect.right_center() + Vec2::new(-24.0, 0.0);
+            let badge_color = status::WARNING;
+
+            // Badge background
+            ui.painter().circle_filled(badge_pos, 10.0, badge_color);
+
+            // Badge text
+            ui.painter().text(
+                badge_pos,
+                egui::Align2::CENTER_CENTER,
+                badge_text,
+                egui::FontId::proportional(10.0),
+                Color32::WHITE,
+            );
+        }
+
+        if response.clicked() && self.state.view != view {
+            self.state.view = view;
+            // Refresh data when switching views to update stats
+            if let Err(e) = self.state.refresh_data() {
+                tracing::warn!("Failed to refresh data on view switch: {}", e);
+            }
+        }
+    }
+
     /// Renders the header bar.
     #[allow(dead_code)]
     fn render_header(&mut self, ui: &mut egui::Ui) {
@@ -211,6 +284,7 @@ impl DashboardApp {
                 View::Profiles => "Profiles",
                 View::Rules => "Rules",
                 View::Logs => "Activity Logs",
+                View::Flagged => "Flagged Items",
                 View::SystemLogs => "System Logs",
                 View::Settings => "Settings",
             };
@@ -242,6 +316,9 @@ impl DashboardApp {
             }
             View::Logs => {
                 logs::render(ui, &mut self.state, &mut self.logs_state);
+            }
+            View::Flagged => {
+                flagged::render(ui, &mut self.state, &mut self.flagged_state);
             }
             View::SystemLogs => {
                 system_logs::render(ui, &mut self.system_logs_state);
