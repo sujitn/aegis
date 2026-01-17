@@ -41,7 +41,7 @@
                 <Directory Id='APPLICATIONFOLDER' Name='Aegis'>
 
                     <Directory Id='Bin' Name='bin'>
-                        <Component Id='Path' Guid='B4F02G3E-5C6D-7E8F-9A0B-1C2D3E4F5A6B' KeyPath='yes'>
+                        <Component Id='Path' Guid='B4F02A3E-5C6D-7E8F-9A0B-1C2D3E4F5A6B' KeyPath='yes'>
                             <Environment
                                 Id='PATH'
                                 Name='PATH'
