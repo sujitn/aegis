@@ -1,0 +1,179 @@
+name: Version and Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: 'patch'
+      custom_version:
+        description: 'Custom version (optional, overrides bump type, e.g., 1.2.3)'
+        required: false
+        type: string
+      trigger_release:
+        description: 'Trigger release workflow after tagging'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Bump Version and Tag
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Get current version
+        id: current
+        run: |
+          CURRENT=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$CURRENT" >> $GITHUB_OUTPUT
+          echo "Current version: $CURRENT"
+
+      - name: Calculate new version
+        id: bump
+        run: |
+          CURRENT="${{ steps.current.outputs.version }}"
+
+          if [ -n "${{ inputs.custom_version }}" ]; then
+            # Use custom version (strip 'v' prefix if present)
+            NEW_VERSION="${{ inputs.custom_version }}"
+            NEW_VERSION="${NEW_VERSION#v}"
+          else
+            # Parse current version
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+            # Handle pre-release suffixes (e.g., 0.1.0-alpha)
+            PATCH_NUM="${PATCH%%-*}"
+
+            case "${{ inputs.bump }}" in
+              major)
+                MAJOR=$((MAJOR + 1))
+                MINOR=0
+                PATCH_NUM=0
+                ;;
+              minor)
+                MINOR=$((MINOR + 1))
+                PATCH_NUM=0
+                ;;
+              patch)
+                PATCH_NUM=$((PATCH_NUM + 1))
+                ;;
+            esac
+
+            NEW_VERSION="${MAJOR}.${MINOR}.${PATCH_NUM}"
+          fi
+
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+          echo "Tag: v$NEW_VERSION"
+
+      - name: Check if tag exists
+        run: |
+          if git rev-parse "v${{ steps.bump.outputs.new_version }}" >/dev/null 2>&1; then
+            echo "::error::Tag v${{ steps.bump.outputs.new_version }} already exists!"
+            exit 1
+          fi
+
+      - name: Update Cargo.toml version
+        run: |
+          # Update workspace version in root Cargo.toml
+          sed -i 's/^version = ".*"/version = "${{ steps.bump.outputs.new_version }}"/' Cargo.toml
+
+          # Verify the change
+          grep '^version = ' Cargo.toml | head -1
+
+      - name: Update Cargo.lock
+        run: |
+          cargo update --workspace
+
+      - name: Update CHANGELOG.md
+        run: |
+          DATE=$(date +%Y-%m-%d)
+          VERSION="${{ steps.bump.outputs.new_version }}"
+
+          # Check if CHANGELOG.md exists and has Unreleased section
+          if [ -f CHANGELOG.md ] && grep -q "## \[Unreleased\]" CHANGELOG.md; then
+            # Replace [Unreleased] with the new version
+            sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n## [$VERSION] - $DATE/" CHANGELOG.md
+          elif [ -f CHANGELOG.md ]; then
+            # Add new version section at the top (after the header)
+            sed -i "1a\\\\n## [$VERSION] - $DATE\\n" CHANGELOG.md
+          fi
+
+      - name: Commit version bump
+        run: |
+          git add Cargo.toml Cargo.lock CHANGELOG.md
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }}"
+
+      - name: Create and push tag
+        run: |
+          git tag -a "v${{ steps.bump.outputs.new_version }}" -m "Release v${{ steps.bump.outputs.new_version }}"
+          git push origin main
+          git push origin "v${{ steps.bump.outputs.new_version }}"
+
+      - name: Summary
+        run: |
+          echo "## Version Bump Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Previous version:** ${{ steps.current.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **New version:** ${{ steps.bump.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag:** v${{ steps.bump.outputs.new_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.trigger_release }}" = "true" ]; then
+            echo "Release workflow will be triggered automatically." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Release workflow was not triggered. Run it manually if needed." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  trigger-release:
+    name: Trigger Release
+    needs: version
+    if: inputs.trigger_release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger release workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // The release workflow is triggered automatically by the tag push
+            // This step just provides confirmation
+            console.log('Release workflow should be triggered by tag: v${{ needs.version.outputs.new_version }}');
+
+            // Add a small delay to ensure tag is available
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
+            // Check if release workflow was triggered
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'release.yml',
+              per_page: 5
+            });
+
+            console.log('Recent release workflow runs:', runs.data.workflow_runs.map(r => ({
+              id: r.id,
+              status: r.status,
+              created_at: r.created_at
+            })));
