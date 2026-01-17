@@ -4,6 +4,8 @@ All notable changes to Aegis.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-01-17
+
 ### Added
 - Project documentation and specifications
 - F001: Project Foundation - Cargo workspace with 6 crates (aegis-core, aegis-storage, aegis-server, aegis-ui, aegis-tray, aegis-app)
