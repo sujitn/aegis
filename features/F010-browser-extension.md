@@ -32,8 +32,14 @@ Chrome/Edge extension (MV3) intercepts prompts before sending to AI chatbots. Us
 - [x] Intercept XMLHttpRequest to LLM API endpoints
 - [x] Extract prompts from JSON request bodies
 - [x] Support multiple payload formats (OpenAI, Anthropic, Google)
-- [ ] Handle streaming responses
-- [ ] Support additional LLM services (Copilot, Perplexity, Poe)
+- [x] Handle streaming responses
+- [x] Support additional LLM services (Copilot, Perplexity, Poe)
+
+### WebSocket Interception (New)
+- [x] Intercept WebSocket connections to LLM services
+- [x] Extract prompts from WebSocket messages (socket.io, SignalR)
+- [x] Monitor incoming WebSocket messages for response content
+- [x] Support Perplexity (socket.io), Copilot (SignalR), Poe WebSocket protocols
 
 ### Easy Installation (F024-alt)
 - [ ] Package as CRX for manual install
@@ -163,9 +169,9 @@ Network interception is robust because:
 
 ### Supported Sites
 
-- chat.openai.com / chatgpt.com (ChatGPT)
-- claude.ai (Claude)
-- gemini.google.com (Gemini)
-- copilot.microsoft.com (Microsoft Copilot) - planned
-- perplexity.ai (Perplexity) - planned
-- poe.com (Poe) - planned
+- chat.openai.com / chatgpt.com (ChatGPT) - fetch interception
+- claude.ai (Claude) - fetch interception
+- gemini.google.com (Gemini) - fetch interception
+- copilot.microsoft.com / bing.com/chat (Microsoft Copilot) - fetch + WebSocket (SignalR)
+- perplexity.ai (Perplexity) - fetch + WebSocket (socket.io)
+- poe.com (Poe) - fetch + WebSocket (GraphQL)

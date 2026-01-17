@@ -59,7 +59,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["overlay.css"],
+      "resources": ["overlay.css", "dist/injected.js"],
       "matches": [
         "https://chat.openai.com/*",
         "https://chatgpt.com/*",

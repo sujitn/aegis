@@ -14,7 +14,9 @@ import {
   installNetworkInterceptor,
   setFailMode,
   setInterceptCallback,
-  type InterceptCallback
+  setResponseInterceptCallback,
+  type InterceptCallback,
+  type ResponseInterceptCallback
 } from './interceptor.js';
 
 const OVERLAY_ID = 'aegis-overlay';
@@ -194,6 +196,40 @@ function showServiceUnavailableBlocked(): void {
   container.appendChild(overlay);
 
   // Don't auto-dismiss - user needs to acknowledge
+}
+
+/**
+ * Show response blocked overlay (streaming response was blocked).
+ */
+function showResponseBlockedOverlay(response: CheckResponse): void {
+  removeOverlay();
+
+  const categories = response.categories
+    .map(c => `${c.category} (${Math.round(c.confidence * 100)}%)`)
+    .join(', ');
+
+  const overlay = document.createElement('div');
+  overlay.id = OVERLAY_ID;
+  overlay.className = 'aegis-overlay aegis-blocked aegis-response-blocked';
+  overlay.innerHTML = `
+    <div class="aegis-overlay-content">
+      <div class="aegis-icon">&#9888;</div>
+      <div class="aegis-title">Response Blocked</div>
+      <div class="aegis-text">${response.reason}</div>
+      ${categories ? `<div class="aegis-categories">Detected: ${categories}</div>` : ''}
+      <div class="aegis-hint">The AI response contained potentially unsafe content and was stopped.</div>
+      <button class="aegis-dismiss">Dismiss</button>
+    </div>
+  `;
+
+  const dismissBtn = overlay.querySelector('.aegis-dismiss');
+  dismissBtn?.addEventListener('click', removeOverlay);
+
+  const container = siteHandler?.getOverlayContainer() || document.body;
+  container.appendChild(overlay);
+
+  // Auto-dismiss after 8 seconds (longer than request block since response is more alarming)
+  setTimeout(removeOverlay, 8000);
 }
 
 /**
@@ -397,6 +433,25 @@ function handleNetworkInterception(result: {
 }
 
 /**
+ * Handle streaming response interception callback for UI feedback.
+ */
+function handleResponseInterception(result: {
+  blocked: boolean;
+  content: string;
+  service: string;
+  response?: CheckResponse;
+  error?: string;
+}): void {
+  if (result.blocked && result.response) {
+    showResponseBlockedOverlay(result.response);
+    console.log(`[Aegis] Streaming response blocked on ${result.service}: ${result.response.reason}`);
+  } else if (result.error) {
+    // Log error but don't block (fail-open for responses is safer)
+    console.warn(`[Aegis] Response check error on ${result.service}: ${result.error}`);
+  }
+}
+
+/**
  * Initialize interception for the current page.
  */
 async function initialize(): Promise<void> {
@@ -410,7 +465,9 @@ async function initialize(): Promise<void> {
   }
 
   // Primary: Install network request interceptor (immune to DOM changes)
+  // Also handles streaming response interception
   setInterceptCallback(handleNetworkInterception);
+  setResponseInterceptCallback(handleResponseInterception);
   installNetworkInterceptor();
 
   // Fallback: Set up DOM-based interception for edge cases

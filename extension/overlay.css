@@ -106,6 +106,26 @@
   border-radius: 4px;
 }
 
+.aegis-hint {
+  font-size: 12px;
+  color: #888;
+  margin-top: 12px;
+  font-style: italic;
+}
+
+/* Response blocked state - slightly different styling */
+.aegis-response-blocked .aegis-overlay-content {
+  border-left: 4px solid #9c27b0;
+}
+
+.aegis-response-blocked .aegis-icon {
+  color: #9c27b0;
+}
+
+.aegis-response-blocked .aegis-title {
+  color: #7b1fa2;
+}
+
 /* Warning state */
 .aegis-warning .aegis-overlay-content {
   border-left: 4px solid #ff9800;
@@ -204,8 +224,20 @@
     color: #ffb74d;
   }
 
+  .aegis-response-blocked .aegis-title {
+    color: #ce93d8;
+  }
+
+  .aegis-response-blocked .aegis-icon {
+    color: #ce93d8;
+  }
+
   .aegis-text {
     color: #aaa;
+  }
+
+  .aegis-hint {
+    color: #888;
   }
 
   .aegis-categories {
