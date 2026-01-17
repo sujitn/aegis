@@ -543,10 +543,12 @@ fn render_extension_install_section(
                 ui.horizontal(|ui| {
                     ui.add_space(16.0);
                     ui.label(
-                        RichText::new("(Note: This URL must be typed manually, it cannot be opened via link)")
-                            .weak()
-                            .italics()
-                            .size(10.0),
+                        RichText::new(
+                            "(Note: This URL must be typed manually, it cannot be opened via link)",
+                        )
+                        .weak()
+                        .italics()
+                        .size(10.0),
                     );
                 });
 
