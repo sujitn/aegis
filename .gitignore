@@ -24,3 +24,5 @@ dist/
 # Logs
 *.log
 /.claude
+extension/updates.xml
+nul

@@ -3,6 +3,7 @@
 use eframe::egui;
 use egui::{Color32, RichText, Vec2};
 
+use aegis_proxy::FilteringState;
 use aegis_storage::Database;
 
 use crate::state::{AppState, View};
@@ -36,8 +37,16 @@ pub struct DashboardApp {
 impl DashboardApp {
     /// Creates a new dashboard application.
     pub fn new(db: Database) -> Self {
+        Self::with_filtering_state(db, None)
+    }
+
+    /// Creates a new dashboard application with an optional filtering state.
+    ///
+    /// If `filtering_state` is provided, rule changes made in the UI will be
+    /// immediately applied to the running proxy.
+    pub fn with_filtering_state(db: Database, filtering_state: Option<FilteringState>) -> Self {
         Self {
-            state: AppState::new(db),
+            state: AppState::with_filtering_state(db, filtering_state),
             profile_editor: profiles::ProfileEditor::default(),
             rules_state: rules::RulesState::new(),
             logs_state: logs::LogsState::new(),

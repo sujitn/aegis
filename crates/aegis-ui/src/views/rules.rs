@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use aegis_core::classifier::Category;
 use aegis_core::community_rules::{CommunityRuleManager, ParentOverrides, RuleTier};
-use aegis_core::content_rules::ContentAction;
+use aegis_core::content_rules::{ContentAction, ContentRule, ContentRuleSet};
+use aegis_core::time_rules::{TimeRange, TimeRuleSet, Weekday};
 
 use crate::state::{AppState, RulesTab, View};
 use crate::theme::{brand, status};
@@ -1099,15 +1100,15 @@ fn render_community_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
 /// Saves rules to the profile.
 fn save_rules(state: &mut AppState, rules_state: &mut RulesState) {
     if let Some(profile_id) = state.selected_profile_id {
-        let (content_rules, time_rules) = rules_state.save_to_profile();
+        let (content_rules_json, time_rules_json) = rules_state.save_to_profile();
 
         // Find and update the profile
         if let Some(profile) = state.profiles.iter().find(|p| p.id == profile_id) {
             let updated = aegis_storage::NewProfile {
                 name: profile.name.clone(),
                 os_username: profile.os_username.clone(),
-                time_rules,
-                content_rules,
+                time_rules: time_rules_json.clone(),
+                content_rules: content_rules_json.clone(),
                 enabled: profile.enabled,
             };
 
@@ -1116,12 +1117,125 @@ fn save_rules(state: &mut AppState, rules_state: &mut RulesState) {
                     rules_state.has_changes = false;
                     state.set_success("Rules saved successfully");
                     let _ = state.refresh_data();
+
+                    // Update the filtering state's rule engine if available
+                    if let Some(ref filtering_state) = state.filtering_state {
+                        // Convert the saved rules to core types
+                        let time_rules = parse_time_rules_from_json(&time_rules_json);
+                        let content_rules = parse_content_rules_from_json(&content_rules_json);
+
+                        filtering_state.update_rules(time_rules, content_rules);
+                        tracing::info!("Live rule update applied to proxy");
+                    }
                 }
                 Err(e) => {
                     state.set_error(format!("Failed to save rules: {}", e));
                 }
             }
         }
+    }
+}
+
+/// Parses time rules from JSON into core TimeRuleSet.
+fn parse_time_rules_from_json(json: &serde_json::Value) -> TimeRuleSet {
+    let mut rule_set = TimeRuleSet::new();
+
+    if let Some(rules) = json.get("rules").and_then(|v| v.as_array()) {
+        for rule_json in rules {
+            if let Ok(ui_rule) = serde_json::from_value::<TimeRule>(rule_json.clone()) {
+                if !ui_rule.enabled {
+                    continue; // Skip disabled rules
+                }
+
+                // Parse time range
+                let start = parse_time(&ui_rule.start_time);
+                let end = parse_time(&ui_rule.end_time);
+                let time_range = TimeRange::new(start, end);
+
+                // Parse days
+                let days: Vec<Weekday> = ui_rule
+                    .days
+                    .iter()
+                    .filter_map(|d| parse_weekday(d))
+                    .collect();
+
+                if !days.is_empty() {
+                    let core_rule = aegis_core::time_rules::TimeRule::new(
+                        &ui_rule.id,
+                        &ui_rule.name,
+                        days,
+                        time_range,
+                    );
+                    rule_set.add_rule(core_rule);
+                }
+            }
+        }
+    }
+
+    rule_set
+}
+
+/// Parses content rules from JSON into core ContentRuleSet.
+fn parse_content_rules_from_json(json: &serde_json::Value) -> ContentRuleSet {
+    let mut rule_set = ContentRuleSet::new();
+
+    if let Some(categories) = json.get("categories").and_then(|v| v.as_object()) {
+        for (cat_str, config) in categories {
+            if let Some(category) = parse_category(cat_str) {
+                let enabled = config
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+
+                if !enabled {
+                    continue; // Skip disabled rules
+                }
+
+                let action = config
+                    .get("action")
+                    .and_then(|v| v.as_str())
+                    .map(parse_action)
+                    .unwrap_or(ContentAction::Block);
+
+                let threshold = config
+                    .get("threshold")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.7) as f32;
+
+                let rule = ContentRule::new(
+                    format!("{:?}_rule", category).to_lowercase(),
+                    format!("{:?} Rule", category),
+                    category,
+                    action,
+                    threshold,
+                );
+                rule_set.add_rule(rule);
+            }
+        }
+    }
+
+    rule_set
+}
+
+/// Parses a time string (HH:MM) into TimeOfDay.
+fn parse_time(s: &str) -> aegis_core::time_rules::TimeOfDay {
+    let parts: Vec<&str> = s.split(':').collect();
+    let hour = parts.first().and_then(|h| h.parse().ok()).unwrap_or(0);
+    let minute = parts.get(1).and_then(|m| m.parse().ok()).unwrap_or(0);
+    aegis_core::time_rules::TimeOfDay::new(hour, minute)
+}
+
+/// Parses a day name into Weekday.
+fn parse_weekday(s: &str) -> Option<Weekday> {
+    match s.to_lowercase().as_str() {
+        "monday" => Some(Weekday::Monday),
+        "tuesday" => Some(Weekday::Tuesday),
+        "wednesday" => Some(Weekday::Wednesday),
+        "thursday" => Some(Weekday::Thursday),
+        "friday" => Some(Weekday::Friday),
+        "saturday" => Some(Weekday::Saturday),
+        "sunday" => Some(Weekday::Sunday),
+        _ => None,
     }
 }
 

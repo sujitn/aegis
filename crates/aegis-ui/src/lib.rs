@@ -23,6 +23,8 @@
 //! run_dashboard(db).expect("Failed to run dashboard");
 //! ```
 
+use aegis_proxy::FilteringState;
+
 mod app;
 pub mod error;
 pub mod state;
@@ -37,7 +39,18 @@ pub use state::{AppState, InterceptionMode, ProtectionStatus, View};
 ///
 /// This is the main entry point for the GUI application.
 pub fn run_dashboard(db: aegis_storage::Database) -> Result<()> {
-    let app = DashboardApp::new(db);
+    run_dashboard_with_filtering(db, None)
+}
+
+/// Runs the parent dashboard application with an optional filtering state.
+///
+/// If `filtering_state` is provided, rule changes made in the UI will be
+/// immediately applied to the running proxy.
+pub fn run_dashboard_with_filtering(
+    db: aegis_storage::Database,
+    filtering_state: Option<FilteringState>,
+) -> Result<()> {
+    let app = DashboardApp::with_filtering_state(db, filtering_state);
     let options = DashboardApp::window_options();
 
     eframe::run_native(

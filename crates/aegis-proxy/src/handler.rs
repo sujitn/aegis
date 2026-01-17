@@ -24,8 +24,10 @@ fn bytes_to_body(bytes: Bytes) -> Body {
 }
 
 use aegis_core::classifier::{ClassificationResult, TieredClassifier};
+use aegis_core::content_rules::ContentRuleSet;
 use aegis_core::notifications::{BlockedEvent, NotificationManager};
 use aegis_core::rule_engine::{RuleAction, RuleEngine, RuleEngineResult};
+use aegis_core::time_rules::TimeRuleSet;
 use aegis_storage::{Action, Database};
 
 use crate::domains::is_llm_domain;
@@ -102,12 +104,16 @@ pub type OnAllowCallback = Arc<dyn Fn(&PromptInfo, &RuleEngineResult) + Send + S
 ///
 /// When filtering is disabled (e.g., parent profile is active), all requests
 /// pass through without classification.
+///
+/// Also holds the shared rule engine that can be updated when profile rules change.
 #[derive(Clone, Debug)]
 pub struct FilteringState {
     /// Whether filtering is enabled.
     enabled: Arc<AtomicBool>,
     /// Current profile name (for logging).
     profile_name: Arc<RwLock<Option<String>>>,
+    /// Shared rule engine that can be updated when rules change.
+    rule_engine: Arc<RwLock<RuleEngine>>,
 }
 
 impl Default for FilteringState {
@@ -117,11 +123,21 @@ impl Default for FilteringState {
 }
 
 impl FilteringState {
-    /// Creates a new filtering state with filtering enabled.
+    /// Creates a new filtering state with filtering enabled and default rules.
     pub fn new() -> Self {
         Self {
             enabled: Arc::new(AtomicBool::new(true)),
             profile_name: Arc::new(RwLock::new(None)),
+            rule_engine: Arc::new(RwLock::new(RuleEngine::with_defaults())),
+        }
+    }
+
+    /// Creates a new filtering state with a custom rule engine.
+    pub fn with_rule_engine(rule_engine: RuleEngine) -> Self {
+        Self {
+            enabled: Arc::new(AtomicBool::new(true)),
+            profile_name: Arc::new(RwLock::new(None)),
+            rule_engine: Arc::new(RwLock::new(rule_engine)),
         }
     }
 
@@ -156,6 +172,29 @@ impl FilteringState {
     pub fn profile_name(&self) -> Option<String> {
         self.profile_name.read().clone()
     }
+
+    /// Returns a reference to the shared rule engine.
+    pub fn rule_engine(&self) -> &Arc<RwLock<RuleEngine>> {
+        &self.rule_engine
+    }
+
+    /// Updates the rule engine with new time and content rules.
+    ///
+    /// Call this when a profile's rules are modified in the UI or when
+    /// switching to a different profile.
+    pub fn update_rules(&self, time_rules: TimeRuleSet, content_rules: ContentRuleSet) {
+        let mut engine = self.rule_engine.write();
+        engine.time_rules = time_rules;
+        engine.content_rules = content_rules;
+        tracing::info!("Rule engine updated with new rules");
+    }
+
+    /// Replaces the entire rule engine.
+    pub fn set_rule_engine(&self, new_engine: RuleEngine) {
+        let mut engine = self.rule_engine.write();
+        *engine = new_engine;
+        tracing::info!("Rule engine replaced");
+    }
 }
 
 /// Handler configuration.
@@ -163,8 +202,6 @@ impl FilteringState {
 pub struct HandlerConfig {
     /// The classifier for content analysis.
     pub classifier: Arc<RwLock<TieredClassifier>>,
-    /// The rule engine for policy evaluation.
-    pub rule_engine: Arc<RuleEngine>,
     /// Optional notification manager.
     pub notifications: Option<Arc<NotificationManager>>,
     /// Callback when a request is blocked.
@@ -172,6 +209,7 @@ pub struct HandlerConfig {
     /// Callback when a request is allowed.
     pub on_allow: Option<OnAllowCallback>,
     /// Shared filtering state (controlled by ProfileProxyController).
+    /// Also contains the shared rule engine.
     pub filtering_state: FilteringState,
     /// Optional database for event logging.
     pub database: Option<Arc<Database>>,
@@ -181,7 +219,6 @@ impl std::fmt::Debug for HandlerConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HandlerConfig")
             .field("classifier", &"TieredClassifier")
-            .field("rule_engine", &"RuleEngine")
             .field("notifications", &self.notifications.is_some())
             .field("on_block", &self.on_block.is_some())
             .field("on_allow", &self.on_allow.is_some())
@@ -211,7 +248,6 @@ impl ProxyHandler {
         Self::new(HandlerConfig {
             // Use default classifier which includes community rules
             classifier: Arc::new(RwLock::new(TieredClassifier::with_defaults())),
-            rule_engine: Arc::new(RuleEngine::with_defaults()),
             notifications: Some(Arc::new(NotificationManager::new())),
             on_block: None,
             on_allow: None,
@@ -223,10 +259,10 @@ impl ProxyHandler {
     /// Creates a handler with the given filtering state.
     ///
     /// This allows external control of filtering (e.g., by ProfileProxyController).
+    /// The rule engine is obtained from the filtering state.
     pub fn with_filtering_state(filtering_state: FilteringState) -> Self {
         Self::new(HandlerConfig {
             classifier: Arc::new(RwLock::new(TieredClassifier::with_defaults())),
-            rule_engine: Arc::new(RuleEngine::with_defaults()),
             notifications: Some(Arc::new(NotificationManager::new())),
             on_block: None,
             on_allow: None,
@@ -270,7 +306,11 @@ impl ProxyHandler {
 
     /// Evaluates rules against classification.
     fn evaluate_rules(&self, classification: &ClassificationResult) -> RuleEngineResult {
-        self.config.rule_engine.evaluate_now(classification)
+        self.config
+            .filtering_state
+            .rule_engine
+            .read()
+            .evaluate_now(classification)
     }
 
     /// Records an event to the database if configured.
@@ -511,9 +551,8 @@ impl WebSocketHandler for ProxyHandler {
         message: Message,
     ) -> impl std::future::Future<Output = Option<Message>> + Send {
         let classifier = self.config.classifier.clone();
-        let rule_engine = self.config.rule_engine.clone();
-        let notifications = self.config.notifications.clone();
         let filtering_state = self.config.filtering_state.clone();
+        let notifications = self.config.notifications.clone();
 
         // Only inspect client-to-server messages (outgoing prompts)
         // Server-to-client messages (responses) pass through unchanged
@@ -571,8 +610,11 @@ impl WebSocketHandler for ProxyHandler {
                 // Classify the prompt
                 let classification = classifier.write().classify(&prompt);
 
-                // Evaluate rules
-                let result = rule_engine.evaluate_now(&classification);
+                // Evaluate rules using the shared rule engine
+                let result = filtering_state
+                    .rule_engine
+                    .read()
+                    .evaluate_now(&classification);
 
                 match result.action {
                     RuleAction::Block => {
@@ -704,7 +746,6 @@ mod tests {
     fn handler_config_debug() {
         let config = HandlerConfig {
             classifier: Arc::new(RwLock::new(TieredClassifier::keyword_only())),
-            rule_engine: Arc::new(RuleEngine::new()),
             notifications: None,
             on_block: None,
             on_allow: None,

@@ -18,12 +18,13 @@ use aegis_core::content_rules::ContentRuleSet;
 use aegis_core::profile::{ProfileManager, ProxyMode, UserProfile};
 use aegis_core::profile_proxy::{ProfileProxyConfig, ProfileProxyController, ProxyAction};
 use aegis_core::protection::ProtectionManager;
+use aegis_core::rule_engine::RuleEngine;
 use aegis_core::time_rules::TimeRuleSet;
 use aegis_proxy::{FilteringState, ProxyConfig, ProxyServer};
 use aegis_server::{Server, ServerConfig};
 use aegis_storage::Database;
 use aegis_tray::{MenuAction, SystemTray, TrayConfig, TrayEvent, TrayStatus};
-use aegis_ui::run_dashboard;
+use aegis_ui::run_dashboard_with_filtering;
 use clap::Parser;
 use directories::ProjectDirs;
 use muda::MenuEvent;
@@ -209,9 +210,11 @@ fn load_profiles_from_db(db: &Database) -> ProfileManager {
 }
 
 /// Start the background servers (API and Proxy) with profile-aware filtering.
-async fn start_servers(db: Database) {
+/// Returns the shared FilteringState for use by the UI.
+async fn start_servers(db: Database) -> FilteringState {
     let server_db = db.clone();
     let profile_db = db.clone();
+    let rules_db = db.clone();
     let proxy_db = Arc::new(db.clone());
 
     // Start HTTP API server in background (for browser extension)
@@ -235,34 +238,45 @@ async fn start_servers(db: Database) {
     // Load profiles and create profile-aware filtering
     let profiles = load_profiles_from_db(&profile_db);
     let protection = ProtectionManager::new();
-    let filtering_state = FilteringState::new();
 
-    // Create profile proxy controller with callback to control filtering
+    // Load initial rules from the first enabled profile (if any)
+    let initial_rule_engine = load_initial_rules(&rules_db);
+    let filtering_state = FilteringState::with_rule_engine(initial_rule_engine);
+
+    // Create profile proxy controller with callback to control filtering and update rules
     let filtering_state_clone = filtering_state.clone();
-    let controller =
-        ProfileProxyController::new(profiles, protection, ProfileProxyConfig::default()).on_switch(
-            move |event| {
-                tracing::info!(
-                    "Profile switch: {} -> {} (action: {})",
-                    event.previous_profile.as_deref().unwrap_or("none"),
-                    event.new_profile.as_deref().unwrap_or("none"),
-                    event.proxy_action
-                );
-
-                // Update filtering state based on proxy action
-                match event.proxy_action {
-                    ProxyAction::Enabled => {
-                        filtering_state_clone.enable();
-                        filtering_state_clone.set_profile(event.new_profile.clone());
-                    }
-                    ProxyAction::Disabled | ProxyAction::Passthrough => {
-                        filtering_state_clone.disable();
-                        filtering_state_clone.set_profile(event.new_profile.clone());
-                    }
-                    ProxyAction::NoChange => {}
-                }
-            },
+    let switch_db = rules_db.clone();
+    let controller = ProfileProxyController::new(
+        profiles,
+        protection,
+        ProfileProxyConfig::default(),
+    )
+    .on_switch(move |event| {
+        tracing::info!(
+            "Profile switch: {} -> {} (action: {})",
+            event.previous_profile.as_deref().unwrap_or("none"),
+            event.new_profile.as_deref().unwrap_or("none"),
+            event.proxy_action
         );
+
+        // Update filtering state based on proxy action
+        match event.proxy_action {
+            ProxyAction::Enabled => {
+                filtering_state_clone.enable();
+                filtering_state_clone.set_profile(event.new_profile.clone());
+
+                // Load rules for the new profile
+                if let Some(ref profile_name) = event.new_profile {
+                    load_profile_rules_by_name(&switch_db, profile_name, &filtering_state_clone);
+                }
+            }
+            ProxyAction::Disabled | ProxyAction::Passthrough => {
+                filtering_state_clone.disable();
+                filtering_state_clone.set_profile(event.new_profile.clone());
+            }
+            ProxyAction::NoChange => {}
+        }
+    });
 
     // Initialize controller to detect current user and set initial filtering state
     if let Some(event) = controller.initialize() {
@@ -291,11 +305,15 @@ async fn start_servers(db: Database) {
         }
     });
 
+    // Clone filtering_state for proxy and for return
+    let proxy_filtering_state = filtering_state.clone();
+    let return_filtering_state = filtering_state.clone();
+
     // Start MITM proxy server in background (for system-wide protection)
     // Use the shared filtering state so ProfileProxyController can control filtering
     // Also pass the database for event logging (live stats)
     tokio::spawn(async move {
-        match ProxyConfig::with_filtering_state(filtering_state) {
+        match ProxyConfig::with_filtering_state(proxy_filtering_state) {
             Ok(config) => {
                 let config = config.with_database(proxy_db);
                 let proxy_addr = config.addr;
@@ -322,10 +340,77 @@ async fn start_servers(db: Database) {
 
     // Give servers a moment to start
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    return_filtering_state
+}
+
+/// Loads the initial rule engine from the first enabled profile.
+fn load_initial_rules(db: &Database) -> RuleEngine {
+    match db.get_all_profiles() {
+        Ok(profiles) => {
+            // Find first enabled profile
+            if let Some(profile) = profiles.iter().find(|p| p.enabled) {
+                let time_rules: TimeRuleSet =
+                    serde_json::from_value(profile.time_rules.clone()).unwrap_or_default();
+                let content_rules: ContentRuleSet =
+                    serde_json::from_value(profile.content_rules.clone()).unwrap_or_default();
+
+                tracing::info!(
+                    "Loaded initial rules from profile '{}': {} time rules, {} content rules",
+                    profile.name,
+                    time_rules.rules.len(),
+                    content_rules.rules.len()
+                );
+
+                return RuleEngine {
+                    time_rules,
+                    content_rules,
+                };
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to load profiles for initial rules: {}", e);
+        }
+    }
+
+    tracing::info!("Using default rules (no enabled profiles found)");
+    RuleEngine::with_defaults()
+}
+
+/// Loads rules for a specific profile by name and updates the filtering state.
+fn load_profile_rules_by_name(db: &Database, profile_name: &str, filtering_state: &FilteringState) {
+    match db.get_all_profiles() {
+        Ok(profiles) => {
+            if let Some(profile) = profiles.iter().find(|p| p.name == profile_name) {
+                let time_rules: TimeRuleSet =
+                    serde_json::from_value(profile.time_rules.clone()).unwrap_or_default();
+                let content_rules: ContentRuleSet =
+                    serde_json::from_value(profile.content_rules.clone()).unwrap_or_default();
+
+                tracing::info!(
+                    "Loading rules for profile '{}': {} time rules, {} content rules",
+                    profile.name,
+                    time_rules.rules.len(),
+                    content_rules.rules.len()
+                );
+
+                filtering_state.update_rules(time_rules, content_rules);
+            } else {
+                tracing::warn!("Profile '{}' not found in database", profile_name);
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to load profile '{}' rules: {}", profile_name, e);
+        }
+    }
 }
 
 /// Run the application with tray icon as primary interface.
-fn run_with_tray(db: Database, show_dashboard: bool) -> anyhow::Result<()> {
+fn run_with_tray(
+    db: Database,
+    show_dashboard: bool,
+    filtering_state: FilteringState,
+) -> anyhow::Result<()> {
     // Set up panic hook to log panics to file
     let default_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
@@ -367,7 +452,7 @@ fn run_with_tray(db: Database, show_dashboard: bool) -> anyhow::Result<()> {
 
             tracing::info!("Opening dashboard...");
             let db_clone = db.clone();
-            if let Err(e) = run_dashboard(db_clone) {
+            if let Err(e) = run_dashboard_with_filtering(db_clone, Some(filtering_state.clone())) {
                 tracing::error!("Dashboard error: {}", e);
             }
             tracing::info!("Dashboard closed, returning to tray");
@@ -455,7 +540,7 @@ fn run_with_tray(db: Database, show_dashboard: bool) -> anyhow::Result<()> {
             tracing::info!("Opening dashboard...");
 
             let db_clone = db.clone();
-            if let Err(e) = run_dashboard(db_clone) {
+            if let Err(e) = run_dashboard_with_filtering(db_clone, Some(filtering_state.clone())) {
                 tracing::error!("Dashboard error: {}", e);
             }
             tracing::info!("Dashboard closed, returning to tray");
@@ -480,8 +565,8 @@ async fn main() -> anyhow::Result<()> {
     let db = Database::new().map_err(|e| anyhow::anyhow!("Database error: {}", e))?;
     tracing::info!("Database opened at {:?}", Database::default_db_path()?);
 
-    // Start background servers
-    start_servers(db.clone()).await;
+    // Start background servers and get the shared filtering state
+    let filtering_state = start_servers(db.clone()).await;
 
     // Determine startup mode
     let first_run = is_first_run(&db);
@@ -494,7 +579,8 @@ async fn main() -> anyhow::Result<()> {
     if args.no_tray {
         // No tray mode: just run dashboard directly
         tracing::info!("Running in no-tray mode (dashboard only)");
-        run_dashboard(db).map_err(|e| anyhow::anyhow!("UI error: {}", e))?;
+        run_dashboard_with_filtering(db, Some(filtering_state))
+            .map_err(|e| anyhow::anyhow!("UI error: {}", e))?;
     } else {
         // Normal mode: tray icon with dashboard on demand
         tracing::info!(
@@ -503,7 +589,7 @@ async fn main() -> anyhow::Result<()> {
             show_dashboard,
             args.minimized
         );
-        run_with_tray(db, show_dashboard)?;
+        run_with_tray(db, show_dashboard, filtering_state)?;
     }
 
     tracing::info!("Aegis shutting down");

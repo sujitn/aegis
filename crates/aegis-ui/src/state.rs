@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use aegis_core::auth::{AuthManager, SessionToken, SESSION_TIMEOUT};
+use aegis_proxy::FilteringState;
 use aegis_storage::{DailyStats, Database, Event, Profile};
 use chrono::{Local, NaiveDate};
 use eframe::egui;
@@ -166,11 +167,23 @@ pub struct AppState {
 
     /// Whether this is first-time setup (no password set).
     pub is_first_setup: bool,
+
+    /// Optional filtering state for live rule updates.
+    /// When set, rule changes in the UI are immediately applied to the proxy.
+    pub filtering_state: Option<FilteringState>,
 }
 
 impl AppState {
     /// Creates a new application state.
     pub fn new(db: Database) -> Self {
+        Self::with_filtering_state(db, None)
+    }
+
+    /// Creates a new application state with an optional filtering state.
+    ///
+    /// If `filtering_state` is provided, rule changes made in the UI will be
+    /// immediately applied to the running proxy.
+    pub fn with_filtering_state(db: Database, filtering_state: Option<FilteringState>) -> Self {
         let auth = AuthManager::new();
         let is_first_setup = !db.is_auth_setup().unwrap_or(false);
 
@@ -201,6 +214,7 @@ impl AppState {
             new_password_input: String::new(),
             confirm_password_input: String::new(),
             is_first_setup,
+            filtering_state,
         }
     }
 

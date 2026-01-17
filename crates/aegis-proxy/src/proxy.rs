@@ -12,7 +12,6 @@ use tokio::sync::broadcast;
 
 use aegis_core::classifier::TieredClassifier;
 use aegis_core::notifications::NotificationManager;
-use aegis_core::rule_engine::RuleEngine;
 use aegis_storage::Database;
 
 use crate::ca::CaManager;
@@ -32,11 +31,10 @@ pub struct ProxyConfig {
     pub ca_manager: CaManager,
     /// The classifier for content analysis.
     pub classifier: Arc<RwLock<TieredClassifier>>,
-    /// The rule engine for policy evaluation.
-    pub rule_engine: Arc<RuleEngine>,
     /// Optional notification manager.
     pub notifications: Option<Arc<NotificationManager>>,
     /// Shared filtering state (controlled by ProfileProxyController).
+    /// Also contains the shared rule engine.
     pub filtering_state: FilteringState,
     /// Optional database for event logging.
     pub database: Option<Arc<Database>>,
@@ -48,7 +46,6 @@ impl std::fmt::Debug for ProxyConfig {
             .field("addr", &self.addr)
             .field("ca_manager", &self.ca_manager)
             .field("classifier", &"TieredClassifier")
-            .field("rule_engine", &"RuleEngine")
             .field("notifications", &self.notifications.is_some())
             .field("filtering_state", &self.filtering_state)
             .field("database", &self.database.is_some())
@@ -69,7 +66,6 @@ impl ProxyConfig {
             ca_manager,
             // Use default classifier which includes community rules
             classifier: Arc::new(RwLock::new(TieredClassifier::with_defaults())),
-            rule_engine: Arc::new(RuleEngine::with_defaults()),
             notifications: Some(Arc::new(NotificationManager::new())),
             filtering_state: FilteringState::new(),
             database: None,
@@ -79,6 +75,7 @@ impl ProxyConfig {
     /// Creates a new configuration with the given filtering state.
     ///
     /// This allows external control of filtering (e.g., by ProfileProxyController).
+    /// The rule engine is obtained from the filtering state.
     pub fn with_filtering_state(filtering_state: FilteringState) -> Result<Self> {
         let ca_manager = CaManager::with_default_dir().map_err(ProxyError::Ca)?;
 
@@ -86,7 +83,6 @@ impl ProxyConfig {
             addr: SocketAddr::from(([127, 0, 0, 1], DEFAULT_PROXY_PORT)),
             ca_manager,
             classifier: Arc::new(RwLock::new(TieredClassifier::with_defaults())),
-            rule_engine: Arc::new(RuleEngine::with_defaults()),
             notifications: Some(Arc::new(NotificationManager::new())),
             filtering_state,
             database: None,
@@ -126,12 +122,6 @@ impl ProxyConfig {
     /// Sets the classifier.
     pub fn with_classifier(mut self, classifier: TieredClassifier) -> Self {
         self.classifier = Arc::new(RwLock::new(classifier));
-        self
-    }
-
-    /// Sets the rule engine.
-    pub fn with_rule_engine(mut self, rule_engine: RuleEngine) -> Self {
-        self.rule_engine = Arc::new(rule_engine);
         self
     }
 
@@ -231,7 +221,6 @@ impl ProxyServer {
 
         let handler_config = HandlerConfig {
             classifier: self.config.classifier.clone(),
-            rule_engine: self.config.rule_engine.clone(),
             notifications: self.config.notifications.clone(),
             on_block: self.on_block.clone(),
             on_allow: self.on_allow.clone(),
@@ -276,7 +265,6 @@ impl ProxyServer {
 
         let handler_config = HandlerConfig {
             classifier: self.config.classifier.clone(),
-            rule_engine: self.config.rule_engine.clone(),
             notifications: self.config.notifications.clone(),
             on_block: self.on_block.clone(),
             on_allow: self.on_allow.clone(),
@@ -369,7 +357,6 @@ mod tests {
             addr: SocketAddr::from(([127, 0, 0, 1], 0)), // Random port
             ca_manager,
             classifier: Arc::new(RwLock::new(TieredClassifier::keyword_only())),
-            rule_engine: Arc::new(RuleEngine::with_defaults()),
             notifications: None,
             filtering_state: FilteringState::new(),
             database: None,
