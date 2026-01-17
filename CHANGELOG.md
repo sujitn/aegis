@@ -4,6 +4,8 @@ All notable changes to Aegis.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-01-17
+
 ### Added
 - F031: Sentiment & Emotional Analysis - Local lexicon-based sentiment detection for parental awareness with: SentimentAnalyzer with VADER-inspired scoring and phrase patterns, SentimentFlag enum (Distress/CrisisIndicator/Bullying/NegativeSentiment), SentimentResult with flags and overall sentiment score, intensifier handling ("very sad" scores higher), negation detection ("not sad" inverts), configurable confidence thresholds, flagged_events SQLite table with indexes, FlaggedEvent model with acknowledgment tracking, FlaggedEventsRepo for CRUD operations, proxy integration running after classification, "Flagged Items" view in parent dashboard with filter/acknowledge/delete, badge showing unacknowledged count in sidebar navigation, API endpoints (GET /api/flagged, GET /api/flagged/stats, POST /api/flagged/{id}/acknowledge, POST /api/flagged/acknowledge-all, DELETE /api/flagged/{id}), ProfileSentimentConfig for per-profile enable/disable and sensitivity settings, unit tests for all sentiment categories, <10ms analysis latency
 
