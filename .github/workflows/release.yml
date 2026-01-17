@@ -225,12 +225,25 @@ jobs:
           path: extension-artifact
 
       - name: Extract extension for bundling
-        shell: bash
+        shell: pwsh
         run: |
-          # Unzip the extension into the extension folder
-          cd extension
-          unzip -o ../extension-artifact/aegis-extension-*.zip || true
-          ls -la
+          # Create extension directories
+          New-Item -ItemType Directory -Force -Path "extension/dist"
+          New-Item -ItemType Directory -Force -Path "extension/icons"
+
+          # Find and extract the extension zip
+          $zipFile = Get-ChildItem -Path "extension-artifact" -Filter "aegis-extension-*.zip" | Select-Object -First 1
+          if ($zipFile) {
+            Write-Host "Extracting $($zipFile.FullName) to extension/"
+            Expand-Archive -Path $zipFile.FullName -DestinationPath "extension" -Force
+          } else {
+            Write-Host "Warning: No extension zip found in extension-artifact/"
+            Get-ChildItem -Path "extension-artifact" -Recurse
+          }
+
+          # Verify extraction
+          Write-Host "Extension folder contents:"
+          Get-ChildItem -Path "extension" -Recurse | ForEach-Object { Write-Host $_.FullName }
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
