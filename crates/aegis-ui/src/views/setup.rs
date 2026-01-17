@@ -579,14 +579,14 @@ fn render_browser_extension(
 
             // Action buttons
             ui.horizontal(|ui| {
-                if ui.button("Open Chrome Extensions").clicked() {
-                    let _ = open::that("chrome://extensions");
+                if ui.button("Copy Extension URL").clicked() {
+                    ui.ctx().copy_text("chrome://extensions".to_string());
                     state.set_success(
-                        "Opening Chrome. Enable Developer Mode, then click 'Load unpacked'.",
+                        "URL copied! Paste 'chrome://extensions' in your browser address bar.",
                     );
                 }
 
-                if ui.button("Copy Path").clicked() {
+                if ui.button("Copy Extension Path").clicked() {
                     ui.ctx().copy_text(ext_path.display().to_string());
                     state.set_success("Path copied to clipboard!");
                 }

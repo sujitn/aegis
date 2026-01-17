@@ -69,6 +69,9 @@
                         <Component Id='ExtensionPopup' Guid='*'>
                             <File Id='popup_html' Name='popup.html' Source='$(var.CargoTargetBinDir)\..\..\extension\popup.html' KeyPath='yes'/>
                         </Component>
+                        <Component Id='ExtensionPopupCss' Guid='*'>
+                            <File Id='popup_css' Name='popup.css' Source='$(var.CargoTargetBinDir)\..\..\extension\popup.css' KeyPath='yes'/>
+                        </Component>
                         <Component Id='ExtensionOverlay' Guid='*'>
                             <File Id='overlay_css' Name='overlay.css' Source='$(var.CargoTargetBinDir)\..\..\extension\overlay.css' KeyPath='yes'/>
                         </Component>
@@ -78,6 +81,9 @@
                             </Component>
                             <Component Id='ExtensionDistBackground' Guid='*'>
                                 <File Id='background_js' Name='background.js' Source='$(var.CargoTargetBinDir)\..\..\extension\dist\background.js' KeyPath='yes'/>
+                            </Component>
+                            <Component Id='ExtensionDistPopup' Guid='*'>
+                                <File Id='popup_js' Name='popup.js' Source='$(var.CargoTargetBinDir)\..\..\extension\dist\popup.js' KeyPath='yes'/>
                             </Component>
                         </Directory>
                         <Directory Id='ExtensionIcons' Name='icons'>
@@ -156,9 +162,11 @@
                 Absent='allow'>
                 <ComponentRef Id='ExtensionManifest'/>
                 <ComponentRef Id='ExtensionPopup'/>
+                <ComponentRef Id='ExtensionPopupCss'/>
                 <ComponentRef Id='ExtensionOverlay'/>
                 <ComponentRef Id='ExtensionDistContent'/>
                 <ComponentRef Id='ExtensionDistBackground'/>
+                <ComponentRef Id='ExtensionDistPopup'/>
                 <ComponentRef Id='ExtensionIcon16'/>
                 <ComponentRef Id='ExtensionIcon32'/>
                 <ComponentRef Id='ExtensionIcon48'/>

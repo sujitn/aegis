@@ -532,16 +532,22 @@ fn render_extension_install_section(
                 ui.label(RichText::new("Manual Installation Steps:").strong());
                 ui.add_space(8.0);
 
-                ui.label("1. Open Chrome/Edge and go to:");
+                ui.label("1. Open Chrome/Edge and type in the address bar:");
                 ui.horizontal(|ui| {
                     ui.add_space(16.0);
-                    if ui
-                        .link(RichText::new("chrome://extensions").monospace())
-                        .clicked()
-                    {
-                        // Try to open in browser
-                        let _ = open::that("chrome://extensions");
+                    ui.label(RichText::new("chrome://extensions").monospace());
+                    if ui.small_button("Copy").clicked() {
+                        ui.ctx().copy_text("chrome://extensions".to_string());
                     }
+                });
+                ui.horizontal(|ui| {
+                    ui.add_space(16.0);
+                    ui.label(
+                        RichText::new("(Note: This URL must be typed manually, it cannot be opened via link)")
+                            .weak()
+                            .italics()
+                            .size(10.0),
+                    );
                 });
 
                 ui.add_space(4.0);
