@@ -127,14 +127,17 @@
         <Feature
             Id='Binaries'
             Title='Application'
-            Description='Installs the Aegis executable and adds it to PATH.'
+            Description='Installs the Aegis executable with shortcuts.'
             Level='1'
             ConfigurableDirectory='APPLICATIONFOLDER'
             AllowAdvertise='no'
             Display='expand'
             Absent='disallow'>
 
+            <!-- Main binary and shortcuts must be in same feature -->
             <ComponentRef Id='binary0'/>
+            <ComponentRef Id='ApplicationShortcut'/>
+            <ComponentRef Id='DesktopShortcut'/>
 
             <Feature
                 Id='Environment'
@@ -143,24 +146,6 @@
                 Level='1'
                 Absent='allow'>
                 <ComponentRef Id='Path'/>
-            </Feature>
-
-            <Feature
-                Id='StartMenuShortcut'
-                Title='Start Menu Shortcut'
-                Description='Add a shortcut to the Start Menu.'
-                Level='1'
-                Absent='allow'>
-                <ComponentRef Id='ApplicationShortcut'/>
-            </Feature>
-
-            <Feature
-                Id='DesktopShortcutFeature'
-                Title='Desktop Shortcut'
-                Description='Add a shortcut to the Desktop.'
-                Level='1'
-                Absent='allow'>
-                <ComponentRef Id='DesktopShortcut'/>
             </Feature>
 
             <Feature
