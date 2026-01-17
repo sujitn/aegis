@@ -177,6 +177,8 @@ impl Server {
                 post(handlers::acknowledge_all_flagged),
             )
             .route("/api/flagged/{id}", delete(handlers::delete_flagged))
+            // Rules reload endpoint
+            .route("/api/rules/reload", post(handlers::reload_rules))
             .layer(cors)
             .with_state(state);
 

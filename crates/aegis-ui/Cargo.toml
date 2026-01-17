@@ -34,5 +34,8 @@ auto-launch = "0.5"
 # Image loading for window icon
 image = { version = "0.25", default-features = false, features = ["png"] }
 
+# HTTP client for API calls
+reqwest = { workspace = true, features = ["blocking"] }
+
 [dev-dependencies]
 tokio-test.workspace = true

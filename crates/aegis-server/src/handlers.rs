@@ -13,8 +13,8 @@ use crate::models::{
     AcknowledgeAllRequest, AcknowledgeRequest, AcknowledgeResponse, AuthVerifyRequest,
     AuthVerifyResponse, CategoryCountsResponse, CategoryMatchResponse, CheckRequest, CheckResponse,
     DeleteFlaggedRequest, FlaggedEntry, FlaggedQuery, FlaggedResponse, FlaggedStatsResponse,
-    FlaggedTypeCounts, LogEntry, LogsQuery, LogsResponse, RuleEntry, RulesResponse, StatsResponse,
-    UpdateRulesRequest, UpdateRulesResponse,
+    FlaggedTypeCounts, LogEntry, LogsQuery, LogsResponse, ReloadRulesRequest, ReloadRulesResponse,
+    RuleEntry, RulesResponse, StatsResponse, UpdateRulesRequest, UpdateRulesResponse,
 };
 use crate::state::AppState;
 
@@ -470,5 +470,127 @@ pub async fn delete_flagged(
     Ok(Json(AcknowledgeResponse {
         success,
         acknowledged_count: if success { 1 } else { 0 },
+    }))
+}
+
+// ===== Rules Reload Handler =====
+
+/// POST /api/rules/reload - Reload rules from database for a profile.
+///
+/// This endpoint reloads time and content rules from the database and updates
+/// the proxy's FilteringState if one is configured. Call this after saving
+/// rules in the UI to apply changes to the running proxy.
+pub async fn reload_rules(
+    State(state): State<AppState>,
+    Json(req): Json<ReloadRulesRequest>,
+) -> Result<Json<ReloadRulesResponse>> {
+    info!(profile_id = req.profile_id, "Reloading rules from database");
+
+    // Get the profile from the database
+    let profile = state
+        .db
+        .get_profile(req.profile_id)?
+        .ok_or_else(|| ApiError::BadRequest(format!("Profile {} not found", req.profile_id)))?;
+
+    // If profile is disabled, use empty rules (no blocking)
+    let (time_rules, content_rules) = if profile.enabled {
+        // Parse time rules from JSON
+        let time_rules: aegis_core::time_rules::TimeRuleSet =
+            serde_json::from_value(profile.time_rules.clone()).unwrap_or_default();
+
+        // Parse content rules from JSON
+        let content_rules: aegis_core::content_rules::ContentRuleSet =
+            serde_json::from_value(profile.content_rules.clone()).unwrap_or_default();
+
+        (time_rules, content_rules)
+    } else {
+        info!(
+            profile_id = req.profile_id,
+            profile_name = %profile.name,
+            "Profile is disabled, using empty rules"
+        );
+        (
+            aegis_core::time_rules::TimeRuleSet::default(),
+            aegis_core::content_rules::ContentRuleSet::default(),
+        )
+    };
+
+    let time_rules_count = time_rules.rules.len();
+    let content_rules_count = content_rules.rules.len();
+
+    // Log each time rule's enabled status for debugging
+    for rule in &time_rules.rules {
+        info!(
+            rule_id = %rule.id,
+            rule_name = %rule.name,
+            enabled = rule.enabled,
+            "Time rule status"
+        );
+    }
+
+    info!(
+        profile_id = req.profile_id,
+        profile_name = %profile.name,
+        time_rules_count,
+        content_rules_count,
+        "Loaded rules from profile"
+    );
+
+    // Update the proxy's FilteringState if available
+    if let Some(ref filtering_state) = state.filtering_state {
+        filtering_state.update_rules(time_rules.clone(), content_rules.clone());
+        filtering_state.set_profile_with_id(Some(profile.name.clone()), Some(profile.id));
+
+        // Also update sentiment analysis config
+        if profile.sentiment_config.enabled {
+            use aegis_core::classifier::{SentimentConfig, SentimentFlag};
+            use std::collections::HashSet;
+
+            let mut enabled_flags = HashSet::new();
+            if profile.sentiment_config.detect_distress {
+                enabled_flags.insert(SentimentFlag::Distress);
+            }
+            if profile.sentiment_config.detect_crisis {
+                enabled_flags.insert(SentimentFlag::CrisisIndicator);
+            }
+            if profile.sentiment_config.detect_bullying {
+                enabled_flags.insert(SentimentFlag::Bullying);
+            }
+            if profile.sentiment_config.detect_negative {
+                enabled_flags.insert(SentimentFlag::NegativeSentiment);
+            }
+
+            let sentiment_config = SentimentConfig {
+                enabled: true,
+                threshold: profile.sentiment_config.sensitivity,
+                enabled_flags,
+                notify_on_flag: true,
+            };
+            filtering_state.enable_sentiment_analysis(sentiment_config);
+        } else {
+            filtering_state.disable_sentiment_analysis();
+        }
+
+        info!(
+            profile_name = %profile.name,
+            "Updated proxy FilteringState with new rules"
+        );
+    }
+
+    // Also update the server's rule engine
+    {
+        let mut rules = state.rules.write().unwrap();
+        rules.time_rules = time_rules;
+        rules.content_rules = content_rules;
+    }
+
+    Ok(Json(ReloadRulesResponse {
+        success: true,
+        time_rules_count,
+        content_rules_count,
+        message: format!(
+            "Reloaded {} time rules and {} content rules for profile '{}'",
+            time_rules_count, content_rules_count, profile.name
+        ),
     }))
 }

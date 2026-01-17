@@ -242,3 +242,24 @@ pub struct DeleteFlaggedRequest {
     /// Session token for authentication.
     pub session_token: String,
 }
+
+// ===== Rules Reload API =====
+
+/// Request body for POST /api/rules/reload.
+#[derive(Debug, Deserialize)]
+pub struct ReloadRulesRequest {
+    /// Profile ID to load rules from.
+    pub profile_id: i64,
+}
+
+/// Response body for POST /api/rules/reload.
+#[derive(Debug, Serialize)]
+pub struct ReloadRulesResponse {
+    pub success: bool,
+    /// Number of time rules loaded.
+    pub time_rules_count: usize,
+    /// Number of content rules loaded.
+    pub content_rules_count: usize,
+    /// Message describing the result.
+    pub message: String,
+}

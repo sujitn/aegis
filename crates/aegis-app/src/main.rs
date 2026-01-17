@@ -22,7 +22,7 @@ use aegis_core::protection::ProtectionManager;
 use aegis_core::rule_engine::RuleEngine;
 use aegis_core::time_rules::TimeRuleSet;
 use aegis_proxy::{FilteringState, ProxyConfig, ProxyServer};
-use aegis_server::{Server, ServerConfig};
+use aegis_server::{AppState as ServerAppState, Server, ServerConfig};
 use aegis_storage::models::ProfileSentimentConfig;
 use aegis_storage::Database;
 use aegis_tray::{MenuAction, SystemTray, TrayConfig, TrayEvent, TrayStatus};
@@ -224,13 +224,24 @@ async fn start_servers(db: Database) -> FilteringState {
     let rules_db = db.clone();
     let proxy_db = Arc::new(db.clone());
 
+    // Load profiles and create profile-aware filtering
+    let profiles = load_profiles_from_db(&profile_db);
+    let protection = ProtectionManager::new();
+
+    // Load initial rules from the first enabled profile (if any)
+    let initial_rule_engine = load_initial_rules(&rules_db);
+    let filtering_state = FilteringState::with_rule_engine(initial_rule_engine);
+
     // Start HTTP API server in background (for browser extension)
+    // Pass the FilteringState so the reload endpoint can update it
     let server_config = ServerConfig::default();
     let server_addr = format!("{}:{}", server_config.host, server_config.port);
+    let server_filtering_state = filtering_state.clone();
 
     tokio::spawn(async move {
         tracing::info!("Starting API server on {}", server_addr);
-        match Server::with_database(ServerConfig::default(), server_db) {
+        let app_state = ServerAppState::with_filtering_state(server_db, server_filtering_state);
+        match Server::with_state(ServerConfig::default(), app_state) {
             Ok(server) => {
                 if let Err(e) = server.run().await {
                     tracing::error!("API server error: {}", e);
@@ -241,14 +252,6 @@ async fn start_servers(db: Database) -> FilteringState {
             }
         }
     });
-
-    // Load profiles and create profile-aware filtering
-    let profiles = load_profiles_from_db(&profile_db);
-    let protection = ProtectionManager::new();
-
-    // Load initial rules from the first enabled profile (if any)
-    let initial_rule_engine = load_initial_rules(&rules_db);
-    let filtering_state = FilteringState::with_rule_engine(initial_rule_engine);
 
     // Create profile proxy controller with callback to control filtering and update rules
     let filtering_state_clone = filtering_state.clone();

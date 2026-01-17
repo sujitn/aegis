@@ -4,6 +4,31 @@ use dioxus::prelude::*;
 
 use crate::state::{AppState, View};
 
+/// Calls the API to reload rules into the proxy.
+fn reload_rules_from_api(profile_id: i64) {
+    std::thread::spawn(move || {
+        let client = reqwest::blocking::Client::new();
+        let url = "http://127.0.0.1:48765/api/rules/reload";
+
+        match client
+            .post(url)
+            .json(&serde_json::json!({ "profile_id": profile_id }))
+            .send()
+        {
+            Ok(response) => {
+                if response.status().is_success() {
+                    tracing::info!("Rules reloaded in proxy for profile {}", profile_id);
+                } else {
+                    tracing::warn!("Failed to reload rules: HTTP {}", response.status());
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to call reload API: {}", e);
+            }
+        }
+    });
+}
+
 /// Profiles view component.
 #[component]
 pub fn ProfilesView() -> Element {
@@ -96,16 +121,33 @@ pub fn ProfilesView() -> Element {
                                         }
                                     } else {
                                         button {
-                                            class: "btn btn-secondary btn-sm",
+                                            class: if profile_enabled { "btn btn-primary btn-sm" } else { "btn btn-secondary btn-sm" },
                                             onclick: move |_| {
-                                                let toggle_result = state.read().db.set_profile_enabled(profile_id, !profile_enabled);
-                                                if let Err(e) = toggle_result {
-                                                    state.write().set_error(e.to_string());
-                                                } else {
-                                                    let _ = state.write().refresh_data();
+                                                // Read current state and toggle
+                                                let (current_enabled, db_result) = {
+                                                    let state_ref = state.read();
+                                                    let current = state_ref.profiles
+                                                        .iter()
+                                                        .find(|p| p.id == profile_id)
+                                                        .map(|p| p.enabled)
+                                                        .unwrap_or(false);
+                                                    let new_enabled = !current;
+                                                    let result = state_ref.db.set_profile_enabled(profile_id, new_enabled);
+                                                    (current, result)
+                                                };
+
+                                                // Handle result after releasing read lock
+                                                match db_result {
+                                                    Ok(()) => {
+                                                        let _ = state.write().refresh_data();
+                                                        reload_rules_from_api(profile_id);
+                                                    }
+                                                    Err(e) => {
+                                                        state.write().set_error(e.to_string());
+                                                    }
                                                 }
                                             },
-                                            if profile_enabled { "Disable" } else { "Enable" }
+                                            if profile_enabled { "Enabled" } else { "Disabled" }
                                         }
                                         button {
                                             class: "btn btn-secondary btn-sm",
