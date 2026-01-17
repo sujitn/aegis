@@ -4,9 +4,10 @@
 //! 1. Welcome
 //! 2. Password creation
 //! 3. Protection level selection
-//! 4. CA certificate installation
-//! 5. Profile creation
-//! 6. Complete
+//! 4. Browser extension installation
+//! 5. CA certificate installation (for proxy mode)
+//! 6. Profile creation
+//! 7. Complete
 
 use std::env;
 
@@ -15,6 +16,7 @@ use eframe::egui::{self, Color32, RichText, TextEdit};
 
 use crate::state::AppState;
 use crate::theme::{brand, progress, status};
+use aegis_core::extension_install::get_extension_path;
 
 /// App name for autostart.
 const APP_NAME: &str = "Aegis";
@@ -61,6 +63,8 @@ pub enum SetupStep {
     Password,
     /// Protection level selection.
     ProtectionLevel,
+    /// Browser extension installation.
+    BrowserExtension,
     /// CA certificate installation guidance.
     CaInstall,
     /// First profile creation.
@@ -76,15 +80,16 @@ impl SetupStep {
             Self::Welcome => 1,
             Self::Password => 2,
             Self::ProtectionLevel => 3,
-            Self::CaInstall => 4,
-            Self::Profile => 5,
-            Self::Complete => 6,
+            Self::BrowserExtension => 4,
+            Self::CaInstall => 5,
+            Self::Profile => 6,
+            Self::Complete => 7,
         }
     }
 
     /// Returns the total number of steps.
     pub fn total() -> usize {
-        6
+        7
     }
 
     /// Returns the next step.
@@ -92,7 +97,8 @@ impl SetupStep {
         match self {
             Self::Welcome => Some(Self::Password),
             Self::Password => Some(Self::ProtectionLevel),
-            Self::ProtectionLevel => Some(Self::CaInstall),
+            Self::ProtectionLevel => Some(Self::BrowserExtension),
+            Self::BrowserExtension => Some(Self::CaInstall),
             Self::CaInstall => Some(Self::Profile),
             Self::Profile => Some(Self::Complete),
             Self::Complete => None,
@@ -105,7 +111,8 @@ impl SetupStep {
             Self::Welcome => None,
             Self::Password => Some(Self::Welcome),
             Self::ProtectionLevel => Some(Self::Password),
-            Self::CaInstall => Some(Self::ProtectionLevel),
+            Self::BrowserExtension => Some(Self::ProtectionLevel),
+            Self::CaInstall => Some(Self::BrowserExtension),
             Self::Profile => Some(Self::CaInstall),
             Self::Complete => Some(Self::Profile),
         }
@@ -228,6 +235,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWizardS
                     SetupStep::Welcome => render_welcome(ui, wizard),
                     SetupStep::Password => render_password(ui, state, wizard),
                     SetupStep::ProtectionLevel => render_protection_level(ui, wizard),
+                    SetupStep::BrowserExtension => render_browser_extension(ui, state, wizard),
                     SetupStep::CaInstall => render_ca_install(ui, state, wizard),
                     SetupStep::Profile => render_profile(ui, state, wizard),
                     SetupStep::Complete => render_complete(ui, state, wizard),
@@ -527,13 +535,140 @@ fn render_protection_level(ui: &mut egui::Ui, wizard: &mut SetupWizardState) {
     });
 }
 
+/// Renders the Browser Extension installation step.
+fn render_browser_extension(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    wizard: &mut SetupWizardState,
+) {
+    ui.vertical_centered(|ui| {
+        ui.label(
+            RichText::new("Install Browser Extension")
+                .size(20.0)
+                .strong(),
+        );
+        ui.add_space(8.0);
+        ui.label(
+            RichText::new(
+                "The browser extension monitors AI chatbots in Chrome, Edge, and other browsers.",
+            )
+            .size(12.0)
+            .weak(),
+        );
+
+        ui.add_space(24.0);
+
+        // Extension path
+        if let Some(ext_path) = get_extension_path() {
+            ui.label(RichText::new("Extension Location:").strong());
+            ui.add_space(4.0);
+
+            egui::Frame::new()
+                .fill(ui.style().visuals.widgets.inactive.bg_fill)
+                .corner_radius(4.0)
+                .inner_margin(8.0)
+                .show(ui, |ui| {
+                    ui.label(
+                        RichText::new(ext_path.display().to_string())
+                            .monospace()
+                            .size(11.0),
+                    );
+                });
+
+            ui.add_space(16.0);
+
+            // Action buttons
+            ui.horizontal(|ui| {
+                if ui.button("Open Chrome Extensions").clicked() {
+                    let _ = open::that("chrome://extensions");
+                    state.set_success(
+                        "Opening Chrome. Enable Developer Mode, then click 'Load unpacked'.",
+                    );
+                }
+
+                if ui.button("Copy Path").clicked() {
+                    ui.ctx().copy_text(ext_path.display().to_string());
+                    state.set_success("Path copied to clipboard!");
+                }
+
+                if ui.button("Open Folder").clicked() {
+                    #[cfg(target_os = "windows")]
+                    {
+                        let _ = std::process::Command::new("explorer")
+                            .arg(&ext_path)
+                            .spawn();
+                    }
+                    #[cfg(target_os = "macos")]
+                    {
+                        let _ = std::process::Command::new("open").arg(&ext_path).spawn();
+                    }
+                    #[cfg(target_os = "linux")]
+                    {
+                        let _ = std::process::Command::new("xdg-open")
+                            .arg(&ext_path)
+                            .spawn();
+                    }
+                }
+            });
+
+            ui.add_space(16.0);
+
+            // Instructions
+            ui.label(RichText::new("Installation Steps:").strong());
+            ui.add_space(8.0);
+
+            let steps = [
+                "1. Click 'Open Chrome Extensions' above",
+                "2. Enable 'Developer mode' (toggle in top-right)",
+                "3. Click 'Load unpacked'",
+                "4. Select the extension folder (or paste the copied path)",
+                "5. The Aegis icon should appear in your toolbar",
+            ];
+
+            for step in steps {
+                ui.horizontal(|ui| {
+                    ui.label(step);
+                });
+            }
+
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new("Supported browsers: Chrome, Edge, Brave, Opera, Vivaldi")
+                    .size(11.0)
+                    .weak(),
+            );
+        } else {
+            ui.colored_label(status::WARNING, "Extension folder not found.");
+            ui.label("You can install the extension later from Settings.");
+        }
+
+        ui.add_space(24.0);
+
+        // Navigation buttons
+        ui.horizontal(|ui| {
+            if ui.button("Back").clicked() {
+                wizard.prev_step();
+            }
+
+            ui.add_space(100.0);
+
+            if ui
+                .add_sized([120.0, 32.0], egui::Button::new("Continue"))
+                .clicked()
+            {
+                wizard.next_step();
+            }
+        });
+    });
+}
+
 /// Renders the CA Installation step.
 fn render_ca_install(ui: &mut egui::Ui, state: &mut AppState, wizard: &mut SetupWizardState) {
     ui.vertical_centered(|ui| {
         ui.label(RichText::new("Install CA Certificate").size(20.0).strong());
         ui.add_space(8.0);
         ui.label(
-            RichText::new("System Proxy mode requires a trusted CA certificate.")
+            RichText::new("Optional: For system-wide proxy protection.")
                 .size(12.0)
                 .weak(),
         );
@@ -998,8 +1133,9 @@ mod tests {
     #[test]
     fn test_setup_step_numbers() {
         assert_eq!(SetupStep::Welcome.number(), 1);
-        assert_eq!(SetupStep::Complete.number(), 6);
-        assert_eq!(SetupStep::total(), 6);
+        assert_eq!(SetupStep::BrowserExtension.number(), 4);
+        assert_eq!(SetupStep::Complete.number(), 7);
+        assert_eq!(SetupStep::total(), 7);
     }
 
     #[test]

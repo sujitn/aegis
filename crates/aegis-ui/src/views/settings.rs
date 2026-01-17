@@ -5,6 +5,7 @@ use std::env;
 use auto_launch::{AutoLaunch, AutoLaunchBuilder};
 use eframe::egui::{self, RichText};
 
+use aegis_core::extension_install::get_extension_path;
 use aegis_proxy::{
     disable_system_proxy, enable_system_proxy, install_ca_certificate, is_ca_installed,
     is_proxy_enabled, uninstall_ca_certificate, DEFAULT_PROXY_PORT,
@@ -70,6 +71,18 @@ fn disable_autostart() -> Result<(), String> {
     launcher.disable().map_err(|e| e.to_string())
 }
 
+/// Protection mode options.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProtectionMode {
+    /// Browser extension only (lighter, per-browser).
+    Extension,
+    /// System proxy only (system-wide, all apps).
+    Proxy,
+    /// Both extension and proxy (recommended, maximum coverage).
+    #[default]
+    Both,
+}
+
 /// State for the settings view.
 pub struct SettingsState {
     /// Current password for change password.
@@ -94,6 +107,11 @@ pub struct SettingsState {
     pub ca_path: Option<std::path::PathBuf>,
     /// Whether initial load has been done.
     pub initialized: bool,
+
+    /// Current protection mode selection.
+    pub protection_mode: ProtectionMode,
+    /// Show extension install instructions.
+    pub show_extension_instructions: bool,
 }
 
 impl Default for SettingsState {
@@ -112,6 +130,8 @@ impl Default for SettingsState {
             proxy_enabled: false,
             ca_path,
             initialized: false,
+            protection_mode: ProtectionMode::default(),
+            show_extension_instructions: false,
         }
     }
 }
@@ -160,10 +180,19 @@ pub fn render(ui: &mut egui::Ui, state: &mut AppState, settings: &mut SettingsSt
 
         ui.add_space(24.0);
 
-        // Mode selection
-        render_mode_section(ui, state, settings);
+        // Protection Mode selection (extension vs proxy vs both)
+        render_protection_mode_section(ui, state, settings);
 
         ui.add_space(24.0);
+
+        // Proxy setup (only show if proxy mode selected)
+        if matches!(
+            settings.protection_mode,
+            ProtectionMode::Proxy | ProtectionMode::Both
+        ) {
+            render_mode_section(ui, state, settings);
+            ui.add_space(24.0);
+        }
 
         // About section
         render_about_section(ui);
@@ -274,6 +303,287 @@ fn render_security_section(ui: &mut egui::Ui, state: &mut AppState, settings: &m
                 });
             }
         });
+}
+
+/// Renders the protection mode selection section.
+fn render_protection_mode_section(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    settings: &mut SettingsState,
+) {
+    ui.label(RichText::new("Protection Mode").size(16.0).strong());
+    ui.add_space(8.0);
+
+    egui::Frame::new()
+        .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
+        .corner_radius(8.0)
+        .inner_margin(16.0)
+        .show(ui, |ui| {
+            ui.label(
+                RichText::new("Choose how Aegis protects AI chatbot usage:")
+                    .size(12.0)
+                    .weak(),
+            );
+            ui.add_space(12.0);
+
+            // Mode selection cards
+            render_mode_option(
+                ui,
+                settings,
+                ProtectionMode::Extension,
+                "Browser Extension",
+                "Monitors Chrome, Edge, and other Chromium browsers",
+                &["Lightweight", "Per-browser control", "Easy to install"],
+            );
+
+            ui.add_space(8.0);
+
+            render_mode_option(
+                ui,
+                settings,
+                ProtectionMode::Proxy,
+                "System Proxy",
+                "Intercepts all network traffic system-wide",
+                &[
+                    "All applications",
+                    "Cannot be bypassed easily",
+                    "Requires CA certificate",
+                ],
+            );
+
+            ui.add_space(8.0);
+
+            render_mode_option(
+                ui,
+                settings,
+                ProtectionMode::Both,
+                "Both (Recommended)",
+                "Maximum protection with extension and proxy",
+                &["Best coverage", "Redundant protection", "Harder to bypass"],
+            );
+
+            // Extension installation section
+            if matches!(
+                settings.protection_mode,
+                ProtectionMode::Extension | ProtectionMode::Both
+            ) {
+                ui.add_space(16.0);
+                ui.separator();
+                ui.add_space(8.0);
+                render_extension_install_section(ui, state, settings);
+            }
+        });
+}
+
+/// Renders a single mode option card.
+fn render_mode_option(
+    ui: &mut egui::Ui,
+    settings: &mut SettingsState,
+    mode: ProtectionMode,
+    title: &str,
+    description: &str,
+    features: &[&str],
+) {
+    let is_selected = settings.protection_mode == mode;
+    let frame_fill = if is_selected {
+        ui.style().visuals.selection.bg_fill
+    } else {
+        ui.style().visuals.widgets.inactive.bg_fill
+    };
+
+    let response = egui::Frame::new()
+        .fill(frame_fill)
+        .corner_radius(6.0)
+        .inner_margin(12.0)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                // Radio button visual
+                let radio_size = 16.0;
+                let (rect, _) = ui
+                    .allocate_exact_size(egui::vec2(radio_size, radio_size), egui::Sense::hover());
+                let center = rect.center();
+                let radius = radio_size / 2.0 - 1.0;
+
+                ui.painter().circle_stroke(
+                    center,
+                    radius,
+                    egui::Stroke::new(1.5, ui.style().visuals.text_color()),
+                );
+
+                if is_selected {
+                    ui.painter().circle_filled(
+                        center,
+                        radius - 3.0,
+                        ui.style().visuals.text_color(),
+                    );
+                }
+
+                ui.add_space(8.0);
+
+                ui.vertical(|ui| {
+                    ui.label(RichText::new(title).strong());
+                    ui.label(RichText::new(description).size(11.0).weak());
+
+                    ui.add_space(4.0);
+
+                    ui.horizontal_wrapped(|ui| {
+                        for (i, feature) in features.iter().enumerate() {
+                            if i > 0 {
+                                ui.label(RichText::new(" | ").size(10.0).weak());
+                            }
+                            ui.label(RichText::new(*feature).size(10.0).weak());
+                        }
+                    });
+                });
+            });
+        });
+
+    // Make the entire card clickable
+    if ui
+        .interact(
+            response.response.rect,
+            ui.id().with(title),
+            egui::Sense::click(),
+        )
+        .clicked()
+    {
+        settings.protection_mode = mode;
+    }
+}
+
+/// Renders the browser extension installation section.
+fn render_extension_install_section(
+    ui: &mut egui::Ui,
+    state: &mut AppState,
+    settings: &mut SettingsState,
+) {
+    ui.label(RichText::new("Browser Extension").strong());
+    ui.add_space(8.0);
+
+    // Installation buttons
+    ui.horizontal(|ui| {
+        // Open Chrome extensions page
+        if ui.button("Open Chrome Extensions").clicked() {
+            // Try to open chrome://extensions in the default browser
+            let _ = open::that("chrome://extensions");
+            state.set_success("Opening Chrome extensions page. Enable Developer Mode, then click 'Load unpacked'.");
+        }
+
+        // Copy path to clipboard
+        if ui.button("Copy Extension Path").clicked() {
+            if let Some(ext_path) = get_extension_path() {
+                let path_str = ext_path.display().to_string();
+                ui.ctx().copy_text(path_str.clone());
+                state.set_success(format!("Path copied: {}", path_str));
+            } else {
+                state.set_error("Extension folder not found");
+            }
+        }
+
+        // Open folder
+        if ui.button("Open Folder").clicked() {
+            if let Some(ext_path) = get_extension_path() {
+                #[cfg(target_os = "windows")]
+                {
+                    let _ = std::process::Command::new("explorer").arg(&ext_path).spawn();
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = std::process::Command::new("open").arg(&ext_path).spawn();
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    let _ = std::process::Command::new("xdg-open").arg(&ext_path).spawn();
+                }
+                state.set_success("Opening extension folder");
+            } else {
+                state.set_error("Extension folder not found");
+            }
+        }
+
+        // Show/hide instructions
+        if ui.button(if settings.show_extension_instructions { "Hide Steps" } else { "Show Steps" }).clicked() {
+            settings.show_extension_instructions = !settings.show_extension_instructions;
+        }
+    });
+
+    ui.add_space(4.0);
+
+    // Show extension path
+    if let Some(ext_path) = get_extension_path() {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Path:").size(11.0).weak());
+            ui.label(
+                RichText::new(ext_path.display().to_string())
+                    .monospace()
+                    .size(10.0),
+            );
+        });
+    }
+
+    if settings.show_extension_instructions {
+        ui.add_space(8.0);
+
+        egui::Frame::new()
+            .fill(ui.style().visuals.faint_bg_color)
+            .corner_radius(4.0)
+            .inner_margin(12.0)
+            .show(ui, |ui| {
+                ui.label(RichText::new("Manual Installation Steps:").strong());
+                ui.add_space(8.0);
+
+                ui.label("1. Open Chrome/Edge and go to:");
+                ui.horizontal(|ui| {
+                    ui.add_space(16.0);
+                    if ui
+                        .link(RichText::new("chrome://extensions").monospace())
+                        .clicked()
+                    {
+                        // Try to open in browser
+                        let _ = open::that("chrome://extensions");
+                    }
+                });
+
+                ui.add_space(4.0);
+                ui.label("2. Enable \"Developer mode\" (toggle in top-right corner)");
+
+                ui.add_space(4.0);
+                ui.label("3. Click \"Load unpacked\"");
+
+                ui.add_space(4.0);
+                ui.label("4. Select the extension folder:");
+                if let Some(ext_path) = get_extension_path() {
+                    ui.horizontal(|ui| {
+                        ui.add_space(16.0);
+                        ui.label(
+                            RichText::new(ext_path.display().to_string())
+                                .monospace()
+                                .size(10.0),
+                        );
+                    });
+                }
+
+                ui.add_space(4.0);
+                ui.label("5. The Aegis icon should appear in your browser toolbar");
+
+                ui.add_space(12.0);
+
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Supported browsers:").size(11.0).weak());
+                    ui.label(
+                        RichText::new("Chrome, Edge, Brave, Opera, Vivaldi")
+                            .size(11.0)
+                            .weak(),
+                    );
+                });
+
+                ui.add_space(8.0);
+
+                if ui.button("Close").clicked() {
+                    settings.show_extension_instructions = false;
+                }
+            });
+    }
 }
 
 /// Renders the change password form.

@@ -16,11 +16,14 @@
 //! - [`notifications`] - Desktop notifications for blocked content (F014)
 //! - [`interception`] - Interception mode switching between extension and proxy (F017)
 //! - [`site_registry`] - Dynamic site registry for LLM domain management (F027)
+//! - [`extension_install`] - Browser extension auto-installation (F024)
 
 pub mod auth;
 pub mod classifier;
 pub mod community_rules;
 pub mod content_rules;
+#[cfg(feature = "extension-install")]
+pub mod extension_install;
 pub mod interception;
 pub mod notifications;
 pub mod profile;

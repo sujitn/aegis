@@ -14,7 +14,11 @@
     "https://chat.openai.com/*",
     "https://chatgpt.com/*",
     "https://claude.ai/*",
-    "https://gemini.google.com/*"
+    "https://gemini.google.com/*",
+    "https://copilot.microsoft.com/*",
+    "https://www.bing.com/chat/*",
+    "https://www.perplexity.ai/*",
+    "https://poe.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -42,7 +46,11 @@
         "https://chat.openai.com/*",
         "https://chatgpt.com/*",
         "https://claude.ai/*",
-        "https://gemini.google.com/*"
+        "https://gemini.google.com/*",
+        "https://copilot.microsoft.com/*",
+        "https://www.bing.com/chat/*",
+        "https://www.perplexity.ai/*",
+        "https://poe.com/*"
       ],
       "js": ["dist/content.js"],
       "css": ["overlay.css"],
@@ -56,7 +64,11 @@
         "https://chat.openai.com/*",
         "https://chatgpt.com/*",
         "https://claude.ai/*",
-        "https://gemini.google.com/*"
+        "https://gemini.google.com/*",
+        "https://copilot.microsoft.com/*",
+        "https://www.bing.com/*",
+        "https://www.perplexity.ai/*",
+        "https://poe.com/*"
       ]
     }
   ],

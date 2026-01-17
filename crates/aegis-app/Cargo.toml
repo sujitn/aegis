@@ -93,6 +93,16 @@ assets = [
     ["assets/icons/icon-128.png", "usr/share/icons/hicolor/128x128/apps/aegis.png", "644"],
     ["assets/icons/icon-64.png", "usr/share/icons/hicolor/64x64/apps/aegis.png", "644"],
     ["assets/icons/icon-32.png", "usr/share/icons/hicolor/32x32/apps/aegis.png", "644"],
+    # Browser extension
+    ["../../extension/manifest.json", "usr/share/aegis/extension/", "644"],
+    ["../../extension/popup.html", "usr/share/aegis/extension/", "644"],
+    ["../../extension/overlay.css", "usr/share/aegis/extension/", "644"],
+    ["../../extension/dist/content.js", "usr/share/aegis/extension/dist/", "644"],
+    ["../../extension/dist/background.js", "usr/share/aegis/extension/dist/", "644"],
+    ["../../extension/icons/icon16.png", "usr/share/aegis/extension/icons/", "644"],
+    ["../../extension/icons/icon32.png", "usr/share/aegis/extension/icons/", "644"],
+    ["../../extension/icons/icon48.png", "usr/share/aegis/extension/icons/", "644"],
+    ["../../extension/icons/icon128.png", "usr/share/aegis/extension/icons/", "644"],
 ]
 maintainer-scripts = "debian/"
 systemd-units = { enable = false }
@@ -125,3 +135,13 @@ aegis = { path = "/usr/bin/aegis" }
 "../assets/icons/icon-128.png" = { path = "/usr/share/icons/hicolor/128x128/apps/aegis.png" }
 "../assets/icons/icon-64.png" = { path = "/usr/share/icons/hicolor/64x64/apps/aegis.png" }
 "../assets/icons/icon-32.png" = { path = "/usr/share/icons/hicolor/32x32/apps/aegis.png" }
+# Browser extension
+"../../extension/manifest.json" = { path = "/usr/share/aegis/extension/manifest.json" }
+"../../extension/popup.html" = { path = "/usr/share/aegis/extension/popup.html" }
+"../../extension/overlay.css" = { path = "/usr/share/aegis/extension/overlay.css" }
+"../../extension/dist/content.js" = { path = "/usr/share/aegis/extension/dist/content.js" }
+"../../extension/dist/background.js" = { path = "/usr/share/aegis/extension/dist/background.js" }
+"../../extension/icons/icon16.png" = { path = "/usr/share/aegis/extension/icons/icon16.png" }
+"../../extension/icons/icon32.png" = { path = "/usr/share/aegis/extension/icons/icon32.png" }
+"../../extension/icons/icon48.png" = { path = "/usr/share/aegis/extension/icons/icon48.png" }
+"../../extension/icons/icon128.png" = { path = "/usr/share/aegis/extension/icons/icon128.png" }

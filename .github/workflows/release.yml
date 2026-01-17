@@ -115,7 +115,7 @@ jobs:
 
   build-macos-dmg:
     name: Build macOS DMG
-    needs: build
+    needs: [build, build-extension]
     runs-on: macos-latest
     strategy:
       matrix:
@@ -128,6 +128,18 @@ jobs:
             arch: arm64
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download extension artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aegis-extension
+          path: extension-artifact
+
+      - name: Extract extension for bundling
+        run: |
+          cd extension
+          unzip -o ../extension-artifact/aegis-extension-*.zip || true
+          ls -la
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -179,12 +191,17 @@ jobs:
           DMG_NAME="Aegis-${{ steps.version.outputs.VERSION }}-macos-${{ matrix.arch }}.dmg"
 
           if [ -d "$APP_PATH" ]; then
+            # Copy extension into app bundle Resources
+            mkdir -p "$APP_PATH/Contents/Resources/extension"
+            cp -r extension/* "$APP_PATH/Contents/Resources/extension/" 2>/dev/null || true
+
             # Create DMG with app bundle
             hdiutil create -volname "Aegis" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_NAME"
           else
-            # Fallback: create DMG with just the binary
-            mkdir -p dmg_contents
+            # Fallback: create DMG with just the binary and extension
+            mkdir -p dmg_contents/extension
             cp "target/${{ matrix.target }}/release/aegis" dmg_contents/
+            cp -r extension/* dmg_contents/extension/ 2>/dev/null || true
             hdiutil create -volname "Aegis" -srcfolder dmg_contents -ov -format UDZO "$DMG_NAME"
           fi
 
@@ -196,10 +213,24 @@ jobs:
 
   build-windows-msi:
     name: Build Windows MSI
-    needs: build
+    needs: [build, build-extension]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download extension artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aegis-extension
+          path: extension-artifact
+
+      - name: Extract extension for bundling
+        shell: bash
+        run: |
+          # Unzip the extension into the extension folder
+          cd extension
+          unzip -o ../extension-artifact/aegis-extension-*.zip || true
+          ls -la
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -292,10 +323,22 @@ jobs:
 
   build-linux-deb:
     name: Build Linux DEB
-    needs: build
+    needs: [build, build-extension]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download extension artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aegis-extension
+          path: extension-artifact
+
+      - name: Extract extension for bundling
+        run: |
+          cd extension
+          unzip -o ../extension-artifact/aegis-extension-*.zip || true
+          ls -la
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -378,10 +421,22 @@ jobs:
 
   build-linux-rpm:
     name: Build Linux RPM
-    needs: build
+    needs: [build, build-extension]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download extension artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aegis-extension
+          path: extension-artifact
+
+      - name: Extract extension for bundling
+        run: |
+          cd extension
+          unzip -o ../extension-artifact/aegis-extension-*.zip || true
+          ls -la
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -461,10 +516,22 @@ jobs:
 
   build-linux-appimage:
     name: Build Linux AppImage
-    needs: build
+    needs: [build, build-extension]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download extension artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aegis-extension
+          path: extension-artifact
+
+      - name: Extract extension for bundling
+        run: |
+          cd extension
+          unzip -o ../extension-artifact/aegis-extension-*.zip || true
+          ls -la
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -520,9 +587,13 @@ jobs:
           mkdir -p "$APPDIR/usr/share/applications"
           mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
           mkdir -p "$APPDIR/usr/share/metainfo"
+          mkdir -p "$APPDIR/usr/share/aegis/extension"
 
           # Copy binary
           cp target/release/aegis "$APPDIR/usr/bin/"
+
+          # Copy browser extension
+          cp -r extension/* "$APPDIR/usr/share/aegis/extension/" 2>/dev/null || true
 
           # Copy desktop entry (using properly named file)
           cp crates/aegis-app/appimage/com.aegis.app.desktop "$APPDIR/"

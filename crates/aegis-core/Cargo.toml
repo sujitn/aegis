@@ -7,9 +7,10 @@ license.workspace = true
 description = "Core classification, rules, and authentication logic for Aegis"
 
 [features]
-default = ["notifications"]
+default = ["notifications", "extension-install"]
 ml = ["dep:ort", "dep:ndarray", "dep:tokenizers"]
 notifications = ["dep:notify-rust"]
+extension-install = []
 
 [dependencies]
 thiserror.workspace = true
@@ -27,6 +28,9 @@ tokenizers = { workspace = true, optional = true }
 
 # Optional notifications
 notify-rust = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winreg = "0.55"
 
 [dev-dependencies]
 tokio-test.workspace = true

@@ -1,6 +1,7 @@
 //! Clean uninstall functionality (F020).
 //!
 //! Provides functionality to cleanly remove all Aegis data, including:
+//! - Browser extension registrations
 //! - System proxy settings
 //! - CA certificate from system trust store
 //! - Autostart entry (F030)
@@ -32,6 +33,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use aegis_core::auth::AuthManager;
+use aegis_core::extension_install::uninstall_extension;
 use aegis_storage::Database;
 use directories::ProjectDirs;
 use thiserror::Error;
@@ -322,7 +324,23 @@ in your system's certificate store."#
         // ==================== System Cleanup ====================
         // These steps remove system-level changes made by Aegis
 
-        // Step 1: Disable system proxy settings
+        // Step 1: Remove browser extension registrations
+        tracing::info!("Removing browser extension registrations...");
+        let ext_result = uninstall_extension();
+        if ext_result.success {
+            tracing::info!(
+                "Browser extension registrations removed: {}",
+                ext_result.message
+            );
+        } else {
+            // Not a critical error - extension might not have been installed
+            tracing::warn!(
+                "Could not remove extension registrations: {}",
+                ext_result.message
+            );
+        }
+
+        // Step 2: Disable system proxy settings
         // This must happen before removing CA to avoid connection issues
         tracing::info!("Disabling system proxy settings...");
         let proxy_result = aegis_proxy::disable_system_proxy();
@@ -333,7 +351,7 @@ in your system's certificate store."#
             tracing::warn!("Could not disable system proxy: {}", proxy_result.message);
         }
 
-        // Step 2: Uninstall CA certificate from system trust store
+        // Step 3: Uninstall CA certificate from system trust store
         // Only attempt if the cert file exists
         if paths.ca_cert.exists() {
             tracing::info!("Removing CA certificate from system trust store...");
@@ -429,6 +447,7 @@ pub fn get_confirmation_text(paths: &UninstallPaths) -> String {
         r#"This will remove all Aegis settings and data:
 
 System changes to be reverted:
+  - Remove browser extension registrations
   - Disable system proxy settings
   - Remove CA certificate from system trust store
 
@@ -643,6 +662,7 @@ mod tests {
         assert!(text.contains("/data"));
         assert!(text.contains("/data/ca"));
         assert!(text.contains("/data/aegis.db"));
+        assert!(text.contains("browser extension"));
         assert!(text.contains("system proxy"));
         assert!(text.contains("CA certificate"));
     }

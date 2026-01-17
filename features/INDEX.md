@@ -19,7 +19,7 @@
 | ID | Feature | Status | Priority | Crate | Requires |
 |----|---------|--------|----------|-------|----------|
 | [F009](F009-http-api.md) | HTTP API | `complete` | high | server | F007, F008 |
-| [F010](F010-browser-extension.md) | Browser Extension | `complete` | high | extension | F009 |
+| [F010](F010-browser-extension.md) | Browser Extension | `in-progress` | high | extension | F009 |
 | [F016](F016-mitm-proxy.md) | MITM Proxy | `complete` | high | proxy | F007 |
 | [F017](F017-interception-mode.md) | Interception Mode | `complete` | high | core | F010, F016 |
 | [F026](F026-smart-content-parsing.md) | Smart Content Parsing | `complete` | high | proxy | F016 |
@@ -53,7 +53,7 @@
 | [F021](F021-build-pipeline.md) | Build Pipeline | `complete` | high | infrastructure | F001 |
 | [F022](F022-native-installers.md) | Native Installers | `complete` | high | infrastructure | F021 |
 | [F023](F023-auto-update.md) | Auto Update | `complete` | medium | app | F021, F022 |
-| [F024](F024-extension-deployment.md) | Chrome Web Store | `ready` | high | extension | F010 |
+| [F024](F024-extension-deployment.md) | Extension Deployment | `in-progress` | high | extension | F010 |
 
 ## Implementation Order
 

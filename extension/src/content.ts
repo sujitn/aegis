@@ -1,10 +1,21 @@
 /**
  * Aegis content script - intercepts prompts on AI chat sites.
+ *
+ * Uses a hybrid approach for maximum reliability:
+ * 1. Primary: Network request interception (immune to DOM changes)
+ * 2. Fallback: DOM-based interception for edge cases
+ *
  * Supports fail-closed mode for maximum safety.
  */
 
 import { checkPrompt, shouldBlock, shouldWarn, type CheckResponse } from './api.js';
 import { getSiteHandler, type SiteHandler } from './sites/index.js';
+import {
+  installNetworkInterceptor,
+  setFailMode,
+  setInterceptCallback,
+  type InterceptCallback
+} from './interceptor.js';
 
 const OVERLAY_ID = 'aegis-overlay';
 
@@ -21,6 +32,8 @@ async function loadSettings(): Promise<void> {
     if (result.failMode) {
       failMode = result.failMode;
     }
+    // Also set fail mode for network interceptor
+    setFailMode(failMode);
   } catch {
     // Use default
   }
@@ -32,6 +45,7 @@ async function loadSettings(): Promise<void> {
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.failMode) {
     failMode = changes.failMode.newValue || 'closed';
+    setFailMode(failMode);
   }
 });
 
@@ -363,6 +377,26 @@ function setupButtonInterception(button: HTMLElement, inputs: HTMLElement[]): vo
 }
 
 /**
+ * Handle network interception callback for UI feedback.
+ */
+function handleNetworkInterception(result: {
+  allowed: boolean;
+  prompt: string;
+  service: string;
+  response?: CheckResponse;
+  error?: string;
+}): void {
+  if (!result.allowed) {
+    if (result.error) {
+      // Service unavailable in fail-closed mode
+      showServiceUnavailableBlocked();
+    } else if (result.response) {
+      showBlockedOverlay(result.response);
+    }
+  }
+}
+
+/**
  * Initialize interception for the current page.
  */
 async function initialize(): Promise<void> {
@@ -375,14 +409,19 @@ async function initialize(): Promise<void> {
     return;
   }
 
-  // Set up interception on existing elements
+  // Primary: Install network request interceptor (immune to DOM changes)
+  setInterceptCallback(handleNetworkInterception);
+  installNetworkInterceptor();
+
+  // Fallback: Set up DOM-based interception for edge cases
+  // This catches submissions that might bypass network interception
   const inputs = siteHandler.findInputs();
   const buttons = siteHandler.findSubmitButtons();
 
   inputs.forEach(setupInputInterception);
   buttons.forEach(btn => setupButtonInterception(btn, inputs));
 
-  // Watch for dynamically added elements
+  // Watch for dynamically added elements (for DOM fallback)
   const observer = new MutationObserver(() => {
     if (!siteHandler) return;
 
@@ -400,6 +439,7 @@ async function initialize(): Promise<void> {
 
   // Notify background that we're active
   chrome.runtime.sendMessage({ type: 'CONTENT_LOADED', site: siteHandler.name });
+  console.log(`[Aegis] Initialized on ${siteHandler.name} (network + DOM interception)`);
 }
 
 // Initialize when DOM is ready

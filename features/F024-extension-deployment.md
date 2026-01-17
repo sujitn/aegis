@@ -1,12 +1,15 @@
-# F024: Chrome Web Store Deployment
+# F024: Extension Deployment
 
 | Status | Priority | Crate |
 |--------|----------|-------|
-| `ready` | high | extension |
+| `in-progress` | high | extension, aegis-core, aegis-ui |
 
 ## Description
 
-Deploy the Aegis browser extension to Chrome Web Store for easy one-click installation by end users. This eliminates the need for manual "Load unpacked" installation and enables automatic updates.
+Deploy the Aegis browser extension with easy installation options. Supports two deployment modes:
+
+1. **First Iteration (No Store)**: Auto-install via native app using OS policies, or manual developer mode installation
+2. **Future (Chrome Web Store)**: One-click installation from Chrome Web Store
 
 ## Dependencies
 
@@ -15,163 +18,296 @@ Deploy the Aegis browser extension to Chrome Web Store for easy one-click instal
 
 ## Acceptance Criteria
 
-### Chrome Web Store Submission
+### Phase 1: Easy Install Without Store (Current Priority)
 
-- [ ] Chrome Web Store developer account created ($5 registration)
-- [ ] Extension manifest includes all required fields
-- [ ] Privacy policy document created and hosted
-- [ ] Store listing assets prepared:
-  - [ ] 128x128 icon (store listing)
-  - [ ] 440x280 small promo tile
-  - [ ] 1280x800 large promo tile (optional)
-  - [ ] 640x400 marquee tile (optional)
-  - [ ] Screenshots (1280x800 or 640x400)
-- [ ] Detailed description written (supports markdown)
-- [ ] Category selected (Productivity or Family)
-- [ ] Extension submitted for review
-- [ ] Extension approved and published
+#### Auto-Install via Native App
+- [x] Windows: Registry-based extension installation
+- [x] macOS: Chrome policies JSON file
+- [x] Linux: Chrome policies JSON file
+- [x] Extension ID generated and consistent
+- [x] Settings UI offers "Auto Install" button
 
-### App Integration
+#### Manual Installation Support
+- [x] Clear instructions in README and app
+- [ ] Pre-packaged CRX file in releases
+- [x] Settings UI shows manual steps if auto-install fails
 
-- [ ] Setup wizard updated to open Chrome Web Store link
-- [ ] Settings page updated to open Chrome Web Store link
-- [ ] Extension ID stored in app configuration
-- [ ] Fallback to manual install if store unavailable
+### Phase 2: Chrome Web Store (Future)
 
-### Store Listing Content
-
-**Title:** Aegis AI Safety
-
-**Short Description (132 chars max):**
-Parental controls for AI chatbots. Protects children from harmful content on ChatGPT, Claude, and Gemini.
-
-**Category:** Family
-
-**Language:** English
+- [ ] Chrome Web Store developer account created
+- [ ] Extension submitted and approved
+- [ ] App links to store for one-click install
 
 ## Implementation
 
-### 1. Chrome Web Store Developer Account
+### Phase 1: Auto-Install Without Store
 
-1. Go to https://chrome.google.com/webstore/devconsole/
-2. Pay $5 one-time registration fee
-3. Verify email and account
+#### How Chrome Extension Policies Work
 
-### 2. Prepare Extension Package
+Chrome supports enterprise deployment of extensions via:
+- **Windows**: Registry keys under `HKLM\SOFTWARE\Policies\Google\Chrome`
+- **macOS/Linux**: JSON file in Chrome's managed policies directory
 
-```bash
-cd extension
-# Ensure dist is built
-npm run build
-# Create ZIP (exclude node_modules, src, etc.)
-zip -r aegis-extension.zip manifest.json popup.html popup.css overlay.css icons/ dist/
-```
+For **unpacked extensions** (developer mode), we use:
+- **Windows**: `HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallSources`
+- **All OS**: External extensions JSON file
 
-### 3. Store Listing Assets
-
-Required images:
-- `store/icon-128.png` - 128x128 store icon
-- `store/promo-small.png` - 440x280 promo tile
-- `store/screenshot-1.png` - 1280x800 screenshot (popup)
-- `store/screenshot-2.png` - 1280x800 screenshot (blocking overlay)
-- `store/screenshot-3.png` - 1280x800 screenshot (dashboard integration)
-
-### 4. Update App for Web Store Install
+#### Windows Implementation
 
 ```rust
-// In setup.rs and settings.rs
-const EXTENSION_STORE_URL: &str =
-    "https://chrome.google.com/webstore/detail/aegis-ai-safety/EXTENSION_ID";
+// In aegis-core/src/extension_install.rs
 
-fn install_from_store() -> std::io::Result<()> {
-    open_url(EXTENSION_STORE_URL)
+use winreg::enums::*;
+use winreg::RegKey;
+
+const EXTENSION_ID: &str = "aegis-extension"; // Will be replaced with actual ID
+
+/// Install extension via Windows Registry (requires admin)
+pub fn install_extension_windows(extension_path: &Path) -> Result<(), String> {
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+
+    // Create Chrome policies key
+    let (key, _) = hklm.create_subkey(
+        r"SOFTWARE\Policies\Google\Chrome\ExtensionSettings"
+    ).map_err(|e| e.to_string())?;
+
+    // Allow extension from local path
+    let extension_json = format!(r#"{{
+        "installation_mode": "allowed",
+        "override_update_url": true
+    }}"#);
+
+    key.set_value(EXTENSION_ID, &extension_json)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+/// Alternative: Use external_extensions.json
+pub fn install_extension_external_json(extension_path: &Path) -> Result<(), String> {
+    // Chrome looks for external extensions in:
+    // Windows: %LOCALAPPDATA%\Google\Chrome\User Data\Default\External Extensions\
+    // This method works without admin rights
+
+    let local_app_data = std::env::var("LOCALAPPDATA")
+        .map_err(|e| e.to_string())?;
+
+    let external_ext_dir = PathBuf::from(local_app_data)
+        .join("Google")
+        .join("Chrome")
+        .join("User Data")
+        .join("Default")
+        .join("External Extensions");
+
+    std::fs::create_dir_all(&external_ext_dir)
+        .map_err(|e| e.to_string())?;
+
+    let json_path = external_ext_dir.join(format!("{}.json", EXTENSION_ID));
+    let json_content = format!(r#"{{
+        "external_crx": "{}",
+        "external_version": "1.0.0"
+    }}"#, extension_path.display());
+
+    std::fs::write(json_path, json_content)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 ```
 
-### 5. Submission Checklist
+#### macOS Implementation
 
-Before submitting:
-- [ ] Test extension works correctly
-- [ ] Verify all permissions are justified
-- [ ] Privacy policy URL is accessible
-- [ ] No console errors in extension
-- [ ] Icons display correctly at all sizes
+```rust
+// Chrome policies location: /Library/Google/Chrome/managed_preferences/
 
-### 6. Review Process
+pub fn install_extension_macos(extension_path: &Path) -> Result<(), String> {
+    let policies_dir = PathBuf::from("/Library/Google/Chrome/managed_preferences");
 
-- Initial review: 1-3 business days
-- May request clarifications about:
-  - localhost permission (explain: local app communication)
-  - Content script injection (explain: prompt interception for safety)
-- Resubmission if rejected: address feedback and resubmit
+    std::fs::create_dir_all(&policies_dir)
+        .map_err(|e| e.to_string())?;
 
-## Store Description (Full)
+    let plist_path = policies_dir.join("com.google.Chrome.plist");
 
-```markdown
-# Aegis AI Safety - Parental Controls for AI Chatbots
+    // Create plist with extension settings
+    let plist_content = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>ExtensionInstallAllowlist</key>
+    <array>
+        <string>{}</string>
+    </array>
+</dict>
+</plist>"#, EXTENSION_ID);
 
-Protect your children from harmful AI interactions with Aegis, the comprehensive
-parental control solution for AI chatbots.
+    std::fs::write(plist_path, plist_content)
+        .map_err(|e| e.to_string())?;
 
-## Features
-
-- **Real-time Protection**: Monitors prompts before they're sent to AI
-- **Smart Filtering**: Uses ML-based classification to detect harmful content
-- **Multiple AI Support**: Works with ChatGPT, Claude, and Gemini
-- **Local Processing**: All analysis happens on your device - no cloud required
-- **Parent Dashboard**: Review blocked content and adjust settings
-
-## How It Works
-
-1. Install the Aegis desktop app (required)
-2. Add this extension to Chrome
-3. Create child profiles with appropriate restrictions
-4. Children use AI chatbots safely
-
-## What Gets Blocked
-
-- Violence and self-harm content
-- Adult/explicit material
-- Jailbreak attempts
-- Other harmful categories (configurable)
-
-## Privacy First
-
-- All processing happens locally on your device
-- No data sent to external servers
-- Parents control what gets logged
-- Full data export and deletion available
-
-## Requirements
-
-- Aegis desktop application (Windows/macOS/Linux)
-- Google Chrome browser
-
-## Support
-
-- Documentation: https://github.com/anthropics/aegis
-- Issues: https://github.com/anthropics/aegis/issues
+    Ok(())
+}
 ```
+
+#### Linux Implementation
+
+```rust
+// Chrome policies location: /etc/opt/chrome/policies/managed/
+
+pub fn install_extension_linux(extension_path: &Path) -> Result<(), String> {
+    let policies_dir = PathBuf::from("/etc/opt/chrome/policies/managed");
+
+    std::fs::create_dir_all(&policies_dir)
+        .map_err(|e| e.to_string())?;
+
+    let json_path = policies_dir.join("aegis-extension.json");
+
+    let json_content = format!(r#"{{
+        "ExtensionInstallAllowlist": ["{}"]
+    }}"#, EXTENSION_ID);
+
+    std::fs::write(json_path, json_content)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+```
+
+### Setup Wizard Integration
+
+Add to setup wizard (F015):
+
+```rust
+// Step: Install Browser Extension
+fn render_extension_install(ui: &mut egui::Ui, state: &mut SetupState) {
+    ui.heading("Install Browser Extension");
+
+    ui.label("The Aegis extension monitors AI chatbots in your browser.");
+
+    if ui.button("Install Extension Automatically").clicked() {
+        match install_extension_auto() {
+            Ok(()) => {
+                state.extension_installed = true;
+                ui.label("Extension installed! Please restart Chrome.");
+            }
+            Err(e) => {
+                state.extension_error = Some(e);
+            }
+        }
+    }
+
+    if let Some(ref error) = state.extension_error {
+        ui.colored_label(Color32::RED, error);
+        ui.label("Try manual installation instead:");
+        render_manual_install_instructions(ui);
+    }
+}
+
+fn render_manual_install_instructions(ui: &mut egui::Ui) {
+    ui.label("1. Open Chrome and go to chrome://extensions");
+    ui.label("2. Enable 'Developer mode' (toggle in top right)");
+    ui.label("3. Click 'Load unpacked'");
+    ui.label("4. Select the extension folder:");
+
+    if let Some(ext_path) = get_bundled_extension_path() {
+        ui.code(ext_path.display().to_string());
+        if ui.button("Open Folder").clicked() {
+            let _ = open::that(&ext_path);
+        }
+    }
+}
+```
+
+### Bundling Extension with App
+
+The extension should be bundled with the native app installer:
+
+```
+Aegis.app/
+├── Contents/
+│   ├── MacOS/aegis
+│   └── Resources/
+│       └── extension/          # Bundled extension
+│           ├── manifest.json
+│           ├── dist/
+│           └── ...
+
+# Windows MSI
+C:\Program Files\Aegis\
+├── aegis.exe
+└── extension\                  # Bundled extension
+    ├── manifest.json
+    ├── dist\
+    └── ...
+```
+
+### Phase 2: Chrome Web Store (Future)
+
+When ready for Chrome Web Store:
+
+1. Create developer account ($5 registration)
+2. Prepare store assets (icons, screenshots)
+3. Submit extension for review
+4. Update app to link to store instead of auto-install
+
+Store listing details remain the same as previously documented.
+
+## Manual Installation Instructions
+
+For users who need to install manually:
+
+### Chrome / Edge
+
+1. Download the extension from the Aegis releases page
+2. Extract the ZIP file to a folder
+3. Open Chrome and navigate to `chrome://extensions`
+4. Enable "Developer mode" (toggle in top-right corner)
+5. Click "Load unpacked"
+6. Select the extracted extension folder
+7. The Aegis extension icon should appear in your toolbar
+
+### Keeping Extension Updated
+
+When using manual installation:
+- Extension will NOT auto-update
+- Check Aegis releases for new extension versions
+- Re-install by loading the new unpacked version
 
 ## Notes
 
-### Review Considerations
+### Why Auto-Install?
 
-The extension uses `host_permissions` for localhost (127.0.0.1) which may raise questions during review. Justification:
+For parental controls, we need reliable installation that:
+- Children cannot easily disable or remove
+- Parents don't need technical knowledge to set up
+- Works even if Chrome Web Store is blocked
 
-> "The extension communicates with the Aegis desktop application running locally
-> on the user's machine. This local-only approach ensures all data processing
-> happens on-device without sending any user data to external servers, providing
-> maximum privacy protection."
+### Security Considerations
 
-### Future Enhancements
+- Auto-installed extensions require admin/root privileges
+- This is appropriate for parental control software
+- Users are informed during Aegis installation
 
-- Firefox Add-ons support (F025)
-- Edge Add-ons support (automatic via Chrome Web Store)
-- Safari extension (requires separate implementation)
+### Browser Support
 
-### Versioning
+| Browser | Auto-Install | Manual Install |
+|---------|-------------|----------------|
+| Chrome | Yes (policies) | Yes |
+| Edge | Yes (same as Chrome) | Yes |
+| Brave | Yes (Chromium policies) | Yes |
+| Firefox | No (different system) | Planned (F025) |
+| Safari | No | Not supported |
 
-- Follow semantic versioning (1.0.0, 1.0.1, 1.1.0, etc.)
-- Increment version in manifest.json before each submission
-- Keep changelog of extension updates
+### Testing Auto-Install
+
+```bash
+# Windows (PowerShell as Admin)
+# Check if policy was applied
+reg query "HKLM\SOFTWARE\Policies\Google\Chrome" /s
+
+# macOS
+# Check managed preferences
+defaults read /Library/Managed\ Preferences/com.google.Chrome
+
+# Linux
+# Check policies
+cat /etc/opt/chrome/policies/managed/*.json
+```

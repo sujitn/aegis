@@ -60,6 +60,41 @@
                                 KeyPath='yes'/>
                         </Component>
                     </Directory>
+
+                    <!-- Browser Extension folder -->
+                    <Directory Id='ExtensionDir' Name='extension'>
+                        <Component Id='ExtensionManifest' Guid='*'>
+                            <File Id='manifest_json' Name='manifest.json' Source='$(var.CargoTargetBinDir)\..\..\..\extension\manifest.json' KeyPath='yes'/>
+                        </Component>
+                        <Component Id='ExtensionPopup' Guid='*'>
+                            <File Id='popup_html' Name='popup.html' Source='$(var.CargoTargetBinDir)\..\..\..\extension\popup.html' KeyPath='yes'/>
+                        </Component>
+                        <Component Id='ExtensionOverlay' Guid='*'>
+                            <File Id='overlay_css' Name='overlay.css' Source='$(var.CargoTargetBinDir)\..\..\..\extension\overlay.css' KeyPath='yes'/>
+                        </Component>
+                        <Directory Id='ExtensionDist' Name='dist'>
+                            <Component Id='ExtensionDistContent' Guid='*'>
+                                <File Id='content_js' Name='content.js' Source='$(var.CargoTargetBinDir)\..\..\..\extension\dist\content.js' KeyPath='yes'/>
+                            </Component>
+                            <Component Id='ExtensionDistBackground' Guid='*'>
+                                <File Id='background_js' Name='background.js' Source='$(var.CargoTargetBinDir)\..\..\..\extension\dist\background.js' KeyPath='yes'/>
+                            </Component>
+                        </Directory>
+                        <Directory Id='ExtensionIcons' Name='icons'>
+                            <Component Id='ExtensionIcon16' Guid='*'>
+                                <File Id='icon16_png' Name='icon16.png' Source='$(var.CargoTargetBinDir)\..\..\..\extension\icons\icon16.png' KeyPath='yes'/>
+                            </Component>
+                            <Component Id='ExtensionIcon32' Guid='*'>
+                                <File Id='icon32_png' Name='icon32.png' Source='$(var.CargoTargetBinDir)\..\..\..\extension\icons\icon32.png' KeyPath='yes'/>
+                            </Component>
+                            <Component Id='ExtensionIcon48' Guid='*'>
+                                <File Id='icon48_png' Name='icon48.png' Source='$(var.CargoTargetBinDir)\..\..\..\extension\icons\icon48.png' KeyPath='yes'/>
+                            </Component>
+                            <Component Id='ExtensionIcon128' Guid='*'>
+                                <File Id='icon128_png' Name='icon128.png' Source='$(var.CargoTargetBinDir)\..\..\..\extension\icons\icon128.png' KeyPath='yes'/>
+                            </Component>
+                        </Directory>
+                    </Directory>
                 </Directory>
             </Directory>
 
@@ -126,6 +161,23 @@
                 Level='1'
                 Absent='allow'>
                 <ComponentRef Id='DesktopShortcut'/>
+            </Feature>
+
+            <Feature
+                Id='BrowserExtension'
+                Title='Browser Extension'
+                Description='Install the browser extension for Chrome, Edge, and other Chromium browsers.'
+                Level='1'
+                Absent='allow'>
+                <ComponentRef Id='ExtensionManifest'/>
+                <ComponentRef Id='ExtensionPopup'/>
+                <ComponentRef Id='ExtensionOverlay'/>
+                <ComponentRef Id='ExtensionDistContent'/>
+                <ComponentRef Id='ExtensionDistBackground'/>
+                <ComponentRef Id='ExtensionIcon16'/>
+                <ComponentRef Id='ExtensionIcon32'/>
+                <ComponentRef Id='ExtensionIcon48'/>
+                <ComponentRef Id='ExtensionIcon128'/>
             </Feature>
         </Feature>
 
