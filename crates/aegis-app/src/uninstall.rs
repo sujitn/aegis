@@ -1,6 +1,8 @@
 //! Clean uninstall functionality (F020).
 //!
 //! Provides functionality to cleanly remove all Aegis data, including:
+//! - System proxy settings
+//! - CA certificate from system trust store
 //! - Autostart entry (F030)
 //! - CA certificate and key files
 //! - Database file
@@ -59,6 +61,14 @@ pub enum UninstallError {
     #[error("failed to export logs: {0}")]
     ExportFailed(String),
 
+    /// Failed to disable system proxy.
+    #[error("failed to disable system proxy: {0}")]
+    ProxyDisableFailed(String),
+
+    /// Failed to uninstall CA certificate.
+    #[error("failed to uninstall CA certificate: {0}")]
+    CaUninstallFailed(String),
+
     /// IO error.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -103,6 +113,8 @@ pub struct UninstallPaths {
     pub data_dir: PathBuf,
     /// The CA certificate directory.
     pub ca_dir: PathBuf,
+    /// The CA certificate file path (for system trust store removal).
+    pub ca_cert: PathBuf,
     /// The database file path.
     pub database: PathBuf,
 }
@@ -115,9 +127,12 @@ impl UninstallPaths {
         // Proxy uses "com.aegis.Aegis" (note capital A)
         let proxy_dirs = ProjectDirs::from("com", "aegis", "Aegis")?;
 
+        let ca_dir = proxy_dirs.data_dir().join("ca");
+
         Some(Self {
             data_dir: storage_dirs.data_dir().to_path_buf(),
-            ca_dir: proxy_dirs.data_dir().join("ca"),
+            ca_cert: ca_dir.join("aegis-ca.crt"),
+            ca_dir,
             database: storage_dirs.data_dir().join("aegis.db"),
         })
     }
@@ -304,6 +319,44 @@ in your system's certificate store."#
             }
         }
 
+        // ==================== System Cleanup ====================
+        // These steps remove system-level changes made by Aegis
+
+        // Step 1: Disable system proxy settings
+        // This must happen before removing CA to avoid connection issues
+        tracing::info!("Disabling system proxy settings...");
+        let proxy_result = aegis_proxy::disable_system_proxy();
+        if proxy_result.success {
+            tracing::info!("System proxy disabled successfully");
+        } else {
+            // Log warning but don't fail - proxy might not have been enabled
+            tracing::warn!("Could not disable system proxy: {}", proxy_result.message);
+        }
+
+        // Step 2: Uninstall CA certificate from system trust store
+        // Only attempt if the cert file exists
+        if paths.ca_cert.exists() {
+            tracing::info!("Removing CA certificate from system trust store...");
+            let ca_result = aegis_proxy::uninstall_ca_certificate(&paths.ca_cert);
+            if ca_result.success {
+                tracing::info!("CA certificate removed from system trust store");
+            } else {
+                // User may need to manually remove if elevation was denied
+                tracing::warn!(
+                    "Could not remove CA from trust store: {}",
+                    ca_result.message
+                );
+                errors.push(format!(
+                    "Could not remove CA certificate from system trust store: {}. \
+                     You may need to remove it manually.\n{}",
+                    ca_result.message,
+                    Self::get_ca_removal_instructions()
+                ));
+            }
+        }
+
+        // ==================== File Cleanup ====================
+
         // Remove autostart entry (F030)
         if let Err(e) = autostart::remove_autostart_entry() {
             errors.push(format!("Failed to remove autostart entry: {}", e));
@@ -373,8 +426,13 @@ in your system's certificate store."#
 /// Generate uninstall confirmation text.
 pub fn get_confirmation_text(paths: &UninstallPaths) -> String {
     format!(
-        r#"This will permanently delete all Aegis data:
+        r#"This will remove all Aegis settings and data:
 
+System changes to be reverted:
+  - Disable system proxy settings
+  - Remove CA certificate from system trust store
+
+Files to be deleted:
   - Database: {}
   - CA certificates: {}
   - Configuration: {}
@@ -413,6 +471,7 @@ mod tests {
         if let Some(p) = paths {
             assert!(!p.data_dir.as_os_str().is_empty());
             assert!(!p.ca_dir.as_os_str().is_empty());
+            assert!(!p.ca_cert.as_os_str().is_empty());
             assert!(!p.database.as_os_str().is_empty());
         }
     }
@@ -576,6 +635,7 @@ mod tests {
         let paths = UninstallPaths {
             data_dir: PathBuf::from("/data"),
             ca_dir: PathBuf::from("/data/ca"),
+            ca_cert: PathBuf::from("/data/ca/aegis-ca.crt"),
             database: PathBuf::from("/data/aegis.db"),
         };
 
@@ -583,7 +643,8 @@ mod tests {
         assert!(text.contains("/data"));
         assert!(text.contains("/data/ca"));
         assert!(text.contains("/data/aegis.db"));
-        assert!(text.contains("permanently delete"));
+        assert!(text.contains("system proxy"));
+        assert!(text.contains("CA certificate"));
     }
 
     // ==================== Integration Tests ====================

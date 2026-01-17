@@ -1,10 +1,5 @@
 <?xml version='1.0' encoding='windows-1252'?>
-<!--
-  Copyright (C) 2024 Aegis Team
-
-  This WXS file defines the Windows MSI installer for Aegis.
-  Build with: cargo wix --package aegis-app
--->
+<!-- Copyright (C) 2024 Aegis Team. WiX installer for Aegis. -->
 
 <?if $(sys.BUILDARCH) = x64 or $(sys.BUILDARCH) = arm64 ?>
     <?define PlatformProgramFilesFolder = "ProgramFiles64Folder" ?>
