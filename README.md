@@ -56,8 +56,24 @@ cargo build --release
 
 Only intercepts browser traffic. Simpler setup, no certificate installation required.
 
-1. Install the Aegis Chrome extension from the Chrome Web Store
-2. The extension communicates with the local Aegis service
+The extension monitors AI chatbot sites and filters prompts before they're sent.
+
+**Supported Sites:**
+- ChatGPT (chatgpt.com, chat.openai.com)
+- Claude (claude.ai)
+- Google Gemini (gemini.google.com)
+- Microsoft Copilot (copilot.microsoft.com)
+- Bing Chat (bing.com/chat)
+- Perplexity (perplexity.ai)
+- Poe (poe.com)
+
+**Supported Browsers:**
+- Google Chrome
+- Microsoft Edge
+- Brave
+- Opera
+- Vivaldi
+- Other Chromium-based browsers
 
 ### MITM Proxy Mode
 
@@ -68,6 +84,94 @@ Requires:
 2. System proxy configuration
 
 The setup wizard handles this automatically, but see below for manual setup.
+
+---
+
+## Browser Extension Installation
+
+The Aegis browser extension is included with the desktop application installer.
+
+### Extension Location After Installation
+
+| Platform | Extension Path |
+|----------|----------------|
+| Windows | `C:\Program Files\Aegis\extension\` |
+| macOS | `/Applications/Aegis.app/Contents/Resources/extension/` |
+| Linux | `/opt/aegis/extension/` or `/usr/share/aegis/extension/` |
+
+### Chrome / Chromium Browsers
+
+#### Step 1: Open Extension Management
+
+1. Open your browser (Chrome, Edge, Brave, etc.)
+2. Type in the address bar: `chrome://extensions`
+   - For Edge, use: `edge://extensions`
+   - For Brave, use: `brave://extensions`
+3. Press Enter
+
+> **Note:** You must type this URL manually. Browser security prevents opening `chrome://` URLs from links.
+
+#### Step 2: Enable Developer Mode
+
+1. Find the **"Developer mode"** toggle in the top-right corner
+2. Turn it **ON**
+
+#### Step 3: Load the Extension
+
+1. Click **"Load unpacked"** button (appears after enabling Developer mode)
+2. Navigate to the Aegis extension folder:
+   - **Windows:** `C:\Program Files\Aegis\extension`
+   - **macOS:** `/Applications/Aegis.app/Contents/Resources/extension`
+   - **Linux:** `/opt/aegis/extension`
+3. Select the folder and click **"Select Folder"** (Windows) or **"Open"** (macOS/Linux)
+
+#### Step 4: Verify Installation
+
+1. The Aegis extension icon should appear in your browser toolbar
+2. Click the icon to see the connection status
+3. Status should show **"Connected"** when Aegis is running
+
+### Microsoft Edge (Alternative Method)
+
+Edge also supports loading extensions from the Chrome Web Store:
+
+1. Go to `edge://extensions`
+2. Enable **"Allow extensions from other stores"** at the bottom
+3. You can then install Aegis from the Chrome Web Store (when available)
+
+### Firefox
+
+Firefox uses a different extension format. A Firefox-compatible version will be available on Firefox Add-ons (when released).
+
+### Troubleshooting Extension Issues
+
+#### Extension Shows "Disconnected"
+
+1. Ensure Aegis desktop app is running (check system tray)
+2. The extension connects to `http://127.0.0.1:48765`
+3. Restart the browser if the connection doesn't establish
+
+#### Extension Not Filtering
+
+1. Verify you're on a supported AI chatbot site
+2. Check that filtering is enabled in the Aegis dashboard
+3. Ensure the user profile has filtering rules configured
+
+#### "Load unpacked" Button Missing
+
+- Make sure **Developer mode** is enabled (toggle in top-right)
+
+#### Extension Files Not Found
+
+If the extension folder is empty or missing files:
+- Reinstall Aegis and ensure the "Browser Extension" feature is selected
+- Required files: `manifest.json`, `popup.html`, `popup.css`, `overlay.css`, `dist/content.js`, `dist/background.js`, `dist/popup.js`, `icons/`
+
+#### Permission Errors
+
+On Windows, if you can't access `C:\Program Files\Aegis\extension`:
+1. Copy the extension folder to your Documents folder
+2. Load the extension from the copied location
 
 ---
 
