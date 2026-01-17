@@ -2,7 +2,7 @@
 
 | Status | Priority | Crate |
 |--------|----------|-------|
-| `in-progress` | critical | browser-extension |
+| `complete` | critical | browser-extension |
 
 ## Description
 
@@ -42,9 +42,9 @@ Chrome/Edge extension (MV3) intercepts prompts before sending to AI chatbots. Us
 - [x] Support Perplexity (socket.io), Copilot (SignalR), Poe WebSocket protocols
 
 ### Easy Installation (F024-alt)
-- [ ] Package as CRX for manual install
-- [ ] Auto-install via native app (Windows registry, macOS/Linux policies)
-- [ ] Provide clear manual installation instructions
+- [x] Package as CRX for manual install
+- [x] Auto-install via native app (Windows registry, macOS/Linux policies)
+- [x] Provide clear manual installation instructions
 
 ## Implementation
 

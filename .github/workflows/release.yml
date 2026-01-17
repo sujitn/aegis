@@ -679,10 +679,20 @@ jobs:
           jq '.version = "${{ steps.version.outputs.VERSION }}"' manifest.json > manifest.tmp.json
           mv manifest.tmp.json manifest.json
 
-      - name: Create extension zip
+      - name: Build CRX package
+        working-directory: extension
+        run: |
+          mkdir -p release
+          node scripts/build-crx.js
+
+      - name: Create extension zip (for bundling with installers)
         working-directory: extension
         run: |
           mkdir -p ../release
+          # Copy release artifacts
+          cp release/*.crx ../release/ 2>/dev/null || true
+          cp release/*.zip ../release/ 2>/dev/null || true
+          # Also create a bundling zip with full structure
           zip -r ../release/aegis-extension-${{ steps.version.outputs.VERSION }}.zip \
             manifest.json \
             popup.html \
@@ -694,7 +704,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: aegis-extension
-          path: release/aegis-extension-*.zip
+          path: |
+            release/aegis-extension-*.zip
+            release/aegis-extension-*.crx
 
   # ============================================================================
   # Code Signing (Optional - requires secrets)
@@ -823,7 +835,7 @@ jobs:
         run: |
           cd artifacts
           # Flatten all artifacts
-          find . -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.dmg" -o -name "*.msi" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) -exec mv {} . \; 2>/dev/null || true
+          find . -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.crx" -o -name "*.dmg" -o -name "*.msi" -o -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) -exec mv {} . \; 2>/dev/null || true
           # Remove empty directories
           find . -type d -empty -delete 2>/dev/null || true
           # Generate checksums
@@ -863,6 +875,7 @@ jobs:
           find artifacts -type f \( \
             -name "*.tar.gz" -o \
             -name "*.zip" -o \
+            -name "*.crx" -o \
             -name "*.dmg" -o \
             -name "*.msi" -o \
             -name "*.deb" -o \
@@ -905,6 +918,7 @@ jobs:
             echo "- \`.AppImage\` - Universal Linux package" >> release_notes.md
             echo "" >> release_notes.md
             echo "### Browser Extension" >> release_notes.md
+            echo "- \`.crx\` - Chrome/Edge extension package (for manual installation)" >> release_notes.md
             echo "- \`.zip\` - Chrome/Edge extension (load unpacked or submit to store)" >> release_notes.md
           fi
 

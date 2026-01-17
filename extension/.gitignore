@@ -3,6 +3,10 @@ node_modules/
 
 # Build output
 dist/
+release/
+
+# CRX signing key (generated locally)
+key.pem
 
 # IDE
 .idea/

@@ -7,6 +7,8 @@ All notable changes to Aegis.
 ### Added
 - F010: Streaming Response Interception - Monitor and block unsafe AI-generated streaming responses with: Response body interception via ReadableStream wrapper, SSE (Server-Sent Events) parsing for ChatGPT/Claude/Gemini formats, NDJSON/JSON Lines support, configurable buffer size (default 500 chars) and timeout (2000ms), content checking via Aegis API, stream abort on unsafe content detection, XHR response monitoring via onreadystatechange, purple "Response Blocked" overlay with auto-dismiss, parseSSEContent/parseStreamingContent utilities, setResponseInterceptCallback/setStreamingConfig/updateStreamingConfig APIs
 - F010: Additional LLM Service Support - Full interception support for Copilot, Perplexity, and Poe with: WebSocket interception via overridden WebSocket constructor, socket.io protocol parsing (Perplexity), SignalR/WebSocket message extraction (Copilot/Bing Sydney), GraphQL and REST API support (Poe), WS_PATTERNS for WebSocket URL matching, extractPromptFromWSMessage for service-specific WebSocket payload parsing, improved extractContentFromJSON for streaming responses, Copilot adaptive cards text extraction, expanded API_PATTERNS covering all major endpoints
+- F010: CSP Fix - Resolved Content Security Policy inline script violation by moving page context code to separate injected.ts file, loading via chrome.runtime.getURL(), passing config via DOM data attributes
+- F024: CRX Packaging - Pre-packaged CRX files in releases with: build-crx.js script for CRX3 format generation, RSA signing key generation, ZIP and CRX output in release workflow, updated checksums to include CRX files
 
 ## [0.2.0] - 2026-01-17
 

@@ -2,7 +2,7 @@
 
 | Status | Priority | Crate |
 |--------|----------|-------|
-| `in-progress` | high | extension, aegis-core, aegis-ui |
+| `complete` | high | extension, aegis-core, aegis-ui |
 
 ## Description
 
@@ -29,7 +29,7 @@ Deploy the Aegis browser extension with easy installation options. Supports two 
 
 #### Manual Installation Support
 - [x] Clear instructions in README and app
-- [ ] Pre-packaged CRX file in releases
+- [x] Pre-packaged CRX file in releases
 - [x] Settings UI shows manual steps if auto-install fails
 
 ### Phase 2: Chrome Web Store (Future)
