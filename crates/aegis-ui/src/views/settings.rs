@@ -3,30 +3,16 @@
 use std::env;
 
 use auto_launch::{AutoLaunch, AutoLaunchBuilder};
-use eframe::egui::{self, RichText};
+use dioxus::prelude::*;
 
 use aegis_core::extension_install::get_extension_path;
-use aegis_proxy::{
-    disable_system_proxy, enable_system_proxy, install_ca_certificate, is_ca_installed,
-    is_proxy_enabled, uninstall_ca_certificate, DEFAULT_PROXY_PORT,
-};
 
 use crate::state::AppState;
-use crate::theme::status;
 
 /// App name for autostart.
 const APP_NAME: &str = "Aegis";
 
-/// Config key for autostart lock state.
-const CONFIG_KEY_AUTOSTART_LOCKED: &str = "autostart_locked";
-
-/// Returns the CA certificate path.
-fn get_ca_cert_path() -> Option<std::path::PathBuf> {
-    directories::ProjectDirs::from("com", "aegis", "aegis")
-        .map(|dirs| dirs.data_dir().join("ca").join("aegis-ca.crt"))
-}
-
-/// Creates an AutoLaunch instance for Aegis.
+/// Creates an AutoLaunch instance.
 fn create_auto_launch() -> Option<AutoLaunch> {
     let exe_path = env::current_exe().ok()?;
     let exe_str = exe_path.to_str()?;
@@ -59,920 +45,200 @@ fn is_autostart_enabled() -> bool {
         .unwrap_or(false)
 }
 
-/// Enables autostart.
-fn enable_autostart() -> Result<(), String> {
-    let launcher = create_auto_launch().ok_or("Failed to create autostart")?;
-    launcher.enable().map_err(|e| e.to_string())
-}
+/// Settings view component.
+#[component]
+pub fn SettingsView() -> Element {
+    let mut state = use_context::<Signal<AppState>>();
+    let mut autostart = use_signal(is_autostart_enabled);
+    let mut show_change_password = use_signal(|| false);
+    let mut current_password = use_signal(String::new);
+    let mut new_password = use_signal(String::new);
+    let mut confirm_password = use_signal(String::new);
 
-/// Disables autostart.
-fn disable_autostart() -> Result<(), String> {
-    let launcher = create_auto_launch().ok_or("Failed to create autostart")?;
-    launcher.disable().map_err(|e| e.to_string())
-}
+    let ext_path = get_extension_path();
+    let ext_path_display = ext_path.as_ref().map(|p| p.display().to_string());
+    let version = env!("CARGO_PKG_VERSION");
 
-/// Protection mode options.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ProtectionMode {
-    /// Browser extension only (lighter, per-browser).
-    Extension,
-    /// System proxy only (system-wide, all apps).
-    Proxy,
-    /// Both extension and proxy (recommended, maximum coverage).
-    #[default]
-    Both,
-}
+    rsx! {
+        div {
+            h1 { class: "text-lg font-bold mb-lg", "Settings" }
 
-/// State for the settings view.
-pub struct SettingsState {
-    /// Current password for change password.
-    pub current_password: String,
-    /// New password.
-    pub new_password: String,
-    /// Confirm new password.
-    pub confirm_password: String,
-    /// Show change password section.
-    pub show_change_password: bool,
+            // General section
+            div { class: "card mb-lg",
+                h2 { class: "font-bold mb-md", "General" }
 
-    // Cached system state (expensive to check every frame)
-    /// Whether autostart is enabled (cached).
-    pub autostart_enabled: bool,
-    /// Whether autostart lock is enabled (cached).
-    pub autostart_locked: bool,
-    /// Whether CA certificate is installed (cached).
-    pub ca_installed: bool,
-    /// Whether system proxy is enabled (cached).
-    pub proxy_enabled: bool,
-    /// CA certificate path (cached).
-    pub ca_path: Option<std::path::PathBuf>,
-    /// Whether initial load has been done.
-    pub initialized: bool,
-
-    /// Current protection mode selection.
-    pub protection_mode: ProtectionMode,
-    /// Show extension install instructions.
-    pub show_extension_instructions: bool,
-}
-
-impl Default for SettingsState {
-    fn default() -> Self {
-        // Initialize CA path eagerly (fast operation)
-        let ca_path = get_ca_cert_path();
-
-        Self {
-            current_password: String::new(),
-            new_password: String::new(),
-            confirm_password: String::new(),
-            show_change_password: false,
-            autostart_enabled: false,
-            autostart_locked: false,
-            ca_installed: false,
-            proxy_enabled: false,
-            ca_path,
-            initialized: false,
-            protection_mode: ProtectionMode::default(),
-            show_extension_instructions: false,
-        }
-    }
-}
-
-impl SettingsState {
-    /// Refreshes cached system state. Call this when entering settings or after changes.
-    pub fn refresh_cache(&mut self, db: &aegis_storage::Database) {
-        self.autostart_enabled = is_autostart_enabled();
-        self.autostart_locked = db
-            .get_config(CONFIG_KEY_AUTOSTART_LOCKED)
-            .ok()
-            .flatten()
-            .and_then(|v| v.value.as_bool())
-            .unwrap_or(false);
-        self.ca_path = get_ca_cert_path();
-        self.ca_installed = self
-            .ca_path
-            .as_ref()
-            .map(|p| is_ca_installed(p))
-            .unwrap_or(false);
-        self.proxy_enabled = is_proxy_enabled("127.0.0.1", DEFAULT_PROXY_PORT);
-        self.initialized = true;
-    }
-}
-
-/// Renders the settings view.
-pub fn render(ui: &mut egui::Ui, state: &mut AppState, settings: &mut SettingsState) {
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.heading("Settings");
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("↻ Refresh Status").clicked() {
-                    settings.refresh_cache(&state.db);
-                }
-            });
-        });
-        ui.add_space(16.0);
-
-        // General section (autostart)
-        render_general_section(ui, state, settings);
-
-        ui.add_space(24.0);
-
-        // Security section
-        render_security_section(ui, state, settings);
-
-        ui.add_space(24.0);
-
-        // Protection Mode selection (extension vs proxy vs both)
-        render_protection_mode_section(ui, state, settings);
-
-        ui.add_space(24.0);
-
-        // Proxy setup (only show if proxy mode selected)
-        if matches!(
-            settings.protection_mode,
-            ProtectionMode::Proxy | ProtectionMode::Both
-        ) {
-            render_mode_section(ui, state, settings);
-            ui.add_space(24.0);
-        }
-
-        // About section
-        render_about_section(ui);
-    });
-}
-
-/// Renders the general settings section (autostart, etc.).
-fn render_general_section(ui: &mut egui::Ui, state: &mut AppState, settings: &mut SettingsState) {
-    ui.label(RichText::new("General").size(16.0).strong());
-    ui.add_space(8.0);
-
-    egui::Frame::new()
-        .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .corner_radius(8.0)
-        .inner_margin(16.0)
-        .show(ui, |ui| {
-            // Use cached values
-            let autostart_enabled = settings.autostart_enabled;
-            let is_locked = settings.autostart_locked;
-
-            ui.horizontal(|ui| {
-                ui.label("Start on login");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if is_locked {
-                        ui.label(RichText::new("🔒").size(14.0));
-                        ui.add_enabled(false, egui::Checkbox::without_text(&mut autostart_enabled.clone()));
-                    } else {
-                        let mut enabled = autostart_enabled;
-                        if ui.checkbox(&mut enabled, "").changed() {
-                            if enabled {
-                                match enable_autostart() {
-                                    Ok(()) => {
-                                        state.set_success("Autostart enabled");
-                                        settings.autostart_enabled = true;
+                div { class: "flex justify-between items-center mb-md",
+                    div {
+                        p { "Start on login" }
+                        p { class: "text-sm text-muted", "Aegis will start automatically when you log in." }
+                    }
+                    label { class: "checkbox",
+                        input {
+                            r#type: "checkbox",
+                            checked: "{autostart}",
+                            onchange: move |evt| {
+                                let enabled = evt.checked();
+                                if let Some(launcher) = create_auto_launch() {
+                                    let result = if enabled {
+                                        launcher.enable()
+                                    } else {
+                                        launcher.disable()
+                                    };
+                                    match result {
+                                        Ok(()) => {
+                                            autostart.set(enabled);
+                                            state.write().set_success(if enabled { "Autostart enabled" } else { "Autostart disabled" });
+                                        }
+                                        Err(e) => state.write().set_error(e.to_string()),
                                     }
-                                    Err(e) => state.set_error(format!("Failed to enable autostart: {}", e)),
-                                }
-                            } else {
-                                match disable_autostart() {
-                                    Ok(()) => {
-                                        state.set_success("Autostart disabled");
-                                        settings.autostart_enabled = false;
-                                    }
-                                    Err(e) => state.set_error(format!("Failed to disable autostart: {}", e)),
                                 }
                             }
                         }
                     }
-                });
-            });
+                }
+            }
 
-            ui.label(
-                RichText::new("Aegis will start automatically when you log in.")
-                    .size(11.0)
-                    .weak(),
-            );
+            // Security section
+            div { class: "card mb-lg",
+                h2 { class: "font-bold mb-md", "Security" }
 
-            ui.add_space(12.0);
-
-            // Lock autostart setting
-            ui.horizontal(|ui| {
-                ui.label("Lock autostart setting");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let mut locked = is_locked;
-                    if ui.checkbox(&mut locked, "").changed() {
-                        if let Err(e) = state.db.set_config(CONFIG_KEY_AUTOSTART_LOCKED, &serde_json::json!(locked)) {
-                            state.set_error(format!("Failed to update lock setting: {}", e));
-                        } else {
-                            if locked {
-                                state.set_success("Autostart setting locked");
-                            } else {
-                                state.set_success("Autostart setting unlocked");
+                if show_change_password() {
+                    div {
+                        div { class: "mb-md",
+                            label { class: "text-sm", "Current Password:" }
+                            input {
+                                class: "input",
+                                r#type: "password",
+                                value: "{current_password}",
+                                oninput: move |evt| current_password.set(evt.value())
                             }
-                            settings.autostart_locked = locked;
                         }
-                    }
-                });
-            });
 
-            ui.label(
-                RichText::new("When locked, the autostart setting cannot be changed without parent authentication.")
-                    .size(11.0)
-                    .weak(),
-            );
-        });
-}
-
-/// Renders the security section.
-fn render_security_section(ui: &mut egui::Ui, state: &mut AppState, settings: &mut SettingsState) {
-    ui.label(RichText::new("Security").size(16.0).strong());
-    ui.add_space(8.0);
-
-    egui::Frame::new()
-        .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .corner_radius(8.0)
-        .inner_margin(16.0)
-        .show(ui, |ui| {
-            if settings.show_change_password {
-                render_change_password_form(ui, state, settings);
-            } else {
-                ui.horizontal(|ui| {
-                    ui.label("Password Protection");
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Change Password").clicked() {
-                            settings.show_change_password = true;
-                        }
-                    });
-                });
-            }
-        });
-}
-
-/// Renders the protection mode selection section.
-fn render_protection_mode_section(
-    ui: &mut egui::Ui,
-    state: &mut AppState,
-    settings: &mut SettingsState,
-) {
-    ui.label(RichText::new("Protection Mode").size(16.0).strong());
-    ui.add_space(8.0);
-
-    egui::Frame::new()
-        .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .corner_radius(8.0)
-        .inner_margin(16.0)
-        .show(ui, |ui| {
-            ui.label(
-                RichText::new("Choose how Aegis protects AI chatbot usage:")
-                    .size(12.0)
-                    .weak(),
-            );
-            ui.add_space(12.0);
-
-            // Mode selection cards
-            render_mode_option(
-                ui,
-                settings,
-                ProtectionMode::Extension,
-                "Browser Extension",
-                "Monitors Chrome, Edge, and other Chromium browsers",
-                &["Lightweight", "Per-browser control", "Easy to install"],
-            );
-
-            ui.add_space(8.0);
-
-            render_mode_option(
-                ui,
-                settings,
-                ProtectionMode::Proxy,
-                "System Proxy",
-                "Intercepts all network traffic system-wide",
-                &[
-                    "All applications",
-                    "Cannot be bypassed easily",
-                    "Requires CA certificate",
-                ],
-            );
-
-            ui.add_space(8.0);
-
-            render_mode_option(
-                ui,
-                settings,
-                ProtectionMode::Both,
-                "Both (Recommended)",
-                "Maximum protection with extension and proxy",
-                &["Best coverage", "Redundant protection", "Harder to bypass"],
-            );
-
-            // Extension installation section
-            if matches!(
-                settings.protection_mode,
-                ProtectionMode::Extension | ProtectionMode::Both
-            ) {
-                ui.add_space(16.0);
-                ui.separator();
-                ui.add_space(8.0);
-                render_extension_install_section(ui, state, settings);
-            }
-        });
-}
-
-/// Renders a single mode option card.
-fn render_mode_option(
-    ui: &mut egui::Ui,
-    settings: &mut SettingsState,
-    mode: ProtectionMode,
-    title: &str,
-    description: &str,
-    features: &[&str],
-) {
-    let is_selected = settings.protection_mode == mode;
-    let frame_fill = if is_selected {
-        ui.style().visuals.selection.bg_fill
-    } else {
-        ui.style().visuals.widgets.inactive.bg_fill
-    };
-
-    let response = egui::Frame::new()
-        .fill(frame_fill)
-        .corner_radius(6.0)
-        .inner_margin(12.0)
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                // Radio button visual
-                let radio_size = 16.0;
-                let (rect, _) = ui
-                    .allocate_exact_size(egui::vec2(radio_size, radio_size), egui::Sense::hover());
-                let center = rect.center();
-                let radius = radio_size / 2.0 - 1.0;
-
-                ui.painter().circle_stroke(
-                    center,
-                    radius,
-                    egui::Stroke::new(1.5, ui.style().visuals.text_color()),
-                );
-
-                if is_selected {
-                    ui.painter().circle_filled(
-                        center,
-                        radius - 3.0,
-                        ui.style().visuals.text_color(),
-                    );
-                }
-
-                ui.add_space(8.0);
-
-                ui.vertical(|ui| {
-                    ui.label(RichText::new(title).strong());
-                    ui.label(RichText::new(description).size(11.0).weak());
-
-                    ui.add_space(4.0);
-
-                    ui.horizontal_wrapped(|ui| {
-                        for (i, feature) in features.iter().enumerate() {
-                            if i > 0 {
-                                ui.label(RichText::new(" | ").size(10.0).weak());
+                        div { class: "mb-md",
+                            label { class: "text-sm", "New Password:" }
+                            input {
+                                class: "input",
+                                r#type: "password",
+                                value: "{new_password}",
+                                oninput: move |evt| new_password.set(evt.value())
                             }
-                            ui.label(RichText::new(*feature).size(10.0).weak());
                         }
-                    });
-                });
-            });
-        });
 
-    // Make the entire card clickable
-    if ui
-        .interact(
-            response.response.rect,
-            ui.id().with(title),
-            egui::Sense::click(),
-        )
-        .clicked()
-    {
-        settings.protection_mode = mode;
-    }
-}
-
-/// Renders the browser extension installation section.
-fn render_extension_install_section(
-    ui: &mut egui::Ui,
-    state: &mut AppState,
-    settings: &mut SettingsState,
-) {
-    ui.label(RichText::new("Browser Extension").strong());
-    ui.add_space(8.0);
-
-    // Installation buttons
-    ui.horizontal(|ui| {
-        // Open Chrome extensions page
-        if ui.button("Open Chrome Extensions").clicked() {
-            // Try to open chrome://extensions in the default browser
-            let _ = open::that("chrome://extensions");
-            state.set_success("Opening Chrome extensions page. Enable Developer Mode, then click 'Load unpacked'.");
-        }
-
-        // Copy path to clipboard
-        if ui.button("Copy Extension Path").clicked() {
-            if let Some(ext_path) = get_extension_path() {
-                let path_str = ext_path.display().to_string();
-                ui.ctx().copy_text(path_str.clone());
-                state.set_success(format!("Path copied: {}", path_str));
-            } else {
-                state.set_error("Extension folder not found");
-            }
-        }
-
-        // Open folder
-        if ui.button("Open Folder").clicked() {
-            if let Some(ext_path) = get_extension_path() {
-                #[cfg(target_os = "windows")]
-                {
-                    let _ = std::process::Command::new("explorer").arg(&ext_path).spawn();
-                }
-                #[cfg(target_os = "macos")]
-                {
-                    let _ = std::process::Command::new("open").arg(&ext_path).spawn();
-                }
-                #[cfg(target_os = "linux")]
-                {
-                    let _ = std::process::Command::new("xdg-open").arg(&ext_path).spawn();
-                }
-                state.set_success("Opening extension folder");
-            } else {
-                state.set_error("Extension folder not found");
-            }
-        }
-
-        // Show/hide instructions
-        if ui.button(if settings.show_extension_instructions { "Hide Steps" } else { "Show Steps" }).clicked() {
-            settings.show_extension_instructions = !settings.show_extension_instructions;
-        }
-    });
-
-    ui.add_space(4.0);
-
-    // Show extension path
-    if let Some(ext_path) = get_extension_path() {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Path:").size(11.0).weak());
-            ui.label(
-                RichText::new(ext_path.display().to_string())
-                    .monospace()
-                    .size(10.0),
-            );
-        });
-    }
-
-    if settings.show_extension_instructions {
-        ui.add_space(8.0);
-
-        egui::Frame::new()
-            .fill(ui.style().visuals.faint_bg_color)
-            .corner_radius(4.0)
-            .inner_margin(12.0)
-            .show(ui, |ui| {
-                ui.label(RichText::new("Manual Installation Steps:").strong());
-                ui.add_space(8.0);
-
-                ui.label("1. Open Chrome/Edge and type in the address bar:");
-                ui.horizontal(|ui| {
-                    ui.add_space(16.0);
-                    ui.label(RichText::new("chrome://extensions").monospace());
-                    if ui.small_button("Copy").clicked() {
-                        ui.ctx().copy_text("chrome://extensions".to_string());
-                    }
-                });
-                ui.horizontal(|ui| {
-                    ui.add_space(16.0);
-                    ui.label(
-                        RichText::new(
-                            "(Note: This URL must be typed manually, it cannot be opened via link)",
-                        )
-                        .weak()
-                        .italics()
-                        .size(10.0),
-                    );
-                });
-
-                ui.add_space(4.0);
-                ui.label("2. Enable \"Developer mode\" (toggle in top-right corner)");
-
-                ui.add_space(4.0);
-                ui.label("3. Click \"Load unpacked\"");
-
-                ui.add_space(4.0);
-                ui.label("4. Select the extension folder:");
-                if let Some(ext_path) = get_extension_path() {
-                    ui.horizontal(|ui| {
-                        ui.add_space(16.0);
-                        ui.label(
-                            RichText::new(ext_path.display().to_string())
-                                .monospace()
-                                .size(10.0),
-                        );
-                    });
-                }
-
-                ui.add_space(4.0);
-                ui.label("5. The Aegis icon should appear in your browser toolbar");
-
-                ui.add_space(12.0);
-
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new("Supported browsers:").size(11.0).weak());
-                    ui.label(
-                        RichText::new("Chrome, Edge, Brave, Opera, Vivaldi")
-                            .size(11.0)
-                            .weak(),
-                    );
-                });
-
-                ui.add_space(8.0);
-
-                if ui.button("Close").clicked() {
-                    settings.show_extension_instructions = false;
-                }
-            });
-    }
-}
-
-/// Renders the change password form.
-fn render_change_password_form(
-    ui: &mut egui::Ui,
-    state: &mut AppState,
-    settings: &mut SettingsState,
-) {
-    ui.label(RichText::new("Change Password").strong());
-    ui.add_space(8.0);
-
-    ui.horizontal(|ui| {
-        ui.label("Current Password:");
-        ui.add(
-            egui::TextEdit::singleline(&mut settings.current_password)
-                .password(true)
-                .desired_width(200.0),
-        );
-    });
-
-    ui.add_space(4.0);
-
-    ui.horizontal(|ui| {
-        ui.label("New Password:");
-        ui.add(
-            egui::TextEdit::singleline(&mut settings.new_password)
-                .password(true)
-                .desired_width(200.0),
-        );
-    });
-
-    ui.add_space(4.0);
-
-    ui.horizontal(|ui| {
-        ui.label("Confirm Password:");
-        ui.add(
-            egui::TextEdit::singleline(&mut settings.confirm_password)
-                .password(true)
-                .desired_width(200.0),
-        );
-    });
-
-    ui.add_space(8.0);
-
-    ui.horizontal(|ui| {
-        if ui.button("Save").clicked() {
-            // Validate
-            if settings.new_password != settings.confirm_password {
-                state.set_error("Passwords do not match");
-                return;
-            }
-
-            if settings.new_password.len() < 6 {
-                state.set_error("Password must be at least 6 characters");
-                return;
-            }
-
-            // Change password
-            match state.change_password(&settings.current_password, &settings.new_password) {
-                Ok(()) => {
-                    state.set_success("Password changed successfully");
-                    settings.current_password.clear();
-                    settings.new_password.clear();
-                    settings.confirm_password.clear();
-                    settings.show_change_password = false;
-                }
-                Err(e) => {
-                    state.set_error(e.to_string());
-                }
-            }
-        }
-
-        if ui.button("Cancel").clicked() {
-            settings.current_password.clear();
-            settings.new_password.clear();
-            settings.confirm_password.clear();
-            settings.show_change_password = false;
-        }
-    });
-}
-
-/// Renders the proxy setup section.
-fn render_mode_section(ui: &mut egui::Ui, state: &mut AppState, settings: &mut SettingsState) {
-    ui.label(RichText::new("Proxy Protection").size(16.0).strong());
-    ui.add_space(8.0);
-
-    egui::Frame::new()
-        .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .corner_radius(8.0)
-        .inner_margin(16.0)
-        .show(ui, |ui| {
-            ui.label(
-                RichText::new(
-                    "Aegis uses a MITM proxy to filter AI prompts from all applications.",
-                )
-                .size(12.0)
-                .weak(),
-            );
-
-            ui.add_space(12.0);
-
-            render_proxy_setup(ui, state, settings);
-        });
-}
-
-/// Renders proxy setup controls.
-fn render_proxy_setup(ui: &mut egui::Ui, state: &mut AppState, settings: &mut SettingsState) {
-    ui.label(RichText::new("Proxy Setup").strong());
-    ui.add_space(8.0);
-
-    // Use cached values
-    let ca_installed = settings.ca_installed;
-    let proxy_enabled = settings.proxy_enabled;
-
-    // Status overview
-    egui::Frame::new()
-        .fill(ui.style().visuals.faint_bg_color)
-        .corner_radius(4.0)
-        .inner_margin(8.0)
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Proxy Address:");
-                ui.label(
-                    RichText::new(format!("127.0.0.1:{}", DEFAULT_PROXY_PORT))
-                        .monospace()
-                        .strong(),
-                );
-            });
-
-            ui.horizontal(|ui| {
-                ui.label("CA Certificate:");
-                if ca_installed {
-                    ui.colored_label(status::SUCCESS, "Installed");
-                } else {
-                    ui.colored_label(status::ERROR, "Not Installed");
-                }
-            });
-
-            ui.horizontal(|ui| {
-                ui.label("System Proxy:");
-                if proxy_enabled {
-                    ui.colored_label(status::SUCCESS, "Enabled");
-                } else {
-                    ui.colored_label(status::ERROR, "Disabled");
-                }
-            });
-        });
-
-    ui.add_space(12.0);
-
-    // Step 1: CA Certificate
-    ui.label(RichText::new("Step 1: Install CA Certificate").size(13.0));
-    ui.add_space(4.0);
-
-    if let Some(ref ca_path) = settings.ca_path.clone() {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Path:").weak());
-            if ui
-                .link(
-                    RichText::new(ca_path.display().to_string())
-                        .monospace()
-                        .size(10.0),
-                )
-                .on_hover_text("Click to open folder")
-                .clicked()
-            {
-                if let Some(parent) = ca_path.parent() {
-                    #[cfg(target_os = "windows")]
-                    {
-                        let _ = std::process::Command::new("explorer").arg(parent).spawn();
-                    }
-                    #[cfg(target_os = "macos")]
-                    {
-                        let _ = std::process::Command::new("open").arg(parent).spawn();
-                    }
-                    #[cfg(target_os = "linux")]
-                    {
-                        let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
-                    }
-                }
-            }
-        });
-
-        ui.add_space(4.0);
-
-        ui.horizontal(|ui| {
-            if ca_installed {
-                // Uninstall button
-                if ui.button("Uninstall Certificate").clicked() {
-                    let result = uninstall_ca_certificate(ca_path);
-                    if result.success {
-                        state.set_success(result.message);
-                        settings.ca_installed = false;
-                    } else if result.needs_admin {
-                        state.set_error(format!("Admin required: {}", result.message));
-                    } else {
-                        state.set_error(result.message);
-                    }
-                }
-                ui.label(RichText::new("Installed").weak().size(11.0));
-            } else {
-                // Install button
-                if ui.button("Install Certificate").clicked() {
-                    let result = install_ca_certificate(ca_path);
-                    if result.success {
-                        state.set_success(result.message);
-                        settings.ca_installed = true;
-                    } else if result.needs_admin {
-                        state.set_error(format!("Admin required: {}", result.message));
-                    } else {
-                        state.set_error(result.message);
-                    }
-                }
-                ui.label(RichText::new("Not installed").weak().size(11.0));
-            }
-        });
-    } else {
-        ui.label(RichText::new("CA certificate not found. Restart Aegis to generate it.").weak());
-    }
-
-    ui.add_space(12.0);
-
-    // Step 2: System Proxy
-    ui.label(RichText::new("Step 2: Configure System Proxy").size(13.0));
-    ui.add_space(4.0);
-
-    // Track proxy state changes for closures
-    let mut new_proxy_state: Option<bool> = None;
-    let mut new_ca_state: Option<bool> = None;
-
-    ui.horizontal(|ui| {
-        if proxy_enabled {
-            if ui.button("Disable Proxy").clicked() {
-                let result = disable_system_proxy();
-                if result.success {
-                    state.set_success(result.message);
-                    new_proxy_state = Some(false);
-                } else {
-                    state.set_error(result.message);
-                }
-            }
-            ui.label(RichText::new("System proxy is active").weak().size(11.0));
-        } else {
-            let can_enable = ca_installed;
-            ui.add_enabled_ui(can_enable, |ui| {
-                if ui.button("Enable Proxy").clicked() {
-                    let result = enable_system_proxy("127.0.0.1", DEFAULT_PROXY_PORT);
-                    if result.success {
-                        state.set_success(result.message);
-                        new_proxy_state = Some(true);
-                    } else if result.needs_admin {
-                        state.set_error(format!("Admin required: {}", result.message));
-                    } else {
-                        state.set_error(result.message);
-                    }
-                }
-            });
-            if !can_enable {
-                ui.label(
-                    RichText::new("Install CA certificate first")
-                        .weak()
-                        .size(11.0),
-                );
-            }
-        }
-    });
-
-    ui.add_space(12.0);
-
-    // One-click setup
-    ui.separator();
-    ui.add_space(8.0);
-
-    let fully_configured = ca_installed && proxy_enabled;
-
-    if fully_configured {
-        ui.horizontal(|ui| {
-            ui.colored_label(status::SUCCESS, "✓");
-            ui.label(RichText::new("Proxy protection is fully configured!").strong());
-        });
-    } else {
-        ui.horizontal(|ui| {
-            if ui.button("One-Click Setup").clicked() {
-                // Install CA first
-                if let Some(ref ca_path) = settings.ca_path.clone() {
-                    if !ca_installed {
-                        let ca_result = install_ca_certificate(ca_path);
-                        if !ca_result.success {
-                            state.set_error(format!("CA install failed: {}", ca_result.message));
-                            return;
+                        div { class: "mb-md",
+                            label { class: "text-sm", "Confirm Password:" }
+                            input {
+                                class: "input",
+                                r#type: "password",
+                                value: "{confirm_password}",
+                                oninput: move |evt| confirm_password.set(evt.value())
+                            }
                         }
-                        new_ca_state = Some(true);
+
+                        div { class: "flex gap-sm",
+                            button {
+                                class: "btn btn-primary",
+                                onclick: move |_| {
+                                    if new_password() != confirm_password() {
+                                        state.write().set_error("Passwords do not match");
+                                        return;
+                                    }
+                                    if new_password().len() < 6 {
+                                        state.write().set_error("Password must be at least 6 characters");
+                                        return;
+                                    }
+                                    let result = state.write().change_password(&current_password(), &new_password());
+                                    match result {
+                                        Ok(()) => {
+                                            state.write().set_success("Password changed successfully");
+                                            current_password.set(String::new());
+                                            new_password.set(String::new());
+                                            confirm_password.set(String::new());
+                                            show_change_password.set(false);
+                                        }
+                                        Err(e) => state.write().set_error(e.to_string()),
+                                    }
+                                },
+                                "Save"
+                            }
+                            button {
+                                class: "btn btn-secondary",
+                                onclick: move |_| {
+                                    current_password.set(String::new());
+                                    new_password.set(String::new());
+                                    confirm_password.set(String::new());
+                                    show_change_password.set(false);
+                                },
+                                "Cancel"
+                            }
+                        }
+                    }
+                } else {
+                    div { class: "flex justify-between items-center",
+                        div {
+                            p { "Password Protection" }
+                            p { class: "text-sm text-muted", "Change your parent password." }
+                        }
+                        button {
+                            class: "btn btn-secondary",
+                            onclick: move |_| show_change_password.set(true),
+                            "Change Password"
+                        }
                     }
                 }
+            }
 
-                // Then enable proxy
-                let proxy_result = enable_system_proxy("127.0.0.1", DEFAULT_PROXY_PORT);
-                if proxy_result.success {
-                    state.set_success("Proxy protection configured successfully!");
-                    new_proxy_state = Some(true);
+            // Browser Extension section
+            div { class: "card mb-lg",
+                h2 { class: "font-bold mb-md", "Browser Extension" }
+
+                if let Some(ref path_str) = ext_path_display {
+                    div { class: "mb-md",
+                        p { class: "text-sm text-muted mb-sm", "Extension Path:" }
+                        div {
+                            class: "card",
+                            style: "font-family: monospace; font-size: 11px; word-break: break-all;",
+                            "{path_str}"
+                        }
+                    }
+
+                    div { class: "flex gap-sm",
+                        button {
+                            class: "btn btn-secondary btn-sm",
+                            onclick: {
+                                let ext_path_clone = ext_path.clone();
+                                move |_| {
+                                    if let Some(ref path) = ext_path_clone {
+                                        let _ = open::that(path);
+                                    }
+                                }
+                            },
+                            "Open Folder"
+                        }
+                    }
+
+                    div { class: "mt-md",
+                        p { class: "text-sm text-muted", "Installation Steps:" }
+                        ol { style: "padding-left: 20px; font-size: 12px; color: var(--aegis-slate-300);",
+                            li { "Open chrome://extensions in your browser" }
+                            li { "Enable 'Developer mode' (toggle in top-right)" }
+                            li { "Click 'Load unpacked'" }
+                            li { "Select the extension folder above" }
+                        }
+                    }
                 } else {
-                    state.set_error(format!("Proxy setup failed: {}", proxy_result.message));
+                    p { class: "text-muted", "Extension folder not found." }
                 }
             }
-            ui.label(
-                RichText::new("Installs CA certificate and enables system proxy")
-                    .weak()
-                    .size(11.0),
-            );
-        });
-    }
 
-    // Apply state changes after closures
-    if let Some(proxy_state) = new_proxy_state {
-        settings.proxy_enabled = proxy_state;
-    }
-    if let Some(ca_state) = new_ca_state {
-        settings.ca_installed = ca_state;
-    }
+            // About section
+            div { class: "card",
+                h2 { class: "font-bold mb-md", "About" }
 
-    ui.add_space(8.0);
-    ui.label(
-        RichText::new("The proxy intercepts traffic to ChatGPT, Claude, and Gemini APIs.")
-            .size(11.0)
-            .weak(),
-    );
-}
+                p { class: "font-bold", "Aegis" }
+                p { class: "text-sm text-muted mb-sm", "AI Safety for Families" }
 
-/// Renders the about section.
-fn render_about_section(ui: &mut egui::Ui) {
-    ui.label(RichText::new("About").size(16.0).strong());
-    ui.add_space(8.0);
-
-    egui::Frame::new()
-        .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .corner_radius(8.0)
-        .inner_margin(16.0)
-        .show(ui, |ui| {
-            ui.label(RichText::new("Aegis").size(18.0).strong());
-            ui.label(RichText::new("AI Safety for Families").weak());
-            ui.add_space(8.0);
-
-            ui.horizontal(|ui| {
-                ui.label("Version:");
-                ui.label(env!("CARGO_PKG_VERSION"));
-            });
-
-            ui.add_space(8.0);
-
-            ui.horizontal(|ui| {
-                if ui.link("Documentation").clicked() {
-                    // Would open docs
-                }
-                ui.label(" | ");
-                if ui.link("Report Issue").clicked() {
-                    // Would open issue tracker
-                }
-                ui.label(" | ");
-                if ui.link("Privacy Policy").clicked() {
-                    // Would open privacy policy
-                }
-            });
-
-            ui.add_space(16.0);
-
-            // Check for updates
-            if ui.button("Check for Updates").clicked() {
-                // Would check for updates
+                p { class: "text-sm", "Version: {version}" }
             }
-        });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_settings_state_default() {
-        let state = SettingsState::default();
-        assert!(state.current_password.is_empty());
-        assert!(state.new_password.is_empty());
-        assert!(!state.show_change_password);
+        }
     }
 }

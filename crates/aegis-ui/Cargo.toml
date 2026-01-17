@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Settings GUI for Aegis"
+description = "Settings GUI for Aegis - Dioxus-based parent dashboard"
 
 [dependencies]
 aegis-core.workspace = true
@@ -16,9 +16,8 @@ thiserror.workspace = true
 chrono.workspace = true
 tracing.workspace = true
 
-# GUI framework
-eframe = "0.33"
-egui_extras = { version = "0.33", features = ["datepicker"] }
+# Dioxus GUI framework
+dioxus = { version = "0.6", features = ["desktop"] }
 
 # CSV export
 csv = "1.4"

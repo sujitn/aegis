@@ -1,4 +1,4 @@
-//! Application state management.
+//! Application state management for Dioxus.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -7,7 +7,6 @@ use aegis_core::auth::{AuthManager, SessionToken, SESSION_TIMEOUT};
 use aegis_proxy::FilteringState;
 use aegis_storage::{DailyStats, Database, Event, FlaggedEvent, FlaggedEventStats, Profile};
 use chrono::{Local, NaiveDate};
-use eframe::egui;
 
 use crate::error::{Result, UiError};
 
@@ -33,13 +32,12 @@ impl ProtectionStatus {
         }
     }
 
-    /// Returns the color for this status.
-    pub fn color(&self) -> egui::Color32 {
-        use crate::theme::status;
+    /// Returns the CSS class for this status.
+    pub fn css_class(&self) -> &'static str {
         match self {
-            Self::Active => status::SUCCESS, // Friendly green
-            Self::Paused => status::WARNING, // Warm amber
-            Self::Disabled => status::ERROR, // Soft red
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Disabled => "disabled",
         }
     }
 }
@@ -112,18 +110,20 @@ pub struct LogFilter {
 }
 
 /// Application state for the dashboard.
+/// This state is shared via Dioxus context and must be Clone.
+#[derive(Clone)]
 pub struct AppState {
-    /// Database connection.
+    /// Database connection (Arc for cloning).
     pub db: Arc<Database>,
 
-    /// Authentication manager.
-    pub auth: AuthManager,
+    /// Authentication manager (Arc for cloning).
+    pub auth: Arc<AuthManager>,
 
     /// Current session token.
     pub session: Option<SessionToken>,
 
-    /// Last activity time for session timeout.
-    pub last_activity: Instant,
+    /// Last activity time for session timeout (wrapped in Arc for cloning).
+    last_activity: Arc<std::sync::Mutex<Instant>>,
 
     /// Current view.
     pub view: View,
@@ -204,9 +204,9 @@ impl AppState {
 
         Self {
             db: Arc::new(db),
-            auth,
+            auth: Arc::new(auth),
             session: None,
-            last_activity: Instant::now(),
+            last_activity: Arc::new(std::sync::Mutex::new(Instant::now())),
             view: initial_view,
             protection_status: ProtectionStatus::Active,
             interception_mode: InterceptionMode::Proxy,
@@ -237,8 +237,10 @@ impl AppState {
     /// Checks if session is valid and not expired.
     pub fn is_authenticated(&self) -> bool {
         if let Some(ref token) = self.session {
-            if self.last_activity.elapsed() > SESSION_TIMEOUT {
-                return false;
+            if let Ok(last) = self.last_activity.lock() {
+                if last.elapsed() > SESSION_TIMEOUT {
+                    return false;
+                }
             }
             self.auth.is_session_valid(token)
         } else {
@@ -248,7 +250,9 @@ impl AppState {
 
     /// Updates last activity time.
     pub fn touch_activity(&mut self) {
-        self.last_activity = Instant::now();
+        if let Ok(mut last) = self.last_activity.lock() {
+            *last = Instant::now();
+        }
     }
 
     /// Attempts to login with password.
@@ -258,7 +262,7 @@ impl AppState {
         if self.auth.verify_password(password, &hash)? {
             let token = self.auth.create_session();
             self.session = Some(token);
-            self.last_activity = Instant::now();
+            self.touch_activity();
             self.db.update_last_login()?;
             self.view = View::Dashboard;
             self.password_input.clear();
@@ -278,7 +282,7 @@ impl AppState {
         // Auto-login after setup
         let token = self.auth.create_session();
         self.session = Some(token);
-        self.last_activity = Instant::now();
+        self.touch_activity();
         self.view = View::Dashboard;
         self.password_input.clear();
 

@@ -63,6 +63,10 @@ struct Args {
     /// Start minimized to tray (used by autostart)
     #[arg(long)]
     minimized: bool,
+
+    /// Run dashboard only (internal use - spawned from main process)
+    #[arg(long, hide = true)]
+    dashboard_only: bool,
 }
 
 /// Get the logs directory path.
@@ -457,9 +461,28 @@ fn configure_sentiment_analysis(filtering_state: &FilteringState, config: &Profi
     }
 }
 
+/// Spawn the dashboard as a separate process.
+/// This allows the dashboard to exit without killing the main process.
+/// Returns the Child process handle for tracking.
+fn spawn_dashboard_process() -> anyhow::Result<std::process::Child> {
+    let exe_path = std::env::current_exe()
+        .map_err(|e| anyhow::anyhow!("Failed to get current exe path: {}", e))?;
+
+    tracing::info!("Spawning dashboard subprocess: {:?}", exe_path);
+
+    let child = std::process::Command::new(&exe_path)
+        .arg("--dashboard-only")
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("Failed to spawn dashboard process: {}", e))?;
+
+    tracing::debug!("Dashboard subprocess started, PID: {}", child.id());
+
+    Ok(child)
+}
+
 /// Run the application with tray icon as primary interface.
 fn run_with_tray(
-    db: Database,
+    _db: Database,
     show_dashboard: bool,
     filtering_state: FilteringState,
 ) -> anyhow::Result<()> {
@@ -472,139 +495,162 @@ fn run_with_tray(
 
     let running = Arc::new(AtomicBool::new(true));
 
-    // Track if we should open dashboard
-    let mut should_open_dashboard = show_dashboard;
+    // Track dashboard subprocess
+    let mut dashboard_process: Option<std::process::Child> = None;
     let mut tray_status = TrayStatus::Protected;
 
-    // Main loop - reinitialize tray after each dashboard session
-    while running.load(Ordering::SeqCst) {
-        // Drain any stale events from previous tray instance
-        drain_stale_events();
+    // Drain any stale events
+    drain_stale_events();
 
-        // Small delay to let resources clean up
-        std::thread::sleep(std::time::Duration::from_millis(100));
+    // Create and initialize the system tray once
+    tracing::debug!("Creating system tray...");
+    let (mut tray, tray_rx) =
+        SystemTray::with_config(TrayConfig::new().with_initial_status(tray_status))?;
 
-        // Create and initialize the system tray
-        tracing::debug!("Creating new system tray...");
-        let (mut tray, tray_rx) =
-            SystemTray::with_config(TrayConfig::new().with_initial_status(tray_status))?;
+    tracing::debug!("Initializing system tray...");
+    tray.init()?;
+    tracing::info!("System tray initialized");
 
-        tracing::debug!("Initializing system tray...");
-        tray.init()?;
-        tracing::info!("System tray initialized");
-
-        // If we should open dashboard immediately, do it and skip tray loop
-        if should_open_dashboard {
-            should_open_dashboard = false;
-            tracing::debug!("Shutting down tray for dashboard...");
-            tray.shutdown();
-
-            // Drain events after shutdown
-            drain_stale_events();
-
-            tracing::info!("Opening dashboard...");
-            let db_clone = db.clone();
-            if let Err(e) = run_dashboard_with_filtering(db_clone, Some(filtering_state.clone())) {
-                tracing::error!("Dashboard error: {}", e);
+    // Open dashboard immediately if requested (e.g., first run)
+    if show_dashboard {
+        tracing::info!("Opening dashboard (subprocess) on startup...");
+        match spawn_dashboard_process() {
+            Ok(child) => {
+                dashboard_process = Some(child);
             }
-            tracing::info!("Dashboard closed, returning to tray");
-            continue;
+            Err(e) => {
+                tracing::error!("Failed to spawn dashboard: {}", e);
+            }
+        }
+    }
+
+    // Main event loop - tray stays alive the whole time
+    tracing::debug!("Entering main event loop...");
+    while running.load(Ordering::SeqCst) {
+        // Pump Windows messages to allow tray to receive events
+        pump_windows_messages();
+
+        // Check if dashboard process has exited
+        if let Some(ref mut child) = dashboard_process {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    tracing::info!("Dashboard subprocess exited with status: {:?}", status);
+                    dashboard_process = None;
+                }
+                Ok(None) => {
+                    // Still running - don't log to avoid spam
+                }
+                Err(e) => {
+                    tracing::error!("Error checking dashboard process: {}", e);
+                    dashboard_process = None;
+                }
+            }
+        } else {
+            // No dashboard process running - tray menu should allow opening
         }
 
-        // Tray event loop
-        tracing::debug!("Entering tray event loop...");
-        loop {
-            // Pump Windows messages to allow tray to receive events
-            pump_windows_messages();
+        // Poll tray events
+        let events = tray.poll_events();
 
-            // Poll tray events
-            let events = tray.poll_events();
-
-            for event in events {
-                match event {
-                    TrayEvent::MenuAction(action) => {
-                        tracing::debug!("Tray menu action: {:?}", action);
-                        match action {
-                            MenuAction::Dashboard | MenuAction::Settings => {
-                                should_open_dashboard = true;
-                            }
-                            MenuAction::Logs => {
-                                // Open logs folder
-                                if let Some(log_dir) = logs_dir() {
-                                    let _ = open::that(&log_dir);
+        for event in events {
+            match event {
+                TrayEvent::MenuAction(action) => {
+                    tracing::debug!("Tray menu action: {:?}", action);
+                    match action {
+                        MenuAction::Dashboard | MenuAction::Settings => {
+                            // Only open if not already open
+                            if dashboard_process.is_none() {
+                                tracing::info!("Opening dashboard (subprocess)...");
+                                match spawn_dashboard_process() {
+                                    Ok(child) => {
+                                        tracing::info!("Dashboard subprocess spawned, PID: {}", child.id());
+                                        dashboard_process = Some(child);
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Failed to spawn dashboard: {}", e);
+                                    }
                                 }
+                            } else {
+                                tracing::warn!("Dashboard request ignored - subprocess still tracked as running");
                             }
-                            MenuAction::Pause => {
-                                tray_status = TrayStatus::Paused;
-                                let _ = tray.set_status(tray_status);
+                        }
+                        MenuAction::Logs => {
+                            // Open logs folder
+                            if let Some(log_dir) = logs_dir() {
+                                tracing::info!("Opening logs folder: {:?}", log_dir);
+                                if let Err(e) = open::that(&log_dir) {
+                                    tracing::error!("Failed to open logs folder: {}", e);
+                                }
+                            } else {
+                                tracing::error!("Logs directory not found");
                             }
-                            MenuAction::Resume => {
-                                tray_status = TrayStatus::Protected;
-                                let _ = tray.set_status(tray_status);
+                        }
+                        MenuAction::Pause => {
+                            tracing::info!("Pausing filtering...");
+                            filtering_state.disable();
+                            tray_status = TrayStatus::Paused;
+                            let _ = tray.set_status(tray_status);
+                        }
+                        MenuAction::Resume => {
+                            tracing::info!("Resuming filtering...");
+                            filtering_state.enable();
+                            tray_status = TrayStatus::Protected;
+                            let _ = tray.set_status(tray_status);
+                        }
+                        MenuAction::Quit => {
+                            tracing::info!("Quit requested from tray");
+                            running.store(false, Ordering::SeqCst);
+                        }
+                    }
+                }
+                TrayEvent::DoubleClick => {
+                    // Only open if not already open
+                    if dashboard_process.is_none() {
+                        tracing::info!("Opening dashboard (subprocess) via double-click...");
+                        match spawn_dashboard_process() {
+                            Ok(child) => {
+                                dashboard_process = Some(child);
                             }
-                            MenuAction::Quit => {
-                                tracing::info!("Quit requested from tray");
-                                running.store(false, Ordering::SeqCst);
+                            Err(e) => {
+                                tracing::error!("Failed to spawn dashboard: {}", e);
                             }
                         }
                     }
-                    TrayEvent::DoubleClick => {
-                        should_open_dashboard = true;
-                    }
-                    TrayEvent::StatusChanged(status) => {
-                        tracing::info!("Protection status changed: {:?}", status);
-                        tray_status = status;
-                    }
+                }
+                TrayEvent::StatusChanged(status) => {
+                    tracing::info!("Protection status changed: {:?}", status);
+                    tray_status = status;
                 }
             }
-
-            // Check for events from channel
-            while let Ok(event) = tray_rx.try_recv() {
-                if let TrayEvent::MenuAction(MenuAction::Quit) = event {
-                    running.store(false, Ordering::SeqCst);
-                }
-            }
-
-            // Break inner loop if we need to open dashboard or quit
-            if should_open_dashboard || !running.load(Ordering::SeqCst) {
-                tracing::debug!(
-                    "Breaking tray loop: dashboard={}, running={}",
-                    should_open_dashboard,
-                    running.load(Ordering::SeqCst)
-                );
-                break;
-            }
-
-            // Small sleep to prevent busy loop
-            std::thread::sleep(std::time::Duration::from_millis(50));
         }
 
-        // Shutdown tray before opening dashboard or quitting
-        tracing::debug!("Shutting down tray...");
-        tray.shutdown();
-
-        // Drain events after shutdown
-        drain_stale_events();
-
-        // Open dashboard if requested
-        if should_open_dashboard && running.load(Ordering::SeqCst) {
-            should_open_dashboard = false;
-            tracing::info!("Opening dashboard...");
-
-            let db_clone = db.clone();
-            if let Err(e) = run_dashboard_with_filtering(db_clone, Some(filtering_state.clone())) {
-                tracing::error!("Dashboard error: {}", e);
+        // Check for events from channel
+        while let Ok(event) = tray_rx.try_recv() {
+            if let TrayEvent::MenuAction(MenuAction::Quit) = event {
+                running.store(false, Ordering::SeqCst);
             }
-            tracing::info!("Dashboard closed, returning to tray");
         }
+
+        // Small sleep to prevent busy loop
+        std::thread::sleep(std::time::Duration::from_millis(50));
     }
+
+    // Kill dashboard if still running when we quit
+    if let Some(mut child) = dashboard_process {
+        tracing::info!("Terminating dashboard subprocess...");
+        let _ = child.kill();
+    }
+
+    // Shutdown tray
+    tracing::debug!("Shutting down tray...");
+    tray.shutdown();
+    drain_stale_events();
 
     tracing::debug!("Exiting run_with_tray");
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     // Initialize logging (keep guard alive for the duration of the program)
@@ -617,8 +663,23 @@ async fn main() -> anyhow::Result<()> {
     let db = Database::new().map_err(|e| anyhow::anyhow!("Database error: {}", e))?;
     tracing::info!("Database opened at {:?}", Database::default_db_path()?);
 
+    // Dashboard-only mode: just run the dashboard UI (spawned from main process)
+    if args.dashboard_only {
+        tracing::info!("Running in dashboard-only mode (subprocess)");
+        run_dashboard_with_filtering(db, None)
+            .map_err(|e| anyhow::anyhow!("UI error: {}", e))?;
+        tracing::info!("Dashboard subprocess exiting");
+        return Ok(());
+    }
+
+    // Create a tokio runtime for background servers
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| anyhow::anyhow!("Failed to create tokio runtime: {}", e))?;
+
     // Start background servers and get the shared filtering state
-    let filtering_state = start_servers(db.clone()).await;
+    let filtering_state = runtime.block_on(start_servers(db.clone()));
 
     // Determine startup mode
     let first_run = is_first_run(&db);
