@@ -37,5 +37,8 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # HTTP client for API calls
 reqwest = { workspace = true, features = ["blocking"] }
 
+# Async runtime for polling
+tokio.workspace = true
+
 [dev-dependencies]
 tokio-test.workspace = true

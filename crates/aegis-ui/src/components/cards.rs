@@ -2,19 +2,31 @@
 
 use dioxus::prelude::*;
 
-use crate::state::{AppState, ProtectionStatus};
-use crate::components::icons::ShieldIcon;
+use aegis_core::protection::PauseDuration;
 
-/// Hero status card component.
+use crate::components::icons::ShieldIcon;
+use crate::state::{AppState, ProtectionStatus};
+
+/// Hero status card component with protection controls.
 #[component]
 pub fn HeroCard() -> Element {
-    let state = use_context::<Signal<AppState>>();
-    let protection_status = state.read().protection_status;
+    let mut state = use_context::<Signal<AppState>>();
+    let protection_status = state.read().protection_status();
     let today_stats = state.read().today_stats.clone();
+    let pause_remaining = state.read().pause_remaining_str();
+
+    // State for showing pause dropdown
+    let mut show_pause_menu = use_signal(|| false);
 
     let (title, subtitle) = match protection_status {
         ProtectionStatus::Active => ("Your Family is Protected", "All systems active"),
-        ProtectionStatus::Paused => ("Protection Paused", "Temporarily disabled"),
+        ProtectionStatus::Paused => {
+            if let Some(ref remaining) = pause_remaining {
+                ("Protection Paused", remaining.as_str())
+            } else {
+                ("Protection Paused", "Paused indefinitely")
+            }
+        }
         ProtectionStatus::Disabled => ("Protection Disabled", "Your family is not protected"),
     };
 
@@ -39,6 +51,116 @@ pub fn HeroCard() -> Element {
                             MiniStat { label: "Allowed", value: stats.allowed_count, color: "green" }
                         }
                     }
+                }
+
+                // Protection controls
+                div { class: "card-hero-actions",
+                    match protection_status {
+                        ProtectionStatus::Active => rsx! {
+                            // Pause button with dropdown
+                            div { class: "dropdown-container",
+                                button {
+                                    class: "btn btn-secondary",
+                                    onclick: move |_| show_pause_menu.set(!show_pause_menu()),
+                                    "Pause ▾"
+                                }
+
+                                if show_pause_menu() {
+                                    PauseMenu {
+                                        on_select: move |duration| {
+                                            let result = state.write().pause_protection(duration);
+                                            if let Err(e) = result {
+                                                state.write().set_error(e.to_string());
+                                            }
+                                            show_pause_menu.set(false);
+                                        },
+                                        on_close: move |_| show_pause_menu.set(false),
+                                        on_disable: move |_| {
+                                            let result = state.write().disable_protection();
+                                            if let Err(e) = result {
+                                                state.write().set_error(e.to_string());
+                                            }
+                                            show_pause_menu.set(false);
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        ProtectionStatus::Paused => rsx! {
+                            button {
+                                class: "btn btn-primary",
+                                onclick: move |_| {
+                                    state.write().resume_protection();
+                                },
+                                "Resume Now"
+                            }
+                        },
+                        ProtectionStatus::Disabled => rsx! {
+                            button {
+                                class: "btn btn-primary",
+                                onclick: move |_| {
+                                    state.write().resume_protection();
+                                },
+                                "Enable Protection"
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Pause duration menu dropdown.
+#[component]
+fn PauseMenu(
+    on_select: EventHandler<PauseDuration>,
+    on_close: EventHandler<MouseEvent>,
+    on_disable: EventHandler<MouseEvent>,
+) -> Element {
+    rsx! {
+        div { class: "dropdown-menu",
+            // Click outside to close
+            div {
+                class: "dropdown-overlay",
+                onclick: move |evt| on_close.call(evt)
+            }
+
+            div { class: "dropdown-content",
+                p { class: "dropdown-title", "Pause Protection" }
+
+                button {
+                    class: "dropdown-item",
+                    onclick: move |_| on_select.call(PauseDuration::FIVE_MINUTES),
+                    "5 minutes"
+                }
+                button {
+                    class: "dropdown-item",
+                    onclick: move |_| on_select.call(PauseDuration::FIFTEEN_MINUTES),
+                    "15 minutes"
+                }
+                button {
+                    class: "dropdown-item",
+                    onclick: move |_| on_select.call(PauseDuration::THIRTY_MINUTES),
+                    "30 minutes"
+                }
+                button {
+                    class: "dropdown-item",
+                    onclick: move |_| on_select.call(PauseDuration::ONE_HOUR),
+                    "1 hour"
+                }
+                button {
+                    class: "dropdown-item",
+                    onclick: move |_| on_select.call(PauseDuration::Indefinite),
+                    "Until I resume"
+                }
+
+                hr { class: "dropdown-divider" }
+
+                button {
+                    class: "dropdown-item dropdown-item-danger",
+                    onclick: move |evt| on_disable.call(evt),
+                    "Disable completely"
                 }
             }
         }

@@ -6,7 +6,7 @@ use tracing::info;
 use crate::error::Result;
 
 /// Current schema version.
-pub const SCHEMA_VERSION: i32 = 5;
+pub const SCHEMA_VERSION: i32 = 6;
 
 /// Run all pending migrations.
 pub fn run_migrations(conn: &Connection) -> Result<()> {
@@ -36,6 +36,10 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
         if current_version < 5 {
             migrate_v5(conn)?;
+        }
+
+        if current_version < 6 {
+            migrate_v6(conn)?;
         }
 
         set_schema_version(conn, SCHEMA_VERSION)?;
@@ -291,6 +295,67 @@ fn migrate_v5(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Migration to version 6: Centralized state management.
+/// Adds tables for cross-process state synchronization (F032).
+fn migrate_v6(conn: &Connection) -> Result<()> {
+    info!("Applying migration v6: Centralized state management");
+
+    // App state table - central key-value store for application state
+    // Used for protection status, interception mode, etc.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS app_state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_by TEXT
+        )",
+        [],
+    )?;
+
+    // Initialize default protection state
+    conn.execute(
+        "INSERT OR IGNORE INTO app_state (key, value, updated_by) VALUES ('protection', '{\"status\":\"active\",\"pause_until\":null}', 'system')",
+        [],
+    )?;
+
+    // Sessions table - persistent session storage for cross-process auth
+    // Replaces in-memory session HashMap in AuthManager
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS sessions (
+            token TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            expires_at TEXT NOT NULL,
+            last_used_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )",
+        [],
+    )?;
+
+    // Index for cleaning up expired sessions
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions (expires_at)",
+        [],
+    )?;
+
+    // State changes table - sequence log for cache invalidation
+    // Readers poll this to detect when they need to refresh their cache
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS state_changes (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            state_key TEXT NOT NULL,
+            changed_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )",
+        [],
+    )?;
+
+    // Index for efficient polling (WHERE seq > last_seen)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_state_changes_seq ON state_changes (seq)",
+        [],
+    )?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,6 +390,26 @@ mod tests {
             .ok();
         conn.execute("SELECT * FROM flagged_events LIMIT 1", [])
             .ok();
+        // v6 tables
+        conn.execute("SELECT * FROM app_state LIMIT 1", []).ok();
+        conn.execute("SELECT * FROM sessions LIMIT 1", []).ok();
+        conn.execute("SELECT * FROM state_changes LIMIT 1", []).ok();
+    }
+
+    #[test]
+    fn test_app_state_initialized() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        // Verify protection state is initialized
+        let value: String = conn
+            .query_row(
+                "SELECT value FROM app_state WHERE key = 'protection'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(value.contains("active"));
     }
 
     #[test]

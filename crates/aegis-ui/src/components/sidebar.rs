@@ -10,7 +10,7 @@ use crate::components::icons::ShieldIcon;
 pub fn Sidebar() -> Element {
     let mut state = use_context::<Signal<AppState>>();
     let current_view = state.read().view;
-    let protection_status = state.read().protection_status;
+    let protection_status = state.read().protection_status();
     let flagged_count = state.read().unacknowledged_flagged_count();
     let status_class = protection_status.css_class();
     let status_str = protection_status.as_str();

@@ -35,6 +35,7 @@ pub mod models;
 mod pool;
 pub mod repository;
 mod schema;
+pub mod state_manager;
 
 pub use database::Database;
 pub use error::{Result, StorageError};
@@ -44,7 +45,11 @@ pub use models::{
     NewProfile, NewRule, NewSite, Profile, ProfileSentimentConfig, Rule, Site,
 };
 pub use pool::ConnectionPool;
-pub use repository::{create_preview, create_snippet, hash_prompt, FlaggedEventsRepo};
+pub use repository::{
+    create_preview, create_snippet, hash_prompt, FlaggedEventsRepo, ProtectionState, SessionRecord,
+    StateChange,
+};
+pub use state_manager::{PauseDuration, StateError, StateManager};
 
 // Re-export for backwards compatibility
 pub mod db {

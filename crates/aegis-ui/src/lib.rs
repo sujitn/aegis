@@ -155,11 +155,29 @@ fn App() -> Element {
 /// Layout for authenticated views with sidebar.
 #[component]
 fn AuthenticatedLayout() -> Element {
-    let state = use_context::<Signal<AppState>>();
+    let mut state = use_context::<Signal<AppState>>();
 
     // Check session and get current view (read-only during render)
     let is_authenticated = state.read().is_authenticated();
     let current_view = state.read().view;
+
+    // Background polling coroutine for real-time state updates
+    let _poller = use_coroutine(move |_rx: UnboundedReceiver<()>| async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+        loop {
+            interval.tick().await;
+
+            // Refresh protection status from database
+            state.write().refresh_protection_status();
+
+            // Refresh data less frequently (every 5 seconds)
+            static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if count % 5 == 0 {
+                let _ = state.write().refresh_data();
+            }
+        }
+    });
 
     // If not authenticated, redirect to login view
     // Note: The actual view change happens via navigation, not direct state write during render

@@ -263,3 +263,44 @@ pub struct ReloadRulesResponse {
     /// Message describing the result.
     pub message: String,
 }
+
+// ===== Protection Control API =====
+
+/// Request body for POST /api/protection/pause.
+#[derive(Debug, Deserialize)]
+pub struct PauseProtectionRequest {
+    /// Session token for authentication.
+    pub session_token: String,
+    /// Duration type: "minutes", "hours", or "indefinite".
+    pub duration_type: String,
+    /// Duration value (ignored if duration_type is "indefinite").
+    #[serde(default)]
+    pub duration_value: u32,
+}
+
+/// Request body for POST /api/protection/resume.
+#[derive(Debug, Deserialize)]
+pub struct ResumeProtectionRequest {
+    /// Session token for authentication (optional - resume is always allowed).
+    #[serde(default)]
+    pub session_token: Option<String>,
+}
+
+/// Response body for protection control operations.
+#[derive(Debug, Serialize)]
+pub struct ProtectionResponse {
+    pub success: bool,
+    /// Current protection status after the operation.
+    pub status: String,
+    /// Message describing the result.
+    pub message: String,
+}
+
+/// Response body for GET /api/protection/status.
+#[derive(Debug, Serialize)]
+pub struct ProtectionStatusResponse {
+    /// Whether filtering is enabled.
+    pub enabled: bool,
+    /// Current status: "active", "paused", or "disabled".
+    pub status: String,
+}

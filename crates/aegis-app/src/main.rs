@@ -230,7 +230,10 @@ async fn start_servers(db: Database) -> FilteringState {
 
     // Load initial rules from the first enabled profile (if any)
     let initial_rule_engine = load_initial_rules(&rules_db);
-    let filtering_state = FilteringState::with_rule_engine(initial_rule_engine);
+
+    // Create FilteringState with StateCache for database-backed protection state (F032)
+    let filtering_state =
+        FilteringState::with_rule_engine_and_cache(initial_rule_engine, proxy_db.clone());
 
     // Start HTTP API server in background (for browser extension)
     // Pass the FilteringState so the reload endpoint can update it

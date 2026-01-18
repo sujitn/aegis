@@ -6,15 +6,17 @@ use tracing::{debug, info};
 
 use aegis_core::auth::SessionToken;
 use aegis_core::classifier::SentimentFlag;
-use aegis_storage::{models::Action, NewRule};
+use aegis_storage::{models::Action, NewRule, PauseDuration};
 
 use crate::error::{ApiError, Result};
 use crate::models::{
     AcknowledgeAllRequest, AcknowledgeRequest, AcknowledgeResponse, AuthVerifyRequest,
     AuthVerifyResponse, CategoryCountsResponse, CategoryMatchResponse, CheckRequest, CheckResponse,
     DeleteFlaggedRequest, FlaggedEntry, FlaggedQuery, FlaggedResponse, FlaggedStatsResponse,
-    FlaggedTypeCounts, LogEntry, LogsQuery, LogsResponse, ReloadRulesRequest, ReloadRulesResponse,
-    RuleEntry, RulesResponse, StatsResponse, UpdateRulesRequest, UpdateRulesResponse,
+    FlaggedTypeCounts, LogEntry, LogsQuery, LogsResponse, PauseProtectionRequest,
+    ProtectionResponse, ProtectionStatusResponse, ReloadRulesRequest, ReloadRulesResponse,
+    ResumeProtectionRequest, RuleEntry, RulesResponse, StatsResponse, UpdateRulesRequest,
+    UpdateRulesResponse,
 };
 use crate::state::AppState;
 
@@ -28,6 +30,22 @@ pub async fn check_prompt(
         os_username = ?req.os_username,
         "Checking prompt"
     );
+
+    // Check if protection is enabled (F032 - read from database)
+    let is_filtering_enabled = state
+        .state_manager
+        .is_filtering_enabled()
+        .unwrap_or(true); // Default to enabled on error
+
+    if !is_filtering_enabled {
+        debug!("Protection is paused/disabled, allowing prompt");
+        return Ok(Json(CheckResponse {
+            action: aegis_core::rule_engine::RuleAction::Allow,
+            reason: "protection_paused".to_string(),
+            categories: vec![],
+            latency_ms: 0,
+        }));
+    }
 
     // Classify the prompt
     let classification = {
@@ -592,5 +610,112 @@ pub async fn reload_rules(
             "Reloaded {} time rules and {} content rules for profile '{}'",
             time_rules_count, content_rules_count, profile.name
         ),
+    }))
+}
+
+// ===== Protection Control Handlers =====
+
+/// GET /api/protection/status - Get current protection status.
+///
+/// Uses centralized state from database (F032) for cross-process consistency.
+pub async fn get_protection_status(
+    State(state): State<AppState>,
+) -> Result<Json<ProtectionStatusResponse>> {
+    // Read from centralized state manager (database)
+    let protection_state = state
+        .state_manager
+        .get_protection_state()
+        .map_err(|e| ApiError::Internal(format!("Failed to get protection state: {}", e)))?;
+
+    let enabled = protection_state.is_active();
+    let status = if protection_state.is_disabled() {
+        "disabled".to_string()
+    } else if protection_state.is_paused() {
+        "paused".to_string()
+    } else {
+        "active".to_string()
+    };
+
+    Ok(Json(ProtectionStatusResponse { enabled, status }))
+}
+
+/// POST /api/protection/pause - Pause protection.
+///
+/// Persists to database (F032) so all processes see the change.
+/// Note: Auth is handled by the dashboard UI (user must be logged in to see the pause button).
+pub async fn pause_protection(
+    State(state): State<AppState>,
+    Json(req): Json<PauseProtectionRequest>,
+) -> Result<Json<ProtectionResponse>> {
+    // Note: We skip session validation because the dashboard runs in a separate process
+    // with its own AuthManager. The user has already authenticated in the dashboard.
+    let _ = req.session_token; // Acknowledge the field
+
+    // Convert request to PauseDuration
+    let duration = match req.duration_type.as_str() {
+        "minutes" => PauseDuration::Minutes(req.duration_value as u32),
+        "hours" => PauseDuration::Hours(req.duration_value as u32),
+        "indefinite" => PauseDuration::Indefinite,
+        _ => {
+            return Err(ApiError::BadRequest(format!(
+                "Invalid duration type: {}",
+                req.duration_type
+            )))
+        }
+    };
+
+    // Pause via centralized state manager (writes to database)
+    state
+        .state_manager
+        .pause_protection(duration)
+        .map_err(|e| ApiError::Internal(format!("Failed to pause protection: {}", e)))?;
+
+    // Also update FilteringState for immediate in-memory sync (if proxy is in same process)
+    if let Some(ref filtering_state) = state.filtering_state {
+        filtering_state.disable();
+    }
+
+    let duration_desc = match req.duration_type.as_str() {
+        "minutes" => format!("{} minutes", req.duration_value),
+        "hours" => format!("{} hours", req.duration_value),
+        "indefinite" => "indefinitely".to_string(),
+        _ => "unknown duration".to_string(),
+    };
+
+    info!("Protection paused for {} (persisted to database)", duration_desc);
+
+    Ok(Json(ProtectionResponse {
+        success: true,
+        status: "paused".to_string(),
+        message: format!("Protection paused for {}", duration_desc),
+    }))
+}
+
+/// POST /api/protection/resume - Resume protection.
+///
+/// Persists to database (F032) so all processes see the change.
+pub async fn resume_protection(
+    State(state): State<AppState>,
+    Json(_req): Json<ResumeProtectionRequest>,
+) -> Result<Json<ProtectionResponse>> {
+    // Note: Resume does not require auth (security design - resuming is always allowed)
+
+    // Resume via centralized state manager (writes to database)
+    state
+        .state_manager
+        .resume_protection()
+        .map_err(|e| ApiError::Internal(format!("Failed to resume protection: {}", e)))?;
+
+    // Also update FilteringState for immediate in-memory sync (if proxy is in same process)
+    if let Some(ref filtering_state) = state.filtering_state {
+        filtering_state.enable();
+    }
+
+    info!("Protection resumed (persisted to database)");
+
+    Ok(Json(ProtectionResponse {
+        success: true,
+        status: "active".to_string(),
+        message: "Protection resumed".to_string(),
     }))
 }

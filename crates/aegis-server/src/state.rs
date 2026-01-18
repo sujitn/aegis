@@ -7,7 +7,7 @@ use aegis_core::classifier::{SentimentAnalyzer, SentimentConfig, TieredClassifie
 use aegis_core::profile::ProfileManager;
 use aegis_core::rule_engine::RuleEngine;
 use aegis_proxy::FilteringState;
-use aegis_storage::Database;
+use aegis_storage::{Database, StateManager};
 
 /// Shared application state.
 #[derive(Clone)]
@@ -27,13 +27,18 @@ pub struct AppState {
     /// Optional filtering state shared with the proxy.
     /// When set, rule reloads will also update the proxy's rules.
     pub filtering_state: Option<FilteringState>,
+    /// Centralized state manager for cross-process state (F032).
+    /// Protection state is now persisted to database for dashboard/proxy sync.
+    pub state_manager: StateManager,
 }
 
 impl AppState {
     /// Creates a new application state with the given database.
     pub fn new(db: Database) -> Self {
+        let db_arc = Arc::new(db);
+        let state_manager = StateManager::new(db_arc.clone(), "server");
         Self {
-            db: Arc::new(db),
+            db: db_arc,
             auth: Arc::new(AuthManager::new()),
             classifier: Arc::new(RwLock::new(TieredClassifier::keyword_only())),
             rules: Arc::new(RwLock::new(RuleEngine::with_defaults())),
@@ -42,6 +47,7 @@ impl AppState {
                 SentimentConfig::default(),
             ))),
             filtering_state: None,
+            state_manager,
         }
     }
 
@@ -54,8 +60,10 @@ impl AppState {
     ///
     /// This allows rule reloads to also update the proxy's rule engine.
     pub fn with_filtering_state(db: Database, filtering_state: FilteringState) -> Self {
+        let db_arc = Arc::new(db);
+        let state_manager = StateManager::new(db_arc.clone(), "server");
         Self {
-            db: Arc::new(db),
+            db: db_arc,
             auth: Arc::new(AuthManager::new()),
             classifier: Arc::new(RwLock::new(TieredClassifier::keyword_only())),
             rules: Arc::new(RwLock::new(RuleEngine::with_defaults())),
@@ -64,6 +72,7 @@ impl AppState {
                 SentimentConfig::default(),
             ))),
             filtering_state: Some(filtering_state),
+            state_manager,
         }
     }
 
@@ -75,8 +84,10 @@ impl AppState {
         rules: RuleEngine,
         profiles: ProfileManager,
     ) -> Self {
+        let db_arc = Arc::new(db);
+        let state_manager = StateManager::new(db_arc.clone(), "server");
         Self {
-            db: Arc::new(db),
+            db: db_arc,
             auth: Arc::new(auth),
             classifier: Arc::new(RwLock::new(classifier)),
             rules: Arc::new(RwLock::new(rules)),
@@ -85,6 +96,7 @@ impl AppState {
                 SentimentConfig::default(),
             ))),
             filtering_state: None,
+            state_manager,
         }
     }
 }

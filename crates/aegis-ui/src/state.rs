@@ -1,11 +1,16 @@
 //! Application state management for Dioxus.
 
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use aegis_core::auth::{AuthManager, SessionToken, SESSION_TIMEOUT};
+use aegis_core::protection::{PauseDuration, ProtectionManager};
 use aegis_proxy::FilteringState;
-use aegis_storage::{DailyStats, Database, Event, FlaggedEvent, FlaggedEventStats, Profile};
+use aegis_storage::{
+    DailyStats, Database, Event, FlaggedEvent, FlaggedEventStats, PauseDuration as StoragePauseDuration,
+    Profile, StateManager,
+};
+use chrono::{DateTime, Utc};
 use chrono::{Local, NaiveDate};
 
 use crate::error::{Result, UiError};
@@ -119,6 +124,12 @@ pub struct AppState {
     /// Authentication manager (Arc for cloning).
     pub auth: Arc<AuthManager>,
 
+    /// Protection manager for pause/resume/disable.
+    pub protection: ProtectionManager,
+
+    /// Centralized state manager for cross-process state (F032).
+    pub state_manager: StateManager,
+
     /// Current session token.
     pub session: Option<SessionToken>,
 
@@ -128,8 +139,12 @@ pub struct AppState {
     /// Current view.
     pub view: View,
 
-    /// Protection status.
-    pub protection_status: ProtectionStatus,
+    /// Cached protection status for UI reactivity.
+    /// This is updated whenever protection state changes.
+    pub cached_protection_status: ProtectionStatus,
+
+    /// Cached pause expiry time (from database).
+    pub cached_pause_until: Option<DateTime<Utc>>,
 
     /// Interception mode.
     pub interception_mode: InterceptionMode,
@@ -192,8 +207,31 @@ impl AppState {
     /// If `filtering_state` is provided, rule changes made in the UI will be
     /// immediately applied to the running proxy.
     pub fn with_filtering_state(db: Database, filtering_state: Option<FilteringState>) -> Self {
+        let db_arc = Arc::new(db);
         let auth = AuthManager::new();
-        let is_first_setup = !db.is_auth_setup().unwrap_or(false);
+        let protection = ProtectionManager::new();
+        let state_manager = StateManager::new(db_arc.clone(), "dashboard");
+        let is_first_setup = !db_arc.is_auth_setup().unwrap_or(false);
+
+        // Get initial protection status from database (F032)
+        let (initial_protection_status, initial_pause_until) = state_manager
+            .get_protection_state()
+            .map(|ps| {
+                let status = if ps.is_disabled() {
+                    ProtectionStatus::Disabled
+                } else if ps.is_paused() {
+                    ProtectionStatus::Paused
+                } else {
+                    ProtectionStatus::Active
+                };
+                let pause_until = ps.pause_until.and_then(|s| {
+                    DateTime::parse_from_rfc3339(&s)
+                        .ok()
+                        .map(|dt| dt.with_timezone(&Utc))
+                });
+                (status, pause_until)
+            })
+            .unwrap_or((ProtectionStatus::Active, None));
 
         // Start with Setup view if first run, otherwise Login
         let initial_view = if is_first_setup {
@@ -203,12 +241,15 @@ impl AppState {
         };
 
         Self {
-            db: Arc::new(db),
+            db: db_arc,
             auth: Arc::new(auth),
+            protection,
+            state_manager,
             session: None,
             last_activity: Arc::new(std::sync::Mutex::new(Instant::now())),
             view: initial_view,
-            protection_status: ProtectionStatus::Active,
+            cached_protection_status: initial_protection_status,
+            cached_pause_until: initial_pause_until,
             interception_mode: InterceptionMode::Proxy,
             selected_profile_id: None,
             rules_tab: RulesTab::Time,
@@ -428,6 +469,186 @@ impl AppState {
         writer.flush()?;
         Ok(())
     }
+
+    // ==================== Protection Methods ====================
+
+    /// Returns the current protection status for UI display.
+    /// Uses the cached value for reactivity.
+    pub fn protection_status(&self) -> ProtectionStatus {
+        self.cached_protection_status
+    }
+
+    /// Syncs the cached protection status with the centralized state (F032).
+    /// Reads from database via StateManager.
+    fn sync_protection_status(&mut self) {
+        // Read from centralized state manager (database)
+        if let Ok(ps) = self.state_manager.get_protection_state() {
+            self.cached_protection_status = if ps.is_disabled() {
+                ProtectionStatus::Disabled
+            } else if ps.is_paused() {
+                ProtectionStatus::Paused
+            } else {
+                ProtectionStatus::Active
+            };
+
+            // Update pause expiry
+            self.cached_pause_until = ps.pause_until.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            });
+
+            // Also sync local ProtectionManager state (for consistency)
+            if self.cached_protection_status == ProtectionStatus::Active {
+                let _ = self.protection.resume();
+            }
+        }
+    }
+
+    /// Refreshes protection status from the database.
+    /// Call this to pick up changes made by other processes.
+    pub fn refresh_protection_status(&mut self) {
+        self.sync_protection_status();
+    }
+
+    /// Returns remaining pause time, if any.
+    /// Uses the cached pause expiry from the database.
+    pub fn pause_remaining(&self) -> Option<Duration> {
+        self.cached_pause_until.and_then(|until| {
+            let now = Utc::now();
+            if until > now {
+                let diff = until - now;
+                Some(Duration::from_secs(diff.num_seconds().max(0) as u64))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Formats the remaining pause time as a human-readable string.
+    pub fn pause_remaining_str(&self) -> Option<String> {
+        self.pause_remaining().map(|d| {
+            let total_secs = d.as_secs();
+            let hours = total_secs / 3600;
+            let mins = (total_secs % 3600) / 60;
+            let secs = total_secs % 60;
+
+            if hours > 0 {
+                format!("{}h {}m", hours, mins)
+            } else if mins > 0 {
+                format!("{}m {}s", mins, secs)
+            } else {
+                format!("{}s", secs)
+            }
+        })
+    }
+
+    /// Pauses protection for the specified duration.
+    /// Requires an authenticated session.
+    /// Persists to database and calls API to notify proxy.
+    pub fn pause_protection(&mut self, duration: PauseDuration) -> Result<()> {
+        let session = self.session.as_ref().ok_or(UiError::Auth(
+            aegis_core::auth::AuthError::SessionInvalid,
+        ))?;
+
+        // Convert aegis_core PauseDuration to aegis_storage PauseDuration
+        let storage_duration = match duration {
+            PauseDuration::Minutes(m) => StoragePauseDuration::Minutes(m),
+            PauseDuration::Hours(h) => StoragePauseDuration::Hours(h),
+            PauseDuration::Indefinite => StoragePauseDuration::Indefinite,
+        };
+
+        // Persist to database via StateManager (F032)
+        self.state_manager
+            .pause_protection(storage_duration)
+            .map_err(|e| UiError::InvalidInput(format!("Failed to pause: {}", e)))?;
+
+        // Also update local state for immediate UI feedback
+        let _ = self.protection.pause(duration.clone(), session, &self.auth);
+
+        // Call API to notify proxy (in case it's in a separate process)
+        let (duration_type, duration_value) = match duration {
+            PauseDuration::Minutes(m) => ("minutes", m),
+            PauseDuration::Hours(h) => ("hours", h),
+            PauseDuration::Indefinite => ("indefinite", 0),
+        };
+
+        let session_token = session.as_str().to_string();
+        let _ = std::thread::spawn(move || {
+            let client = reqwest::blocking::Client::new();
+            let _ = client
+                .post("http://127.0.0.1:48765/api/protection/pause")
+                .json(&serde_json::json!({
+                    "session_token": session_token,
+                    "duration_type": duration_type,
+                    "duration_value": duration_value
+                }))
+                .send();
+        });
+
+        self.sync_protection_status();
+        Ok(())
+    }
+
+    /// Resumes protection immediately.
+    /// Does not require authentication.
+    /// Persists to database and calls API to notify proxy.
+    pub fn resume_protection(&mut self) {
+        // Persist to database via StateManager (F032)
+        if let Err(e) = self.state_manager.resume_protection() {
+            tracing::warn!("Failed to resume protection in database: {}", e);
+        }
+
+        // Also update local state
+        let _ = self.protection.resume();
+
+        // Call API to notify proxy (in case it's in a separate process)
+        let _ = std::thread::spawn(|| {
+            let client = reqwest::blocking::Client::new();
+            let _ = client
+                .post("http://127.0.0.1:48765/api/protection/resume")
+                .json(&serde_json::json!({}))
+                .send();
+        });
+
+        self.sync_protection_status();
+    }
+
+    /// Disables protection completely.
+    /// Requires an authenticated session.
+    /// Persists to database and calls API to notify proxy.
+    pub fn disable_protection(&mut self) -> Result<()> {
+        let session = self.session.as_ref().ok_or(UiError::Auth(
+            aegis_core::auth::AuthError::SessionInvalid,
+        ))?;
+
+        // Persist to database via StateManager (F032)
+        self.state_manager
+            .disable_protection()
+            .map_err(|e| UiError::InvalidInput(format!("Failed to disable: {}", e)))?;
+
+        // Also update local state
+        let _ = self.protection.disable(session, &self.auth);
+
+        // Call API to notify proxy (in case it's in a separate process)
+        let session_token = session.as_str().to_string();
+        let _ = std::thread::spawn(move || {
+            let client = reqwest::blocking::Client::new();
+            let _ = client
+                .post("http://127.0.0.1:48765/api/protection/pause")
+                .json(&serde_json::json!({
+                    "session_token": session_token,
+                    "duration_type": "indefinite",
+                    "duration_value": 0
+                }))
+                .send();
+        });
+
+        self.sync_protection_status();
+        Ok(())
+    }
+
+    // ==================== Message Methods ====================
 
     /// Clears message after display.
     pub fn clear_messages(&mut self) {
