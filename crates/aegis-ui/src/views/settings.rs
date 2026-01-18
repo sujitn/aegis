@@ -6,8 +6,11 @@ use auto_launch::{AutoLaunch, AutoLaunchBuilder};
 use dioxus::prelude::*;
 
 use aegis_core::extension_install::get_extension_path;
-use aegis_proxy::setup::{install_ca_certificate, is_ca_installed};
-use aegis_proxy::CaManager;
+use aegis_proxy::setup::{
+    disable_system_proxy, enable_system_proxy, install_ca_certificate, is_ca_installed,
+    is_proxy_enabled,
+};
+use aegis_proxy::{CaManager, DEFAULT_PROXY_PORT};
 
 use crate::state::AppState;
 
@@ -65,7 +68,12 @@ pub fn SettingsView() -> Element {
     let mut confirm_password = use_signal(String::new);
     let mut interception_mode = use_signal(|| InterceptionMode::Extension);
     let mut show_ca_instructions = use_signal(|| false);
+    let mut show_proxy_instructions = use_signal(|| false);
     let mut ca_installing = use_signal(|| false);
+    let mut proxy_configuring = use_signal(|| false);
+
+    // Proxy configuration constants
+    const PROXY_HOST: &str = "127.0.0.1";
 
     // Cache paths (computed once)
     let ext_path = get_extension_path();
@@ -81,9 +89,16 @@ pub fn SettingsView() -> Element {
 
     // Cache CA installation status - computed once lazily
     let mut ca_installed_status = use_signal(|| {
-        ca_path.as_ref().map(|p| is_ca_installed(p)).unwrap_or(false)
+        ca_path
+            .as_ref()
+            .map(|p| is_ca_installed(p))
+            .unwrap_or(false)
     });
     let ca_installed = ca_installed_status();
+
+    // Cache proxy enabled status
+    let mut proxy_enabled_status = use_signal(|| is_proxy_enabled(PROXY_HOST, DEFAULT_PROXY_PORT));
+    let proxy_enabled = proxy_enabled_status();
 
     rsx! {
         div {
@@ -229,7 +244,7 @@ pub fn SettingsView() -> Element {
                                 div {
                                     class: "collapsible-header",
                                     onclick: move |_| show_ca_instructions.set(!show_ca_instructions()),
-                                    span { class: "font-bold text-sm", "Manual Installation Instructions" }
+                                    span { class: "font-bold text-sm", "Manual Certificate Installation" }
                                     span { if show_ca_instructions() { "▲" } else { "▼" } }
                                 }
 
@@ -241,6 +256,106 @@ pub fn SettingsView() -> Element {
                             }
                         } else {
                             p { class: "text-muted", "CA certificate not generated yet. Start the proxy to generate it." }
+                        }
+
+                        // System Proxy Configuration section
+                        div { class: "mt-md pt-md", style: "border-top: 1px solid var(--aegis-slate-700);",
+                            h3 { class: "font-bold text-sm mb-md", "System Proxy Configuration" }
+
+                            div { class: "flex items-center gap-sm mb-md",
+                                if proxy_enabled {
+                                    span { class: "tag tag-success", "System Proxy Enabled" }
+                                } else {
+                                    span { class: "tag tag-warning", "System Proxy Not Configured" }
+                                }
+                            }
+
+                            // Proxy address display
+                            div { class: "mb-md",
+                                p { class: "text-sm text-muted mb-sm", "Proxy Address:" }
+                                div {
+                                    class: "card",
+                                    style: "background-color: var(--aegis-slate-800);",
+                                    div { class: "flex items-center gap-md",
+                                        div {
+                                            code { style: "font-size: 14px; font-weight: bold;", "Host: " }
+                                            code { class: "px-2 py-1", style: "background-color: var(--aegis-slate-700); border-radius: 4px; font-size: 14px;", "127.0.0.1" }
+                                        }
+                                        div {
+                                            code { style: "font-size: 14px; font-weight: bold;", "Port: " }
+                                            code { class: "px-2 py-1", style: "background-color: var(--aegis-slate-700); border-radius: 4px; font-size: 14px;", "{DEFAULT_PROXY_PORT}" }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Enable/Disable proxy button
+                            if ca_installed {
+                                div { class: "mb-md",
+                                    if proxy_enabled {
+                                        button {
+                                            class: "btn btn-warning",
+                                            disabled: proxy_configuring(),
+                                            onclick: move |_| {
+                                                proxy_configuring.set(true);
+                                                let result = disable_system_proxy();
+                                                proxy_configuring.set(false);
+                                                if result.success {
+                                                    state.write().set_success(&result.message);
+                                                    proxy_enabled_status.set(false);
+                                                } else {
+                                                    state.write().set_error(&result.message);
+                                                }
+                                            },
+                                            if proxy_configuring() { "Disabling..." } else { "Disable System Proxy" }
+                                        }
+                                    } else {
+                                        button {
+                                            class: "btn btn-primary",
+                                            disabled: proxy_configuring(),
+                                            onclick: move |_| {
+                                                proxy_configuring.set(true);
+                                                let result = enable_system_proxy(PROXY_HOST, DEFAULT_PROXY_PORT);
+                                                proxy_configuring.set(false);
+                                                if result.success {
+                                                    state.write().set_success(&result.message);
+                                                    proxy_enabled_status.set(true);
+                                                } else {
+                                                    state.write().set_error(&result.message);
+                                                }
+                                            },
+                                            if proxy_configuring() { "Enabling..." } else { "Enable System Proxy Automatically" }
+                                        }
+                                    }
+                                    p { class: "text-sm text-muted mt-sm",
+                                        if proxy_enabled {
+                                            "System traffic is being routed through Aegis proxy."
+                                        } else {
+                                            "This will configure your system to route traffic through the Aegis proxy."
+                                        }
+                                    }
+                                }
+                            } else {
+                                p { class: "text-sm text-warning mb-md",
+                                    "Install the CA certificate first before enabling system proxy."
+                                }
+                            }
+
+                            // Manual proxy setup instructions
+                            div {
+                                div {
+                                    class: "collapsible-header",
+                                    onclick: move |_| show_proxy_instructions.set(!show_proxy_instructions()),
+                                    span { class: "font-bold text-sm", "Manual Proxy Setup Instructions" }
+                                    span { if show_proxy_instructions() { "▲" } else { "▼" } }
+                                }
+
+                                if show_proxy_instructions() {
+                                    div { class: "mt-sm",
+                                        ProxySetupInstructions {}
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -458,6 +573,84 @@ fn CaInstallInstructions() -> Element {
             div {
                 p { class: "text-sm text-muted", style: "font-style: italic;",
                     "Note: Chrome, Edge, and other Chromium-based browsers use the system certificate store. Firefox maintains its own certificate store and may require separate configuration."
+                }
+            }
+        }
+    }
+}
+
+/// Manual proxy setup instructions component.
+#[component]
+fn ProxySetupInstructions() -> Element {
+    rsx! {
+        div { class: "space-y-md",
+            // Windows instructions
+            div {
+                h5 { class: "font-bold text-sm mb-sm", "Windows" }
+                ol { class: "text-sm text-muted", style: "padding-left: 20px;",
+                    li { "Open Settings → Network & Internet → Proxy" }
+                    li { "Under 'Manual proxy setup', turn on 'Use a proxy server'" }
+                    li {
+                        "Enter Address: "
+                        code { class: "px-1", style: "background-color: var(--aegis-slate-700); border-radius: 4px;", "127.0.0.1" }
+                    }
+                    li {
+                        "Enter Port: "
+                        code { class: "px-1", style: "background-color: var(--aegis-slate-700); border-radius: 4px;", "8766" }
+                    }
+                    li { "Click 'Save'" }
+                }
+            }
+
+            // macOS instructions
+            div {
+                h5 { class: "font-bold text-sm mb-sm", "macOS" }
+                ol { class: "text-sm text-muted", style: "padding-left: 20px;",
+                    li { "Open System Preferences → Network" }
+                    li { "Select your active network connection (Wi-Fi or Ethernet)" }
+                    li { "Click 'Advanced...' → 'Proxies' tab" }
+                    li { "Check both 'Web Proxy (HTTP)' and 'Secure Web Proxy (HTTPS)'" }
+                    li {
+                        "For both, enter Server: "
+                        code { class: "px-1", style: "background-color: var(--aegis-slate-700); border-radius: 4px;", "127.0.0.1" }
+                        " and Port: "
+                        code { class: "px-1", style: "background-color: var(--aegis-slate-700); border-radius: 4px;", "8766" }
+                    }
+                    li { "Click 'OK', then 'Apply'" }
+                }
+            }
+
+            // Linux instructions
+            div {
+                h5 { class: "font-bold text-sm mb-sm", "Linux (GNOME)" }
+                ol { class: "text-sm text-muted", style: "padding-left: 20px;",
+                    li { "Open Settings → Network → Network Proxy" }
+                    li { "Select 'Manual'" }
+                    li {
+                        "Set HTTP Proxy and HTTPS Proxy to "
+                        code { class: "px-1", style: "background-color: var(--aegis-slate-700); border-radius: 4px;", "127.0.0.1" }
+                        " port "
+                        code { class: "px-1", style: "background-color: var(--aegis-slate-700); border-radius: 4px;", "8766" }
+                    }
+                }
+                p { class: "text-sm text-muted mt-sm", "Or set environment variables:" }
+                code { class: "card", style: "display: block; padding: 8px; font-size: 11px; background-color: var(--aegis-slate-800);",
+                    "export http_proxy=http://127.0.0.1:8766\nexport https_proxy=http://127.0.0.1:8766"
+                }
+            }
+
+            // Browser-specific note
+            div {
+                h5 { class: "font-bold text-sm mb-sm", "Browser-Specific Settings" }
+                p { class: "text-sm text-muted",
+                    "Most browsers use system proxy settings. Firefox has its own proxy settings under Settings → Network Settings → Manual proxy configuration."
+                }
+            }
+
+            // Important notes
+            div {
+                p { class: "text-sm text-warning", style: "font-style: italic;",
+                    "Important: The Aegis app must be running for the proxy to work. If you can't browse after enabling the proxy, make sure Aegis is running or disable the proxy settings."
                 }
             }
         }
