@@ -2,6 +2,8 @@
 
 use dioxus::prelude::*;
 
+use aegis_storage::ProfileSentimentConfig;
+
 use crate::state::{AppState, View};
 
 /// Calls the API to reload rules into the proxy.
@@ -39,6 +41,7 @@ pub fn ProfilesView() -> Element {
     let mut editor_name = use_signal(String::new);
     let mut editor_os_username = use_signal(String::new);
     let mut editor_enabled = use_signal(|| true);
+    let mut editor_sentiment_config = use_signal(ProfileSentimentConfig::default);
     let mut confirm_delete = use_signal(|| None::<i64>);
 
     rsx! {
@@ -53,6 +56,7 @@ pub fn ProfilesView() -> Element {
                         editor_name.set(String::new());
                         editor_os_username.set(String::new());
                         editor_enabled.set(true);
+                        editor_sentiment_config.set(ProfileSentimentConfig::default());
                         show_editor.set(true);
                     },
                     "+ New Profile"
@@ -71,6 +75,7 @@ pub fn ProfilesView() -> Element {
                             editor_name.set(String::new());
                             editor_os_username.set(String::new());
                             editor_enabled.set(true);
+                            editor_sentiment_config.set(ProfileSentimentConfig::default());
                             show_editor.set(true);
                         },
                         "Create First Profile"
@@ -162,11 +167,18 @@ pub fn ProfilesView() -> Element {
                                             onclick: {
                                                 let name_clone = profile_name.clone();
                                                 let os_username_clone = profile_os_username.clone();
+                                                // Get the sentiment config for this profile
+                                                let sentiment_config = state.read().profiles
+                                                    .iter()
+                                                    .find(|p| p.id == profile_id)
+                                                    .map(|p| p.sentiment_config.clone())
+                                                    .unwrap_or_default();
                                                 move |_| {
                                                     editor_profile_id.set(Some(profile_id));
                                                     editor_name.set(name_clone.clone());
                                                     editor_os_username.set(os_username_clone.clone().unwrap_or_default());
                                                     editor_enabled.set(profile_enabled);
+                                                    editor_sentiment_config.set(sentiment_config.clone());
                                                     show_editor.set(true);
                                                 }
                                             },
@@ -193,10 +205,11 @@ pub fn ProfilesView() -> Element {
                 name: editor_name,
                 os_username: editor_os_username,
                 enabled: editor_enabled,
+                sentiment_config: editor_sentiment_config,
                 state: state,
                 on_close: move |_| show_editor.set(false),
                 on_save: move |_| {
-                    if save_profile(&mut state, &editor_profile_id, &editor_name, &editor_os_username, &editor_enabled) {
+                    if save_profile(&mut state, &editor_profile_id, &editor_name, &editor_os_username, &editor_enabled, &editor_sentiment_config) {
                         show_editor.set(false);
                     }
                 }
@@ -205,22 +218,43 @@ pub fn ProfilesView() -> Element {
     }
 }
 
-/// Profile editor modal.
+/// Profile editor modal with sentiment analysis configuration.
 #[component]
 fn ProfileEditor(
     profile_id: Signal<Option<i64>>,
     name: Signal<String>,
     os_username: Signal<String>,
     enabled: Signal<bool>,
+    sentiment_config: Signal<ProfileSentimentConfig>,
     state: Signal<AppState>,
     on_close: EventHandler<MouseEvent>,
     on_save: EventHandler<MouseEvent>,
 ) -> Element {
     let title = if profile_id().is_some() { "Edit Profile" } else { "New Profile" };
 
+    // Sentiment config signals
+    let mut sentiment_enabled = use_signal(|| sentiment_config().enabled);
+    let mut sensitivity = use_signal(|| sentiment_config().sensitivity);
+    let mut detect_distress = use_signal(|| sentiment_config().detect_distress);
+    let mut detect_crisis = use_signal(|| sentiment_config().detect_crisis);
+    let mut detect_bullying = use_signal(|| sentiment_config().detect_bullying);
+    let mut detect_negative = use_signal(|| sentiment_config().detect_negative);
+
+    // Sync sentiment signals to the parent signal when they change
+    let mut sync_sentiment = move || {
+        sentiment_config.set(ProfileSentimentConfig {
+            enabled: sentiment_enabled(),
+            sensitivity: sensitivity(),
+            detect_distress: detect_distress(),
+            detect_crisis: detect_crisis(),
+            detect_bullying: detect_bullying(),
+            detect_negative: detect_negative(),
+        });
+    };
+
     rsx! {
         div { class: "modal-overlay",
-            div { class: "modal",
+            div { class: "modal", style: "max-width: 550px;",
                 div { class: "modal-header",
                     h3 { class: "modal-title", "{title}" }
                     button {
@@ -231,8 +265,9 @@ fn ProfileEditor(
                 }
 
                 div { class: "modal-body",
+                    // Basic profile settings
                     div { class: "mb-md",
-                        label { class: "text-sm", "Name:" }
+                        label { class: "text-sm font-bold", "Name:" }
                         input {
                             class: "input",
                             value: "{name}",
@@ -241,22 +276,137 @@ fn ProfileEditor(
                     }
 
                     div { class: "mb-md",
-                        label { class: "text-sm", "OS Username:" }
+                        label { class: "text-sm font-bold", "OS Username:" }
                         input {
                             class: "input",
                             placeholder: "Leave empty for manual selection",
                             value: "{os_username}",
                             oninput: move |evt| os_username.set(evt.value())
                         }
+                        p { class: "text-sm text-muted mt-sm", "Automatically activates this profile for this OS user." }
                     }
 
-                    label { class: "checkbox",
-                        input {
-                            r#type: "checkbox",
-                            checked: "{enabled}",
-                            onchange: move |evt| enabled.set(evt.checked())
+                    div { class: "mb-lg",
+                        label { class: "checkbox",
+                            input {
+                                r#type: "checkbox",
+                                checked: "{enabled}",
+                                onchange: move |evt| enabled.set(evt.checked())
+                            }
+                            "Enabled"
                         }
-                        "Enabled"
+                    }
+
+                    // Sentiment Analysis Section
+                    div { class: "card", style: "background-color: var(--aegis-slate-900); padding: var(--spacing-md);",
+                        h4 { class: "font-bold mb-md", "Sentiment Analysis" }
+
+                        // Enable toggle
+                        div { class: "mb-md",
+                            label { class: "checkbox",
+                                input {
+                                    r#type: "checkbox",
+                                    checked: "{sentiment_enabled}",
+                                    onchange: move |evt| {
+                                        sentiment_enabled.set(evt.checked());
+                                        sync_sentiment();
+                                    }
+                                }
+                                "Enable sentiment analysis"
+                            }
+                            p { class: "text-sm text-muted mt-sm", "Detect concerning emotional patterns in conversations." }
+                        }
+
+                        // Sensitivity selector
+                        if sentiment_enabled() {
+                            div { class: "mb-md",
+                                label { class: "text-sm font-bold mb-sm", style: "display: block;", "Sensitivity:" }
+                                div { class: "flex gap-sm",
+                                    button {
+                                        class: if sensitivity() <= 0.35 { "sensitivity-option selected" } else { "sensitivity-option" },
+                                        onclick: move |_| {
+                                            sensitivity.set(0.3);
+                                            sync_sentiment();
+                                        },
+                                        "High"
+                                    }
+                                    button {
+                                        class: if sensitivity() > 0.35 && sensitivity() <= 0.6 { "sensitivity-option selected" } else { "sensitivity-option" },
+                                        onclick: move |_| {
+                                            sensitivity.set(0.5);
+                                            sync_sentiment();
+                                        },
+                                        "Medium"
+                                    }
+                                    button {
+                                        class: if sensitivity() > 0.6 { "sensitivity-option selected" } else { "sensitivity-option" },
+                                        onclick: move |_| {
+                                            sensitivity.set(0.7);
+                                            sync_sentiment();
+                                        },
+                                        "Low"
+                                    }
+                                }
+                                p { class: "text-sm text-muted mt-sm",
+                                    match sensitivity() {
+                                        s if s <= 0.35 => "More sensitive - may flag more content",
+                                        s if s > 0.6 => "Less sensitive - only flags clear concerns",
+                                        _ => "Balanced detection (recommended)"
+                                    }
+                                }
+                            }
+
+                            // Detection toggles
+                            div {
+                                label { class: "text-sm font-bold mb-sm", style: "display: block;", "Detection Types:" }
+                                div { class: "space-y-sm",
+                                    label { class: "checkbox",
+                                        input {
+                                            r#type: "checkbox",
+                                            checked: "{detect_distress}",
+                                            onchange: move |evt| {
+                                                detect_distress.set(evt.checked());
+                                                sync_sentiment();
+                                            }
+                                        }
+                                        "Detect emotional distress"
+                                    }
+                                    label { class: "checkbox",
+                                        input {
+                                            r#type: "checkbox",
+                                            checked: "{detect_crisis}",
+                                            onchange: move |evt| {
+                                                detect_crisis.set(evt.checked());
+                                                sync_sentiment();
+                                            }
+                                        }
+                                        "Detect crisis indicators"
+                                    }
+                                    label { class: "checkbox",
+                                        input {
+                                            r#type: "checkbox",
+                                            checked: "{detect_bullying}",
+                                            onchange: move |evt| {
+                                                detect_bullying.set(evt.checked());
+                                                sync_sentiment();
+                                            }
+                                        }
+                                        "Detect bullying discussion"
+                                    }
+                                    label { class: "checkbox",
+                                        input {
+                                            r#type: "checkbox",
+                                            checked: "{detect_negative}",
+                                            onchange: move |evt| {
+                                                detect_negative.set(evt.checked());
+                                                sync_sentiment();
+                                            }
+                                        }
+                                        "Detect negative sentiment"
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -284,6 +434,7 @@ fn save_profile(
     name: &Signal<String>,
     os_username: &Signal<String>,
     enabled: &Signal<bool>,
+    sentiment_config: &Signal<ProfileSentimentConfig>,
 ) -> bool {
     let name_str = name().trim().to_string();
     if name_str.is_empty() {
@@ -297,13 +448,24 @@ fn save_profile(
         Some(os_username().trim().to_string())
     };
 
+    // When editing, preserve existing rules; when creating, use empty rules
+    let (time_rules, content_rules) = if let Some(id) = profile_id() {
+        state.read().profiles
+            .iter()
+            .find(|p| p.id == id)
+            .map(|p| (p.time_rules.clone(), p.content_rules.clone()))
+            .unwrap_or_else(|| (serde_json::json!({"rules": []}), serde_json::json!({"rules": []})))
+    } else {
+        (serde_json::json!({"rules": []}), serde_json::json!({"rules": []}))
+    };
+
     let new_profile = aegis_storage::NewProfile {
         name: name_str,
         os_username: os_username_str,
-        time_rules: serde_json::json!({"rules": []}),
-        content_rules: serde_json::json!({"rules": []}),
+        time_rules,
+        content_rules,
         enabled: enabled(),
-        sentiment_config: aegis_storage::ProfileSentimentConfig::default(),
+        sentiment_config: sentiment_config(),
     };
 
     let result = if let Some(id) = profile_id() {
@@ -314,6 +476,10 @@ fn save_profile(
 
     match result {
         Ok(()) => {
+            // Reload rules in proxy if editing existing profile
+            if let Some(id) = profile_id() {
+                reload_rules_from_api(id);
+            }
             let _ = state.write().refresh_data();
             true
         }

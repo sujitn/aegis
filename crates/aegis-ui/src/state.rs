@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use aegis_core::auth::{AuthManager, SessionToken, SESSION_TIMEOUT};
+use aegis_core::classifier::Category;
+use aegis_core::community_rules::ParentOverrides;
 use aegis_core::protection::{PauseDuration, ProtectionManager};
 use aegis_proxy::FilteringState;
 use aegis_storage::{
@@ -194,6 +196,12 @@ pub struct AppState {
     /// Optional filtering state for live rule updates.
     /// When set, rule changes in the UI are immediately applied to the proxy.
     pub filtering_state: Option<FilteringState>,
+
+    /// Parent overrides for community rules (whitelist, blacklist, disabled rules).
+    pub parent_overrides: ParentOverrides,
+
+    /// Currently detected active profile ID (based on OS username).
+    pub active_profile_id: Option<i64>,
 }
 
 impl AppState {
@@ -266,7 +274,128 @@ impl AppState {
             confirm_password_input: String::new(),
             is_first_setup,
             filtering_state,
+            parent_overrides: ParentOverrides::new(),
+            active_profile_id: None,
         }
+    }
+
+    /// Detects the active profile based on the current OS username.
+    pub fn detect_active_profile(&mut self) {
+        // Get current OS username
+        #[cfg(target_os = "windows")]
+        let username = std::env::var("USERNAME").ok();
+
+        #[cfg(not(target_os = "windows"))]
+        let username = std::env::var("USER").ok();
+
+        if let Some(ref current_username) = username {
+            // Find a profile that matches this username
+            for profile in &self.profiles {
+                if let Some(ref os_username) = profile.os_username {
+                    if os_username.eq_ignore_ascii_case(current_username) {
+                        self.active_profile_id = Some(profile.id);
+                        return;
+                    }
+                }
+            }
+        }
+
+        // No matching profile found - use the first enabled profile if available
+        self.active_profile_id = self.profiles.iter().find(|p| p.enabled).map(|p| p.id);
+    }
+
+    /// Gets the active profile, if any.
+    pub fn get_active_profile(&self) -> Option<&Profile> {
+        self.active_profile_id
+            .and_then(|id| self.profiles.iter().find(|p| p.id == id))
+    }
+
+    /// Loads parent overrides from the database.
+    pub fn load_parent_overrides(&mut self) -> Result<()> {
+        if let Ok(Some(config)) = self.db.get_config("parent_overrides") {
+            if let Ok(overrides) = serde_json::from_value(config.value) {
+                self.parent_overrides = overrides;
+            }
+        }
+        Ok(())
+    }
+
+    /// Saves parent overrides to the database.
+    pub fn save_parent_overrides(&self) -> Result<()> {
+        let json = serde_json::to_value(&self.parent_overrides)
+            .map_err(|e| UiError::InvalidInput(e.to_string()))?;
+        self.db.set_config("parent_overrides", &json)?;
+        Ok(())
+    }
+
+    /// Adds a term to the whitelist.
+    pub fn add_whitelist_term(&mut self, term: &str) -> Result<()> {
+        self.parent_overrides.add_whitelist(term);
+        self.save_parent_overrides()
+    }
+
+    /// Removes a term from the whitelist.
+    pub fn remove_whitelist_term(&mut self, term: &str) -> Result<()> {
+        self.parent_overrides.remove_whitelist(term);
+        self.save_parent_overrides()
+    }
+
+    /// Adds a term to the blacklist with a category.
+    pub fn add_blacklist_term(&mut self, term: &str, category: Category) -> Result<()> {
+        self.parent_overrides.add_blacklist(term, category);
+        self.save_parent_overrides()
+    }
+
+    /// Removes a term from the blacklist.
+    pub fn remove_blacklist_term(&mut self, term: &str) -> Result<()> {
+        self.parent_overrides.remove_blacklist(term);
+        self.save_parent_overrides()
+    }
+
+    /// Updates community rules from content fetched from a URL.
+    /// Supports JSON arrays, CSV files, or plain text (one word per line for profanity).
+    /// This is a sync function - use with async fetch in UI.
+    pub fn load_community_rules_from_content(&self, content: &str, source_name: &str) -> std::result::Result<usize, String> {
+        use aegis_core::community_rules::{CommunityRuleManager, RuleSource};
+
+        let source = RuleSource::new(source_name, chrono::Utc::now().format("%Y%m%d").to_string());
+
+        let mut manager = CommunityRuleManager::with_defaults();
+
+        let trimmed = content.trim();
+
+        // Try to parse as JSON first
+        if trimmed.starts_with('[') {
+            manager.load_rules_from_json(&content, source)
+        } else if source_name.ends_with(".csv") || trimmed.lines().next().map(|l| l.contains(',')).unwrap_or(false) {
+            // CSV format - extract words from first column, skip header
+            let words: Vec<&str> = trimmed
+                .lines()
+                .skip(1) // Skip header row
+                .filter_map(|line| {
+                    let word = line.split(',').next()?.trim();
+                    if word.is_empty() { None } else { Some(word) }
+                })
+                .collect();
+
+            let txt_content = words.join("\n");
+            manager.load_rules_from_txt(&txt_content, Category::Profanity, source)
+        } else {
+            // Plain text format - one word per line, treat as profanity
+            manager.load_rules_from_txt(&content, Category::Profanity, source)
+        }
+    }
+
+    /// Updates community rules from a local file.
+    pub fn update_community_rules_from_file(&self, path: &std::path::Path) -> std::result::Result<usize, String> {
+        use aegis_core::community_rules::{CommunityRuleManager, RuleSource};
+
+        let filename = path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("custom-file");
+        let source = RuleSource::new(filename, chrono::Utc::now().format("%Y%m%d").to_string());
+        let mut manager = CommunityRuleManager::with_defaults();
+        manager.update_from_file(path, source)
     }
 
     /// Creates state with in-memory database (for testing).
@@ -382,6 +511,12 @@ impl AppState {
 
         // Load profiles
         self.profiles = self.load_profiles()?;
+
+        // Load parent overrides
+        let _ = self.load_parent_overrides();
+
+        // Detect active profile
+        self.detect_active_profile();
 
         Ok(())
     }
@@ -564,7 +699,7 @@ impl AppState {
             .map_err(|e| UiError::InvalidInput(format!("Failed to pause: {}", e)))?;
 
         // Also update local state for immediate UI feedback
-        let _ = self.protection.pause(duration.clone(), session, &self.auth);
+        let _ = self.protection.pause(duration, session, &self.auth);
 
         // Call API to notify proxy (in case it's in a separate process)
         let (duration_type, duration_value) = match duration {

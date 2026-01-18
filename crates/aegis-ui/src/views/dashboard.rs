@@ -11,9 +11,36 @@ pub fn DashboardView() -> Element {
     let mut state = use_context::<Signal<AppState>>();
     let today_stats = state.read().today_stats.clone();
     let recent_events = state.read().recent_events.clone();
+    let active_profile = state.read().get_active_profile().cloned();
 
     rsx! {
         div {
+            // Profile indicator
+            if let Some(ref profile) = active_profile {
+                div { class: "profile-indicator",
+                    span { class: "profile-indicator-label", "Current Profile:" }
+                    span { class: "profile-badge",
+                        span {
+                            class: if profile.enabled { "profile-badge-dot active" } else { "profile-badge-dot inactive" }
+                        }
+                        "{profile.name}"
+                    }
+                    if !profile.enabled {
+                        span { class: "tag tag-warning", style: "margin-left: 8px;", "Disabled" }
+                    }
+                }
+            } else {
+                div { class: "profile-indicator",
+                    span { class: "profile-indicator-label", "No Active Profile" }
+                    button {
+                        class: "btn btn-secondary btn-sm",
+                        style: "margin-left: 8px;",
+                        onclick: move |_| state.write().view = View::Profiles,
+                        "Create Profile"
+                    }
+                }
+            }
+
             // Hero status card
             HeroCard {}
 

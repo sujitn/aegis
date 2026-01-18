@@ -6,6 +6,8 @@ use auto_launch::{AutoLaunch, AutoLaunchBuilder};
 use dioxus::prelude::*;
 
 use aegis_core::extension_install::get_extension_path;
+use aegis_proxy::setup::{install_ca_certificate, is_ca_installed};
+use aegis_proxy::CaManager;
 
 use crate::state::AppState;
 
@@ -45,6 +47,13 @@ fn is_autostart_enabled() -> bool {
         .unwrap_or(false)
 }
 
+/// Interception mode for filtering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InterceptionMode {
+    Extension,
+    Proxy,
+}
+
 /// Settings view component.
 #[component]
 pub fn SettingsView() -> Element {
@@ -54,10 +63,27 @@ pub fn SettingsView() -> Element {
     let mut current_password = use_signal(String::new);
     let mut new_password = use_signal(String::new);
     let mut confirm_password = use_signal(String::new);
+    let mut interception_mode = use_signal(|| InterceptionMode::Extension);
+    let mut show_ca_instructions = use_signal(|| false);
+    let mut ca_installing = use_signal(|| false);
 
+    // Cache paths (computed once)
     let ext_path = get_extension_path();
     let ext_path_display = ext_path.as_ref().map(|p| p.display().to_string());
     let version = env!("CARGO_PKG_VERSION");
+
+    // Get CA certificate path (computed once)
+    let ca_path = CaManager::with_default_dir()
+        .ok()
+        .map(|m| m.cert_path())
+        .filter(|p| p.exists());
+    let ca_path_display = ca_path.as_ref().map(|p| p.display().to_string());
+
+    // Cache CA installation status - computed once lazily
+    let mut ca_installed_status = use_signal(|| {
+        ca_path.as_ref().map(|p| is_ca_installed(p)).unwrap_or(false)
+    });
+    let ca_installed = ca_installed_status();
 
     rsx! {
         div {
@@ -93,6 +119,128 @@ pub fn SettingsView() -> Element {
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            // Interception Mode section
+            div { class: "card mb-lg",
+                h2 { class: "font-bold mb-md", "Interception Mode" }
+                p { class: "text-sm text-muted mb-md", "Choose how Aegis monitors AI interactions." }
+
+                div { class: "flex gap-md mb-md",
+                    // Extension Mode Card
+                    div {
+                        class: if interception_mode() == InterceptionMode::Extension { "mode-card selected" } else { "mode-card" },
+                        style: "flex: 1;",
+                        onclick: move |_| interception_mode.set(InterceptionMode::Extension),
+                        div { class: "flex items-center gap-sm mb-sm",
+                            span { style: "font-size: 20px;", "🧩" }
+                            span { class: "font-bold", "Browser Extension" }
+                        }
+                        p { class: "text-sm text-muted", "Protects browser-based AI tools only. Easy setup, no certificate required." }
+                    }
+
+                    // Proxy Mode Card
+                    div {
+                        class: if interception_mode() == InterceptionMode::Proxy { "mode-card selected" } else { "mode-card" },
+                        style: "flex: 1;",
+                        onclick: move |_| interception_mode.set(InterceptionMode::Proxy),
+                        div { class: "flex items-center gap-sm mb-sm",
+                            span { style: "font-size: 20px;", "🔒" }
+                            span { class: "font-bold", "System Proxy" }
+                        }
+                        p { class: "text-sm text-muted", "Protects all applications. Requires CA certificate installation." }
+                    }
+                }
+
+                // CA Certificate Panel (shown when Proxy mode selected)
+                if interception_mode() == InterceptionMode::Proxy {
+                    div { class: "card", style: "background-color: var(--aegis-slate-900);",
+                        div { class: "flex items-center gap-sm mb-md",
+                            if ca_installed {
+                                span { class: "tag tag-success", "CA Certificate Installed" }
+                            } else {
+                                span { class: "tag tag-warning", "CA Certificate Required" }
+                            }
+                        }
+
+                        if let Some(ref path_str) = ca_path_display {
+                            // Auto-install button
+                            if !ca_installed {
+                                div { class: "mb-md",
+                                    button {
+                                        class: "btn btn-primary",
+                                        disabled: ca_installing(),
+                                        onclick: {
+                                            let ca_path_clone = ca_path.clone();
+                                            move |_| {
+                                                if let Some(ref path) = ca_path_clone {
+                                                    ca_installing.set(true);
+                                                    let result = install_ca_certificate(path);
+                                                    ca_installing.set(false);
+                                                    if result.success {
+                                                        state.write().set_success(&result.message);
+                                                        ca_installed_status.set(true);
+                                                    } else {
+                                                        state.write().set_error(&result.message);
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        if ca_installing() { "Installing..." } else { "Install Certificate Automatically" }
+                                    }
+                                    p { class: "text-sm text-muted mt-sm", "This will prompt for administrator privileges." }
+                                }
+                            } else {
+                                div { class: "mb-md",
+                                    p { class: "text-sm text-success", "Certificate is installed and trusted by the system." }
+                                }
+                            }
+
+                            div { class: "mb-md",
+                                p { class: "text-sm text-muted mb-sm", "Certificate Path:" }
+                                div {
+                                    class: "card",
+                                    style: "font-family: monospace; font-size: 11px; word-break: break-all; background-color: var(--aegis-slate-800);",
+                                    "{path_str}"
+                                }
+                                div { class: "flex gap-sm mt-sm",
+                                    button {
+                                        class: "btn btn-secondary btn-sm",
+                                        onclick: {
+                                            let ca_path_clone = ca_path.clone();
+                                            move |_| {
+                                                if let Some(ref path) = ca_path_clone {
+                                                    if let Some(parent) = path.parent() {
+                                                        let _ = open::that(parent);
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "Open Folder"
+                                    }
+                                }
+                            }
+
+                            // Collapsible manual instructions
+                            div {
+                                div {
+                                    class: "collapsible-header",
+                                    onclick: move |_| show_ca_instructions.set(!show_ca_instructions()),
+                                    span { class: "font-bold text-sm", "Manual Installation Instructions" }
+                                    span { if show_ca_instructions() { "▲" } else { "▼" } }
+                                }
+
+                                if show_ca_instructions() {
+                                    div { class: "mt-sm",
+                                        CaInstallInstructions {}
+                                    }
+                                }
+                            }
+                        } else {
+                            p { class: "text-muted", "CA certificate not generated yet. Start the proxy to generate it." }
                         }
                     }
                 }
@@ -191,39 +339,51 @@ pub fn SettingsView() -> Element {
             div { class: "card mb-lg",
                 h2 { class: "font-bold mb-md", "Browser Extension" }
 
+                p { class: "text-sm text-muted mb-md",
+                    "The Aegis browser extension monitors AI chat interactions. Install it manually using Developer Mode."
+                }
+
                 if let Some(ref path_str) = ext_path_display {
+                    // Installation steps (always shown)
+                    div { class: "card mb-md", style: "background-color: var(--aegis-slate-900);",
+                        h3 { class: "font-bold text-sm mb-sm", "Installation Steps" }
+                        ol { class: "text-sm text-muted", style: "padding-left: 20px;",
+                            li { class: "mb-sm",
+                                "Open "
+                                code { class: "px-1", style: "background-color: var(--aegis-slate-700); border-radius: 4px;", "chrome://extensions" }
+                                " in your browser"
+                            }
+                            li { class: "mb-sm", "Enable 'Developer mode' (toggle in top-right corner)" }
+                            li { class: "mb-sm", "Click 'Load unpacked'" }
+                            li { "Select the extension folder (click button below to open it)" }
+                        }
+                    }
+
                     div { class: "mb-md",
-                        p { class: "text-sm text-muted mb-sm", "Extension Path:" }
+                        p { class: "text-sm text-muted mb-sm", "Extension folder:" }
                         div {
                             class: "card",
-                            style: "font-family: monospace; font-size: 11px; word-break: break-all;",
+                            style: "font-family: monospace; font-size: 11px; word-break: break-all; background-color: var(--aegis-slate-800);",
                             "{path_str}"
                         }
-                    }
-
-                    div { class: "flex gap-sm",
-                        button {
-                            class: "btn btn-secondary btn-sm",
-                            onclick: {
-                                let ext_path_clone = ext_path.clone();
-                                move |_| {
-                                    if let Some(ref path) = ext_path_clone {
-                                        let _ = open::that(path);
+                        div { class: "flex gap-sm mt-sm",
+                            button {
+                                class: "btn btn-primary",
+                                onclick: {
+                                    let ext_path_clone = ext_path.clone();
+                                    move |_| {
+                                        if let Some(ref path) = ext_path_clone {
+                                            let _ = open::that(path);
+                                        }
                                     }
-                                }
-                            },
-                            "Open Folder"
+                                },
+                                "Open Extension Folder"
+                            }
                         }
                     }
 
-                    div { class: "mt-md",
-                        p { class: "text-sm text-muted", "Installation Steps:" }
-                        ol { style: "padding-left: 20px; font-size: 12px; color: var(--aegis-slate-300);",
-                            li { "Open chrome://extensions in your browser" }
-                            li { "Enable 'Developer mode' (toggle in top-right)" }
-                            li { "Click 'Load unpacked'" }
-                            li { "Select the extension folder above" }
-                        }
+                    p { class: "text-sm text-muted", style: "font-style: italic;",
+                        "Note: Chrome blocks automatic extension installation for security. Developer mode is required for local extensions."
                     }
                 } else {
                     p { class: "text-muted", "Extension folder not found." }
@@ -238,6 +398,67 @@ pub fn SettingsView() -> Element {
                 p { class: "text-sm text-muted mb-sm", "AI Safety for Families" }
 
                 p { class: "text-sm", "Version: {version}" }
+            }
+        }
+    }
+}
+
+/// CA certificate installation instructions component.
+#[component]
+fn CaInstallInstructions() -> Element {
+    rsx! {
+        div { class: "space-y-md",
+            // Windows instructions
+            div {
+                h5 { class: "font-bold text-sm mb-sm", "Windows" }
+                ol { class: "text-sm text-muted", style: "padding-left: 20px;",
+                    li { "Double-click the certificate file (aegis-ca.crt)" }
+                    li { "Click 'Install Certificate...'" }
+                    li { "Select 'Local Machine', click Next" }
+                    li { "Select 'Place all certificates in the following store'" }
+                    li { "Click Browse → 'Trusted Root Certification Authorities'" }
+                    li { "Click Next, then Finish" }
+                    li { "Restart your browser" }
+                }
+            }
+
+            // macOS instructions
+            div {
+                h5 { class: "font-bold text-sm mb-sm", "macOS" }
+                ol { class: "text-sm text-muted", style: "padding-left: 20px;",
+                    li { "Double-click the certificate file to open Keychain Access" }
+                    li { "The certificate will appear in your login keychain" }
+                    li { "Double-click 'Aegis Root CA' in the list" }
+                    li { "Expand 'Trust' section" }
+                    li { "Set 'When using this certificate' to 'Always Trust'" }
+                    li { "Close the window and enter your password" }
+                    li { "Restart your browser" }
+                }
+            }
+
+            // Linux instructions
+            div {
+                h5 { class: "font-bold text-sm mb-sm", "Linux" }
+                div { class: "text-sm text-muted",
+                    p { class: "mb-sm", "For system-wide trust (Debian/Ubuntu):" }
+                    code { class: "card", style: "display: block; padding: 8px; font-size: 11px; background-color: var(--aegis-slate-800);",
+                        "sudo cp aegis-ca.crt /usr/local/share/ca-certificates/\nsudo update-ca-certificates"
+                    }
+                    p { class: "mt-sm mb-sm", "For Firefox specifically:" }
+                    ol { style: "padding-left: 20px;",
+                        li { "Open Firefox Settings → Privacy & Security" }
+                        li { "Scroll to Certificates → View Certificates" }
+                        li { "Import the certificate file" }
+                        li { "Check 'Trust this CA to identify websites'" }
+                    }
+                }
+            }
+
+            // Chrome/Edge note
+            div {
+                p { class: "text-sm text-muted", style: "font-style: italic;",
+                    "Note: Chrome, Edge, and other Chromium-based browsers use the system certificate store. Firefox maintains its own certificate store and may require separate configuration."
+                }
             }
         }
     }

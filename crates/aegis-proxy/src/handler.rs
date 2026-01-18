@@ -185,7 +185,7 @@ impl FilteringState {
     }
 
     /// Sets the state cache for database-backed protection state (F032).
-    pub fn set_state_cache(&self, cache: Arc<StateCache>) {
+    pub fn set_state_cache(&self, _cache: Arc<StateCache>) {
         // Note: This requires interior mutability - we'll need to change the field type
         // For now, use a new constructor instead
     }

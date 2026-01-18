@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use dioxus::prelude::*;
 
 use aegis_core::classifier::Category;
+use aegis_core::community_rules::{CommunityRuleManager, RuleTier};
 use aegis_core::content_rules::{ContentAction, ContentRule, ContentRuleSet};
 use aegis_core::time_rules::{TimeOfDay, TimeRange, TimeRule, TimeRuleSet, Weekday};
 
@@ -837,40 +838,423 @@ fn ContentCategoryRow(
     }
 }
 
-/// Community rules tab.
+/// Community rules tab with full whitelist/blacklist management.
 #[component]
 fn CommunityRulesTab() -> Element {
+    let mut state = use_context::<Signal<AppState>>();
+
+    // Local state for input fields
+    let mut whitelist_input = use_signal(String::new);
+    let mut blacklist_input = use_signal(String::new);
+    let mut blacklist_category = use_signal(|| Category::Profanity);
+    let mut show_curated_rules = use_signal(|| false);
+    let mut show_community_rules = use_signal(|| false);
+    let mut show_update_section = use_signal(|| false);
+    let mut update_url = use_signal(|| "https://raw.githubusercontent.com/dsojevic/profanity-list/main/en.txt".to_string());
+    let mut updating = use_signal(|| false);
+
+    // Get current overrides from state
+    let whitelist: Vec<String> = state.read().parent_overrides.whitelist.iter().cloned().collect();
+    let blacklist: Vec<(String, Category)> = state.read().parent_overrides.blacklist.iter()
+        .map(|(k, v)| (k.clone(), *v))
+        .collect();
+
+    // Load community rules
+    let rule_manager = CommunityRuleManager::with_defaults();
+    let curated_rules = rule_manager.rules_for_tier(RuleTier::Curated);
+    let community_rules = rule_manager.rules_for_tier(RuleTier::Community);
+
     rsx! {
         div {
             h3 { class: "font-bold mb-md", "Community Rules" }
-            p { class: "text-muted mb-md", "Rules from the Aegis community database." }
+            p { class: "text-muted mb-md", "Customize how community-sourced rules apply to your profiles." }
 
-            div { class: "card mb-md",
-                p { class: "font-bold", "Rule Priority (highest to lowest):" }
-                p { "1. Parent (your customizations)" }
-                p { "2. Curated (Aegis-maintained)" }
-                p { "3. Community (open-source databases)" }
-            }
-
-            // Whitelist/Blacklist sections
-            div { class: "mb-md",
-                h4 { class: "font-bold mb-sm", "Whitelist (Never Block)" }
-                p { class: "text-sm text-muted", "Terms in this list will never be blocked." }
-                div { class: "flex gap-sm mt-sm",
-                    input { class: "input", style: "flex: 1;", placeholder: "Add term..." }
-                    button { class: "btn btn-primary btn-sm", "Add" }
+            // Rule Priority Explanation Card
+            div { class: "card mb-lg",
+                h4 { class: "font-bold mb-sm", "Rule Priority (highest to lowest)" }
+                div { class: "space-y-sm",
+                    div { class: "flex items-center gap-sm",
+                        span { class: "tier-badge tier-parent", "1" }
+                        div {
+                            p { class: "font-bold", "{RuleTier::Parent.name()}" }
+                            p { class: "text-sm text-muted", "Your customizations (whitelist & blacklist below)" }
+                        }
+                    }
+                    div { class: "flex items-center gap-sm",
+                        span { class: "tier-badge tier-curated", "2" }
+                        div {
+                            p { class: "font-bold", "{RuleTier::Curated.name()}" }
+                            p { class: "text-sm text-muted", "Aegis-maintained safety patterns" }
+                        }
+                    }
+                    div { class: "flex items-center gap-sm",
+                        span { class: "tier-badge tier-community", "3" }
+                        div {
+                            p { class: "font-bold", "{RuleTier::Community.name()}" }
+                            p { class: "text-sm text-muted", "Open-source safety databases" }
+                        }
+                    }
                 }
             }
 
-            div { class: "mb-md",
+            // Update Rules Section (collapsible)
+            div { class: "card mb-lg",
+                div {
+                    class: "collapsible-header",
+                    onclick: move |_| show_update_section.set(!show_update_section()),
+                    div { class: "flex items-center gap-sm",
+                        span { style: "font-size: 16px;", "🔄" }
+                        span { class: "font-bold", "Update Community Rules from Source" }
+                    }
+                    span { if show_update_section() { "▲" } else { "▼" } }
+                }
+
+                if show_update_section() {
+                    div { class: "mt-md",
+                        p { class: "text-sm text-muted mb-md", "Load additional community rules from an external JSON source (e.g., Surge AI, LDNOOBW)." }
+
+                        div { class: "mb-md",
+                            label { class: "text-sm font-bold mb-sm", style: "display: block;", "Rule Source URL:" }
+                            input {
+                                class: "input",
+                                style: "width: 100%;",
+                                placeholder: "https://example.com/rules.json",
+                                value: "{update_url}",
+                                oninput: move |evt| update_url.set(evt.value())
+                            }
+                        }
+
+                        div { class: "flex gap-sm items-center",
+                            button {
+                                class: "btn btn-primary",
+                                disabled: updating() || update_url().trim().is_empty(),
+                                onclick: move |_| {
+                                    let url = update_url().trim().to_string();
+                                    if !url.is_empty() {
+                                        updating.set(true);
+                                        // Use async fetch with spawn to avoid blocking runtime issues
+                                        spawn(async move {
+                                            let result = async {
+                                                let response = reqwest::get(&url).await
+                                                    .map_err(|e| format!("Failed to fetch rules: {}", e))?;
+
+                                                if !response.status().is_success() {
+                                                    return Err(format!("HTTP error: {}", response.status()));
+                                                }
+
+                                                let content = response.text().await
+                                                    .map_err(|e| format!("Failed to read response: {}", e))?;
+
+                                                let source_name = url.split('/').last().unwrap_or("custom-url");
+                                                state.read().load_community_rules_from_content(&content, source_name)
+                                            }.await;
+
+                                            match result {
+                                                Ok(count) => {
+                                                    state.write().set_success(format!("Loaded {} rules from source", count));
+                                                }
+                                                Err(e) => {
+                                                    state.write().set_error(format!("Failed to load rules: {}", e));
+                                                }
+                                            }
+                                            updating.set(false);
+                                        });
+                                    }
+                                },
+                                if updating() { "Loading..." } else { "Update Rules" }
+                            }
+                        }
+
+                        // Preset sources
+                        div { class: "mt-md",
+                            p { class: "text-sm text-muted mb-sm", "Quick presets:" }
+                            div { class: "flex gap-sm flex-wrap",
+                                button {
+                                    class: "btn btn-secondary btn-sm",
+                                    onclick: move |_| {
+                                        update_url.set("https://raw.githubusercontent.com/dsojevic/profanity-list/main/en.txt".to_string());
+                                    },
+                                    "Profanity List"
+                                }
+                                button {
+                                    class: "btn btn-secondary btn-sm",
+                                    onclick: move |_| {
+                                        update_url.set("https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en".to_string());
+                                    },
+                                    "LDNOOBW"
+                                }
+                            }
+                        }
+
+                        div { class: "mt-md",
+                            p { class: "text-sm text-muted", style: "font-style: italic;",
+                                "Supports JSON, CSV, and TXT formats. CSV files should have words in the first column."
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Whitelist Section
+            div { class: "card mb-lg",
+                h4 { class: "font-bold mb-sm", "Whitelist (Never Block)" }
+                p { class: "text-sm text-muted mb-md", "Terms in this list will never be blocked, even if they match other rules." }
+
+                // Add term form
+                div { class: "flex gap-sm mb-md",
+                    input {
+                        class: "input",
+                        style: "flex: 1;",
+                        placeholder: "Enter a term to whitelist...",
+                        value: "{whitelist_input}",
+                        oninput: move |evt| whitelist_input.set(evt.value())
+                    }
+                    button {
+                        class: "btn btn-primary btn-sm",
+                        disabled: whitelist_input().trim().is_empty(),
+                        onclick: move |_| {
+                            let term = whitelist_input().trim().to_string();
+                            if !term.is_empty() {
+                                if let Err(e) = state.write().add_whitelist_term(&term) {
+                                    tracing::error!("Failed to add whitelist term: {}", e);
+                                }
+                                whitelist_input.set(String::new());
+                            }
+                        },
+                        "Add"
+                    }
+                }
+
+                // Whitelist chips
+                if whitelist.is_empty() {
+                    p { class: "text-sm text-muted", "No whitelisted terms yet." }
+                } else {
+                    div { class: "term-chips",
+                        for term in whitelist.iter() {
+                            {
+                                let term_clone = term.clone();
+                                rsx! {
+                                    span { class: "term-chip",
+                                        "{term}"
+                                        button {
+                                            class: "term-chip-remove",
+                                            onclick: move |_| {
+                                                if let Err(e) = state.write().remove_whitelist_term(&term_clone) {
+                                                    tracing::error!("Failed to remove whitelist term: {}", e);
+                                                }
+                                            },
+                                            "×"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Blacklist Section
+            div { class: "card mb-lg",
                 h4 { class: "font-bold mb-sm", "Blacklist (Always Block)" }
-                p { class: "text-sm text-muted", "Add custom terms to always block." }
-                div { class: "flex gap-sm mt-sm",
-                    input { class: "input", style: "flex: 1;", placeholder: "Add term..." }
-                    button { class: "btn btn-primary btn-sm", "Add" }
+                p { class: "text-sm text-muted mb-md", "Add custom terms that should always be blocked, regardless of other rules." }
+
+                // Add term form
+                div { class: "flex gap-sm mb-md",
+                    input {
+                        class: "input",
+                        style: "flex: 1;",
+                        placeholder: "Enter a term to block...",
+                        value: "{blacklist_input}",
+                        oninput: move |evt| blacklist_input.set(evt.value())
+                    }
+                    select {
+                        class: "select",
+                        style: "min-width: 120px;",
+                        onchange: move |evt| {
+                            blacklist_category.set(string_to_category(&evt.value()));
+                        },
+                        option { value: "profanity", selected: blacklist_category() == Category::Profanity, "Profanity" }
+                        option { value: "violence", selected: blacklist_category() == Category::Violence, "Violence" }
+                        option { value: "adult", selected: blacklist_category() == Category::Adult, "Adult" }
+                        option { value: "hate", selected: blacklist_category() == Category::Hate, "Hate" }
+                        option { value: "illegal", selected: blacklist_category() == Category::Illegal, "Illegal" }
+                        option { value: "jailbreak", selected: blacklist_category() == Category::Jailbreak, "Jailbreak" }
+                        option { value: "selfharm", selected: blacklist_category() == Category::SelfHarm, "Self-Harm" }
+                    }
+                    button {
+                        class: "btn btn-primary btn-sm",
+                        disabled: blacklist_input().trim().is_empty(),
+                        onclick: move |_| {
+                            let term = blacklist_input().trim().to_string();
+                            if !term.is_empty() {
+                                if let Err(e) = state.write().add_blacklist_term(&term, blacklist_category()) {
+                                    tracing::error!("Failed to add blacklist term: {}", e);
+                                }
+                                blacklist_input.set(String::new());
+                            }
+                        },
+                        "Add"
+                    }
+                }
+
+                // Blacklist chips with category badges
+                if blacklist.is_empty() {
+                    p { class: "text-sm text-muted", "No blacklisted terms yet." }
+                } else {
+                    div { class: "term-chips",
+                        for (term, category) in blacklist.iter() {
+                            {
+                                let term_clone = term.clone();
+                                let category_name = category.name();
+                                let category_color = category_to_color(*category);
+                                rsx! {
+                                    span { class: "term-chip",
+                                        "{term}"
+                                        span {
+                                            class: "term-chip-category",
+                                            style: "background-color: {category_color};",
+                                            "{category_name}"
+                                        }
+                                        button {
+                                            class: "term-chip-remove",
+                                            onclick: move |_| {
+                                                if let Err(e) = state.write().remove_blacklist_term(&term_clone) {
+                                                    tracing::error!("Failed to remove blacklist term: {}", e);
+                                                }
+                                            },
+                                            "×"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Info about rule application
+            div { class: "card mb-lg",
+                h4 { class: "font-bold mb-sm", "How Rules Are Applied" }
+                div { class: "text-sm text-muted space-y-sm",
+                    p { "• Whitelisted terms are checked first and will always be allowed." }
+                    p { "• Blacklisted terms are checked next and will always be blocked." }
+                    p { "• Remaining content is evaluated against Curated and Community rules." }
+                    p { "• Higher-tier rules override lower-tier rules for the same pattern." }
+                }
+            }
+
+            // Curated Rules Section (collapsible)
+            div { class: "card mb-lg",
+                div {
+                    class: "collapsible-header",
+                    onclick: move |_| show_curated_rules.set(!show_curated_rules()),
+                    div { class: "flex items-center gap-sm",
+                        span { class: "tier-badge tier-curated", "{curated_rules.len()}" }
+                        span { class: "font-bold", "Curated Rules (Aegis-maintained)" }
+                    }
+                    span { if show_curated_rules() { "▲" } else { "▼" } }
+                }
+
+                if show_curated_rules() {
+                    div { class: "mt-md",
+                        if curated_rules.is_empty() {
+                            p { class: "text-sm text-muted", "No curated rules loaded." }
+                        } else {
+                            div { class: "space-y-sm", style: "max-height: 300px; overflow-y: auto;",
+                                for rule in curated_rules.iter() {
+                                    {
+                                        let pattern = &rule.pattern;
+                                        let category = rule.category;
+                                        let category_color = category_to_color(category);
+                                        let source_name = &rule.source.name;
+                                        rsx! {
+                                            div { class: "flex items-center gap-sm", style: "padding: 4px 0; border-bottom: 1px solid var(--aegis-slate-800);",
+                                                span {
+                                                    class: "tag",
+                                                    style: "background-color: {category_color}; font-size: 10px;",
+                                                    "{category.name()}"
+                                                }
+                                                span { class: "text-sm", style: "font-family: monospace;", "{pattern}" }
+                                                span { class: "text-sm text-muted", "({source_name})" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Community Rules Section (collapsible)
+            div { class: "card",
+                div {
+                    class: "collapsible-header",
+                    onclick: move |_| show_community_rules.set(!show_community_rules()),
+                    div { class: "flex items-center gap-sm",
+                        span { class: "tier-badge tier-community", "{community_rules.len()}" }
+                        span { class: "font-bold", "Community Rules (Open-source)" }
+                    }
+                    span { if show_community_rules() { "▲" } else { "▼" } }
+                }
+
+                if show_community_rules() {
+                    div { class: "mt-md",
+                        if community_rules.is_empty() {
+                            p { class: "text-sm text-muted", "No community rules loaded." }
+                        } else {
+                            div { class: "space-y-sm", style: "max-height: 300px; overflow-y: auto;",
+                                for rule in community_rules.iter() {
+                                    {
+                                        let pattern = &rule.pattern;
+                                        let category = rule.category;
+                                        let category_color = category_to_color(category);
+                                        let source_name = &rule.source.name;
+                                        rsx! {
+                                            div { class: "flex items-center gap-sm", style: "padding: 4px 0; border-bottom: 1px solid var(--aegis-slate-800);",
+                                                span {
+                                                    class: "tag",
+                                                    style: "background-color: {category_color}; font-size: 10px;",
+                                                    "{category.name()}"
+                                                }
+                                                span { class: "text-sm", style: "font-family: monospace;", "{pattern}" }
+                                                span { class: "text-sm text-muted", "({source_name})" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+/// Converts a category string to a Category enum.
+fn string_to_category(s: &str) -> Category {
+    match s {
+        "violence" => Category::Violence,
+        "adult" => Category::Adult,
+        "hate" => Category::Hate,
+        "illegal" => Category::Illegal,
+        "jailbreak" => Category::Jailbreak,
+        "selfharm" => Category::SelfHarm,
+        _ => Category::Profanity,
+    }
+}
+
+/// Returns a color for a category.
+fn category_to_color(category: Category) -> &'static str {
+    match category {
+        Category::Violence => "rgba(239, 68, 68, 0.3)",
+        Category::SelfHarm => "rgba(239, 68, 68, 0.3)",
+        Category::Adult => "rgba(245, 158, 11, 0.3)",
+        Category::Hate => "rgba(239, 68, 68, 0.3)",
+        Category::Illegal => "rgba(239, 68, 68, 0.3)",
+        Category::Jailbreak => "rgba(245, 158, 11, 0.3)",
+        Category::Profanity => "rgba(100, 116, 139, 0.3)",
     }
 }
 
