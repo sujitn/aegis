@@ -212,12 +212,32 @@ fn AuthenticatedLayout() -> Element {
     }
 }
 
-/// Toast messages for errors and success.
+/// Toast messages for errors and success with auto-dismiss.
 #[component]
 fn MessageToasts() -> Element {
     let mut state = use_context::<Signal<AppState>>();
     let error_msg = state.read().error_message.clone();
     let success_msg = state.read().success_message.clone();
+
+    // Auto-dismiss success messages after 3 seconds
+    use_effect(move || {
+        if state.read().success_message.is_some() {
+            spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                state.write().success_message = None;
+            });
+        }
+    });
+
+    // Auto-dismiss error messages after 5 seconds
+    use_effect(move || {
+        if state.read().error_message.is_some() {
+            spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                state.write().error_message = None;
+            });
+        }
+    });
 
     rsx! {
         if let Some(ref error) = error_msg {
@@ -231,7 +251,7 @@ fn MessageToasts() -> Element {
                     button {
                         class: "btn btn-sm btn-secondary",
                         onclick: move |_| state.write().error_message = None,
-                        "X"
+                        "×"
                     }
                 }
             }
@@ -248,7 +268,7 @@ fn MessageToasts() -> Element {
                     button {
                         class: "btn btn-sm btn-secondary",
                         onclick: move |_| state.write().success_message = None,
-                        "X"
+                        "×"
                     }
                 }
             }
