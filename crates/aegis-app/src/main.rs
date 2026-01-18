@@ -125,9 +125,10 @@ fn init_logging(args: &Args) -> Option<tracing_appender::non_blocking::WorkerGua
     None
 }
 
-/// Check if this is the first run (setup not completed).
+/// Check if this is the first run (no password set up yet).
 fn is_first_run(db: &Database) -> bool {
-    db.get_config("setup_completed").ok().flatten().is_none()
+    // Check if auth/password has been set up
+    !db.is_auth_setup().unwrap_or(false)
 }
 
 /// Drain any stale events from global event receivers.
