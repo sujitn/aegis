@@ -1,27 +1,27 @@
-//! Aegis UI Theme - Soft Teal/Mint color palette.
+//! Aegis UI Theme - Calming Blue color palette.
 //!
-//! A calming, family-friendly color scheme that conveys trust and protection.
+//! A trustworthy, accessible color scheme that conveys safety and protection.
 
 use eframe::egui::Color32;
 
-/// Primary brand colors - Soft Teal/Mint palette.
+/// Primary brand colors - Blue palette.
 pub mod brand {
     use super::Color32;
 
-    /// Light mint - for subtle highlights and backgrounds.
-    pub const LIGHT: Color32 = Color32::from_rgb(0x5e, 0xea, 0xd4); // #5eead4
+    /// Light blue - for subtle highlights and backgrounds.
+    pub const LIGHT: Color32 = Color32::from_rgb(0x93, 0xc5, 0xfd); // #93c5fd
 
-    /// Primary teal - main accent color.
-    pub const PRIMARY: Color32 = Color32::from_rgb(0x14, 0xb8, 0xa6); // #14b8a6
+    /// Primary blue - main accent color.
+    pub const PRIMARY: Color32 = Color32::from_rgb(0x3b, 0x82, 0xf6); // #3b82f6
 
-    /// Darker teal - for hover states and emphasis.
-    pub const DARK: Color32 = Color32::from_rgb(0x0d, 0x94, 0x88); // #0d9488
+    /// Darker blue - for hover states and emphasis.
+    pub const DARK: Color32 = Color32::from_rgb(0x2a, 0x4a, 0x7f); // #2a4a7f
 
-    /// Deep teal - for text on light backgrounds.
-    pub const DEEP: Color32 = Color32::from_rgb(0x0f, 0x76, 0x6e); // #0f766e
+    /// Deep blue - for text on light backgrounds.
+    pub const DEEP: Color32 = Color32::from_rgb(0x1a, 0x36, 0x5d); // #1a365d
 
-    /// Forest teal - darkest shade for high contrast.
-    pub const FOREST: Color32 = Color32::from_rgb(0x11, 0x5e, 0x59); // #115e59
+    /// Navy blue - darkest shade for high contrast.
+    pub const NAVY: Color32 = Color32::from_rgb(0x0c, 0x19, 0x29); // #0c1929
 }
 
 /// Semantic status colors.
@@ -37,7 +37,7 @@ pub mod status {
     /// Error/Disabled - soft red.
     pub const ERROR: Color32 = Color32::from_rgb(0xef, 0x44, 0x44); // #ef4444
 
-    /// Info - uses primary teal.
+    /// Info - uses primary blue.
     pub const INFO: Color32 = super::brand::PRIMARY;
 }
 
@@ -45,7 +45,7 @@ pub mod status {
 pub mod cards {
     use super::Color32;
 
-    /// Total count - primary teal.
+    /// Total count - primary blue.
     pub const TOTAL: Color32 = super::brand::PRIMARY;
 
     /// Blocked count - soft red.

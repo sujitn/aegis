@@ -1,5 +1,8 @@
 //! Rules configuration view with time and content rule editing.
 
+#![allow(clippy::clone_on_copy)]
+#![allow(clippy::double_ended_iterator_last)]
+
 use std::collections::HashSet;
 
 use dioxus::prelude::*;
@@ -305,7 +308,11 @@ fn TimeRuleEditorModal(
     on_save: EventHandler<MouseEvent>,
 ) -> Element {
     let is_editing = editing_rule_id.is_some();
-    let title = if is_editing { "Edit Time Rule" } else { "New Time Rule" };
+    let title = if is_editing {
+        "Edit Time Rule"
+    } else {
+        "New Time Rule"
+    };
 
     // Initialize form state from existing rule or defaults
     let existing_rule = editing_rule_id
@@ -850,12 +857,24 @@ fn CommunityRulesTab() -> Element {
     let mut show_curated_rules = use_signal(|| false);
     let mut show_community_rules = use_signal(|| false);
     let mut show_update_section = use_signal(|| false);
-    let mut update_url = use_signal(|| "https://raw.githubusercontent.com/dsojevic/profanity-list/main/en.txt".to_string());
+    let mut update_url = use_signal(|| {
+        "https://raw.githubusercontent.com/dsojevic/profanity-list/main/en.txt".to_string()
+    });
     let mut updating = use_signal(|| false);
 
     // Get current overrides from state
-    let whitelist: Vec<String> = state.read().parent_overrides.whitelist.iter().cloned().collect();
-    let blacklist: Vec<(String, Category)> = state.read().parent_overrides.blacklist.iter()
+    let whitelist: Vec<String> = state
+        .read()
+        .parent_overrides
+        .whitelist
+        .iter()
+        .cloned()
+        .collect();
+    let blacklist: Vec<(String, Category)> = state
+        .read()
+        .parent_overrides
+        .blacklist
+        .iter()
         .map(|(k, v)| (k.clone(), *v))
         .collect();
 
@@ -1288,7 +1307,10 @@ fn parse_legacy_rule(json: &serde_json::Value) -> Result<TimeRule, ()> {
         .and_then(|n| n.as_str())
         .ok_or(())?
         .to_string();
-    let enabled = json.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true);
+    let enabled = json
+        .get("enabled")
+        .and_then(|e| e.as_bool())
+        .unwrap_or(true);
 
     // Parse start time (e.g., "21:00")
     let start_str = json.get("start_time").and_then(|s| s.as_str()).ok_or(())?;
@@ -1429,6 +1451,7 @@ fn add_rule_if_not_exists(time_rules: &mut Signal<TimeRuleSet>, rule: TimeRule) 
 }
 
 /// Toggles a rule's enabled state.
+#[allow(dead_code)]
 fn toggle_rule_enabled(time_rules: &mut Signal<TimeRuleSet>, rule_id: &str, enabled: bool) {
     if let Some(rule) = time_rules.write().get_rule_mut(rule_id) {
         if enabled {
@@ -1494,10 +1517,7 @@ fn reload_rules_from_api(profile_id: i64) {
                 if response.status().is_success() {
                     tracing::info!("Rules reloaded in proxy for profile {}", profile_id);
                 } else {
-                    tracing::warn!(
-                        "Failed to reload rules: HTTP {}",
-                        response.status()
-                    );
+                    tracing::warn!("Failed to reload rules: HTTP {}", response.status());
                 }
             }
             Err(e) => {
@@ -1533,13 +1553,55 @@ fn create_full_defaults() -> ContentRuleSet {
 fn create_family_safe_preset() -> ContentRuleSet {
     ContentRuleSet {
         rules: vec![
-            ContentRule::new("violence_block", "Block Violence", Category::Violence, ContentAction::Block, 0.7),
-            ContentRule::new("selfharm_block", "Block Self-Harm", Category::SelfHarm, ContentAction::Block, 0.5),
-            ContentRule::new("adult_block", "Block Adult", Category::Adult, ContentAction::Block, 0.7),
-            ContentRule::new("jailbreak_block", "Block Jailbreak", Category::Jailbreak, ContentAction::Block, 0.8),
-            ContentRule::new("hate_block", "Block Hate", Category::Hate, ContentAction::Block, 0.7),
-            ContentRule::new("illegal_block", "Block Illegal", Category::Illegal, ContentAction::Block, 0.7),
-            ContentRule::new("profanity_block", "Block Profanity", Category::Profanity, ContentAction::Block, 0.8),
+            ContentRule::new(
+                "violence_block",
+                "Block Violence",
+                Category::Violence,
+                ContentAction::Block,
+                0.7,
+            ),
+            ContentRule::new(
+                "selfharm_block",
+                "Block Self-Harm",
+                Category::SelfHarm,
+                ContentAction::Block,
+                0.5,
+            ),
+            ContentRule::new(
+                "adult_block",
+                "Block Adult",
+                Category::Adult,
+                ContentAction::Block,
+                0.7,
+            ),
+            ContentRule::new(
+                "jailbreak_block",
+                "Block Jailbreak",
+                Category::Jailbreak,
+                ContentAction::Block,
+                0.8,
+            ),
+            ContentRule::new(
+                "hate_block",
+                "Block Hate",
+                Category::Hate,
+                ContentAction::Block,
+                0.7,
+            ),
+            ContentRule::new(
+                "illegal_block",
+                "Block Illegal",
+                Category::Illegal,
+                ContentAction::Block,
+                0.7,
+            ),
+            ContentRule::new(
+                "profanity_block",
+                "Block Profanity",
+                Category::Profanity,
+                ContentAction::Block,
+                0.8,
+            ),
         ],
     }
 }
@@ -1548,13 +1610,55 @@ fn create_family_safe_preset() -> ContentRuleSet {
 fn create_permissive_preset() -> ContentRuleSet {
     ContentRuleSet {
         rules: vec![
-            ContentRule::new("violence_block", "Warn Violence", Category::Violence, ContentAction::Warn, 0.8),
-            ContentRule::new("selfharm_block", "Block Self-Harm", Category::SelfHarm, ContentAction::Block, 0.5), // Always block self-harm
-            ContentRule::new("adult_block", "Warn Adult", Category::Adult, ContentAction::Warn, 0.8),
-            ContentRule::new("jailbreak_block", "Warn Jailbreak", Category::Jailbreak, ContentAction::Warn, 0.9),
-            ContentRule::new("hate_block", "Warn Hate", Category::Hate, ContentAction::Warn, 0.8),
-            ContentRule::new("illegal_block", "Warn Illegal", Category::Illegal, ContentAction::Warn, 0.8),
-            ContentRule::new("profanity_block", "Allow Profanity", Category::Profanity, ContentAction::Allow, 0.0),
+            ContentRule::new(
+                "violence_block",
+                "Warn Violence",
+                Category::Violence,
+                ContentAction::Warn,
+                0.8,
+            ),
+            ContentRule::new(
+                "selfharm_block",
+                "Block Self-Harm",
+                Category::SelfHarm,
+                ContentAction::Block,
+                0.5,
+            ), // Always block self-harm
+            ContentRule::new(
+                "adult_block",
+                "Warn Adult",
+                Category::Adult,
+                ContentAction::Warn,
+                0.8,
+            ),
+            ContentRule::new(
+                "jailbreak_block",
+                "Warn Jailbreak",
+                Category::Jailbreak,
+                ContentAction::Warn,
+                0.9,
+            ),
+            ContentRule::new(
+                "hate_block",
+                "Warn Hate",
+                Category::Hate,
+                ContentAction::Warn,
+                0.8,
+            ),
+            ContentRule::new(
+                "illegal_block",
+                "Warn Illegal",
+                Category::Illegal,
+                ContentAction::Warn,
+                0.8,
+            ),
+            ContentRule::new(
+                "profanity_block",
+                "Allow Profanity",
+                Category::Profanity,
+                ContentAction::Allow,
+                0.0,
+            ),
         ],
     }
 }
@@ -1573,7 +1677,11 @@ fn get_rule_id_for_category(category: Category) -> String {
 }
 
 /// Ensures a rule exists for the given category.
-fn ensure_rule_exists(content_rules: &mut Signal<ContentRuleSet>, category: Category, rule_id: &str) {
+fn ensure_rule_exists(
+    content_rules: &mut Signal<ContentRuleSet>,
+    category: Category,
+    rule_id: &str,
+) {
     if content_rules.read().get_rule(rule_id).is_none() {
         // Add default rule for this category
         let rule = ContentRule::block(rule_id, category, 0.7);
@@ -1582,6 +1690,7 @@ fn ensure_rule_exists(content_rules: &mut Signal<ContentRuleSet>, category: Cate
 }
 
 /// Converts ContentAction to string.
+#[allow(dead_code)]
 fn action_to_string(action: ContentAction) -> &'static str {
     match action {
         ContentAction::Block => "block",

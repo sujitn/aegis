@@ -1,38 +1,42 @@
 /* Aegis Dashboard Styles */
-/* Color palette from user's SVG icon + teal theme */
+/* Calming blue color palette - trust, safety, accessibility */
 
 :root {
-    /* Deep Blues (Primary) */
-    --aegis-blue-900: #021e2f;
-    --aegis-blue-800: #0a2942;
-    --aegis-blue-700: #273a9b;
-    --aegis-blue-600: #2547a8;
+    /* Primary Blues (Trust/Safety) */
+    --aegis-blue-900: #0c1929;
+    --aegis-blue-800: #1a365d;
+    --aegis-blue-700: #2a4a7f;
+    --aegis-blue-600: #3b82f6;
+    --aegis-blue-500: #60a5fa;
+    --aegis-blue-400: #93c5fd;
 
-    /* Cyan/Teal (Accent) */
-    --aegis-cyan-400: #27e9de;
-    --aegis-cyan-500: #03a4ec;
+    /* Accent Teal/Green (Protection) */
+    --aegis-teal-600: #0d9488;
     --aegis-teal-500: #14b8a6;
-    --aegis-teal-400: #5eead4;
+    --aegis-teal-400: #2dd4bf;
+    --aegis-green-500: #22c55e;
 
-    /* Coral/Orange (Alerts) */
-    --aegis-coral-500: #e94867;
-    --aegis-orange-400: #f39369;
-    --aegis-yellow-300: #f3c57a;
+    /* Warm Engagement (Yellows/Oranges) */
+    --aegis-yellow-400: #facc15;
+    --aegis-orange-500: #f97316;
+    --aegis-amber-500: #f59e0b;
 
-    /* Status Colors */
+    /* Status Colors (High Contrast) */
     --aegis-success: #22c55e;
     --aegis-warning: #f59e0b;
     --aegis-error: #ef4444;
+    --aegis-info: #3b82f6;
 
-    /* Neutrals */
+    /* Neutral Slate */
+    --aegis-slate-950: #020617;
     --aegis-slate-900: #0f172a;
     --aegis-slate-800: #1e293b;
     --aegis-slate-700: #334155;
     --aegis-slate-600: #475569;
     --aegis-slate-500: #64748b;
-    --aegis-slate-400: #8fa1bb;
+    --aegis-slate-400: #94a3b8;
     --aegis-slate-300: #cbd5e1;
-    --aegis-slate-200: #cce2e6;
+    --aegis-slate-200: #e2e8f0;
     --aegis-slate-100: #f1f5f9;
 
     /* Spacing */
@@ -101,7 +105,7 @@ body {
 .sidebar-logo-icon {
     width: 32px;
     height: 32px;
-    color: var(--aegis-teal-400);
+    color: var(--aegis-blue-500);
 }
 
 .sidebar-logo-text {
@@ -171,7 +175,7 @@ body {
 .nav-item.active {
     background-color: var(--aegis-slate-800);
     color: white;
-    border-left: 3px solid var(--aegis-teal-400);
+    border-left: 3px solid var(--aegis-blue-500);
 }
 
 .nav-item-icon {
@@ -182,7 +186,7 @@ body {
 
 .nav-item.active .nav-item-icon {
     opacity: 1;
-    color: var(--aegis-teal-400);
+    color: var(--aegis-blue-500);
 }
 
 .nav-badge {
@@ -259,7 +263,7 @@ body {
     height: 48px;
 }
 
-.card-hero-icon.active svg { color: var(--aegis-teal-400); }
+.card-hero-icon.active svg { color: var(--aegis-blue-500); }
 .card-hero-icon.paused svg { color: var(--aegis-warning); }
 .card-hero-icon.disabled svg { color: var(--aegis-error); }
 
@@ -273,7 +277,7 @@ body {
     margin-bottom: var(--spacing-xs);
 }
 
-.card-hero-title.active { color: var(--aegis-teal-400); }
+.card-hero-title.active { color: var(--aegis-blue-500); }
 .card-hero-title.paused { color: var(--aegis-warning); }
 .card-hero-title.disabled { color: var(--aegis-error); }
 
@@ -347,9 +351,9 @@ body {
     font-weight: 700;
 }
 
-.stat-card-value.teal { color: var(--aegis-teal-400); }
-.stat-card-value.coral { color: var(--aegis-coral-500); }
-.stat-card-value.orange { color: var(--aegis-orange-400); }
+.stat-card-value.teal { color: var(--aegis-blue-500); }
+.stat-card-value.coral { color: var(--aegis-error); }
+.stat-card-value.orange { color: var(--aegis-amber-500); }
 .stat-card-value.green { color: var(--aegis-success); }
 
 /* Buttons */
@@ -368,12 +372,12 @@ body {
 }
 
 .btn-primary {
-    background-color: var(--aegis-teal-500);
+    background-color: var(--aegis-blue-600);
     color: white;
 }
 
 .btn-primary:hover {
-    background-color: var(--aegis-teal-400);
+    background-color: var(--aegis-blue-700);
 }
 
 .btn-secondary {
@@ -417,8 +421,8 @@ body {
 
 .input:focus {
     outline: none;
-    border-color: var(--aegis-teal-500);
-    box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.2);
+    border-color: var(--aegis-blue-600);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
 .input-password {
@@ -435,7 +439,7 @@ body {
 .checkbox input {
     width: 16px;
     height: 16px;
-    accent-color: var(--aegis-teal-500);
+    accent-color: var(--aegis-blue-600);
 }
 
 .select {
@@ -544,7 +548,7 @@ body {
 .auth-logo-icon {
     width: 64px;
     height: 64px;
-    color: var(--aegis-teal-400);
+    color: var(--aegis-blue-500);
     margin-bottom: var(--spacing-md);
 }
 
@@ -612,7 +616,7 @@ body {
 .progress-step.current {
     width: 12px;
     height: 12px;
-    background-color: var(--aegis-teal-500);
+    background-color: var(--aegis-blue-600);
 }
 
 .progress-step.done {
@@ -677,8 +681,8 @@ body {
 }
 
 .tab.active {
-    color: var(--aegis-teal-400);
-    border-bottom-color: var(--aegis-teal-400);
+    color: var(--aegis-blue-500);
+    border-bottom-color: var(--aegis-blue-500);
 }
 
 /* Profile cards */
@@ -838,7 +842,7 @@ body {
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    background: var(--aegis-teal-500);
+    background: var(--aegis-blue-600);
     cursor: pointer;
 }
 
@@ -1008,7 +1012,7 @@ body {
 }
 
 .tier-badge.tier-parent {
-    background-color: var(--aegis-teal-500);
+    background-color: var(--aegis-blue-600);
     color: white;
 }
 
@@ -1037,8 +1041,8 @@ body {
 }
 
 .mode-card.selected {
-    border-color: var(--aegis-teal-500);
-    background-color: rgba(20, 184, 166, 0.1);
+    border-color: var(--aegis-blue-600);
+    background-color: rgba(59, 130, 246, 0.1);
 }
 
 /* Date inputs */
@@ -1053,7 +1057,7 @@ input[type="date"] {
 
 input[type="date"]:focus {
     outline: none;
-    border-color: var(--aegis-teal-500);
+    border-color: var(--aegis-blue-600);
 }
 
 /* Sensitivity labels */
@@ -1070,8 +1074,8 @@ input[type="date"]:focus {
 }
 
 .sensitivity-option.selected {
-    background-color: var(--aegis-teal-700);
-    border-color: var(--aegis-teal-500);
+    background-color: var(--aegis-blue-700);
+    border-color: var(--aegis-blue-600);
 }
 
 /* Collapsible section */
@@ -1084,7 +1088,7 @@ input[type="date"]:focus {
 }
 
 .collapsible-header:hover {
-    color: var(--aegis-teal-400);
+    color: var(--aegis-blue-500);
 }
 
 .collapsible-content {

@@ -9,8 +9,8 @@ use aegis_core::community_rules::ParentOverrides;
 use aegis_core::protection::{PauseDuration, ProtectionManager};
 use aegis_proxy::FilteringState;
 use aegis_storage::{
-    DailyStats, Database, Event, FlaggedEvent, FlaggedEventStats, PauseDuration as StoragePauseDuration,
-    Profile, StateManager,
+    DailyStats, Database, Event, FlaggedEvent, FlaggedEventStats,
+    PauseDuration as StoragePauseDuration, Profile, StateManager,
 };
 use chrono::{DateTime, Utc};
 use chrono::{Local, NaiveDate};
@@ -355,7 +355,11 @@ impl AppState {
     /// Updates community rules from content fetched from a URL.
     /// Supports JSON arrays, CSV files, or plain text (one word per line for profanity).
     /// This is a sync function - use with async fetch in UI.
-    pub fn load_community_rules_from_content(&self, content: &str, source_name: &str) -> std::result::Result<usize, String> {
+    pub fn load_community_rules_from_content(
+        &self,
+        content: &str,
+        source_name: &str,
+    ) -> std::result::Result<usize, String> {
         use aegis_core::community_rules::{CommunityRuleManager, RuleSource};
 
         let source = RuleSource::new(source_name, chrono::Utc::now().format("%Y%m%d").to_string());
@@ -366,15 +370,25 @@ impl AppState {
 
         // Try to parse as JSON first
         if trimmed.starts_with('[') {
-            manager.load_rules_from_json(&content, source)
-        } else if source_name.ends_with(".csv") || trimmed.lines().next().map(|l| l.contains(',')).unwrap_or(false) {
+            manager.load_rules_from_json(content, source)
+        } else if source_name.ends_with(".csv")
+            || trimmed
+                .lines()
+                .next()
+                .map(|l| l.contains(','))
+                .unwrap_or(false)
+        {
             // CSV format - extract words from first column, skip header
             let words: Vec<&str> = trimmed
                 .lines()
                 .skip(1) // Skip header row
                 .filter_map(|line| {
                     let word = line.split(',').next()?.trim();
-                    if word.is_empty() { None } else { Some(word) }
+                    if word.is_empty() {
+                        None
+                    } else {
+                        Some(word)
+                    }
                 })
                 .collect();
 
@@ -382,15 +396,19 @@ impl AppState {
             manager.load_rules_from_txt(&txt_content, Category::Profanity, source)
         } else {
             // Plain text format - one word per line, treat as profanity
-            manager.load_rules_from_txt(&content, Category::Profanity, source)
+            manager.load_rules_from_txt(content, Category::Profanity, source)
         }
     }
 
     /// Updates community rules from a local file.
-    pub fn update_community_rules_from_file(&self, path: &std::path::Path) -> std::result::Result<usize, String> {
+    pub fn update_community_rules_from_file(
+        &self,
+        path: &std::path::Path,
+    ) -> std::result::Result<usize, String> {
         use aegis_core::community_rules::{CommunityRuleManager, RuleSource};
 
-        let filename = path.file_name()
+        let filename = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("custom-file");
         let source = RuleSource::new(filename, chrono::Utc::now().format("%Y%m%d").to_string());
@@ -682,9 +700,10 @@ impl AppState {
     /// Requires an authenticated session.
     /// Persists to database and calls API to notify proxy.
     pub fn pause_protection(&mut self, duration: PauseDuration) -> Result<()> {
-        let session = self.session.as_ref().ok_or(UiError::Auth(
-            aegis_core::auth::AuthError::SessionInvalid,
-        ))?;
+        let session = self
+            .session
+            .as_ref()
+            .ok_or(UiError::Auth(aegis_core::auth::AuthError::SessionInvalid))?;
 
         // Convert aegis_core PauseDuration to aegis_storage PauseDuration
         let storage_duration = match duration {
@@ -753,9 +772,10 @@ impl AppState {
     /// Requires an authenticated session.
     /// Persists to database and calls API to notify proxy.
     pub fn disable_protection(&mut self) -> Result<()> {
-        let session = self.session.as_ref().ok_or(UiError::Auth(
-            aegis_core::auth::AuthError::SessionInvalid,
-        ))?;
+        let session = self
+            .session
+            .as_ref()
+            .ok_or(UiError::Auth(aegis_core::auth::AuthError::SessionInvalid))?;
 
         // Persist to database via StateManager (F032)
         self.state_manager

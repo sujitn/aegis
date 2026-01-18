@@ -1,12 +1,14 @@
 //! First-run setup wizard view.
 
+#![allow(clippy::clone_on_copy)]
+
 use std::env;
 
 use auto_launch::{AutoLaunch, AutoLaunchBuilder};
 use dioxus::prelude::*;
 
-use crate::state::{AppState, View};
 use crate::components::icons::ShieldIcon;
+use crate::state::{AppState, View};
 use aegis_core::extension_install::get_extension_path;
 
 /// App name for autostart.
@@ -659,9 +661,10 @@ fn create_default_rules(level: ProtectionLevel) -> (serde_json::Value, serde_jso
 
             (time_rules, content_rules)
         }
-        ProtectionLevel::Custom => {
-            (serde_json::json!({"rules": []}), serde_json::json!({"rules": []}))
-        }
+        ProtectionLevel::Custom => (
+            serde_json::json!({"rules": []}),
+            serde_json::json!({"rules": []}),
+        ),
     }
 }
 
@@ -674,9 +677,18 @@ fn finish_setup(state: &mut Signal<AppState>, enable_autostart: bool, level: Pro
     };
 
     // Save settings
-    let _ = state.read().db.set_config("interception_mode", &serde_json::json!("proxy"));
-    let _ = state.read().db.set_config("protection_level", &serde_json::json!(level_str));
-    let _ = state.read().db.set_config("setup_complete", &serde_json::json!(true));
+    let _ = state
+        .read()
+        .db
+        .set_config("interception_mode", &serde_json::json!("proxy"));
+    let _ = state
+        .read()
+        .db
+        .set_config("protection_level", &serde_json::json!(level_str));
+    let _ = state
+        .read()
+        .db
+        .set_config("setup_complete", &serde_json::json!(true));
 
     // Enable autostart if requested
     if enable_autostart {

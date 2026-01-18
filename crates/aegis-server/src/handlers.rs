@@ -32,10 +32,7 @@ pub async fn check_prompt(
     );
 
     // Check if protection is enabled (F032 - read from database)
-    let is_filtering_enabled = state
-        .state_manager
-        .is_filtering_enabled()
-        .unwrap_or(true); // Default to enabled on error
+    let is_filtering_enabled = state.state_manager.is_filtering_enabled().unwrap_or(true); // Default to enabled on error
 
     if !is_filtering_enabled {
         debug!("Protection is paused/disabled, allowing prompt");
@@ -653,8 +650,8 @@ pub async fn pause_protection(
 
     // Convert request to PauseDuration
     let duration = match req.duration_type.as_str() {
-        "minutes" => PauseDuration::Minutes(req.duration_value as u32),
-        "hours" => PauseDuration::Hours(req.duration_value as u32),
+        "minutes" => PauseDuration::Minutes(req.duration_value),
+        "hours" => PauseDuration::Hours(req.duration_value),
         "indefinite" => PauseDuration::Indefinite,
         _ => {
             return Err(ApiError::BadRequest(format!(
@@ -682,7 +679,10 @@ pub async fn pause_protection(
         _ => "unknown duration".to_string(),
     };
 
-    info!("Protection paused for {} (persisted to database)", duration_desc);
+    info!(
+        "Protection paused for {} (persisted to database)",
+        duration_desc
+    );
 
     Ok(Json(ProtectionResponse {
         success: true,

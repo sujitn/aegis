@@ -2,24 +2,39 @@
 
 use dioxus::prelude::*;
 
-/// Shield icon for the logo and status.
+/// Lock-open icon for the Aegis logo - matches the app icon.
 #[component]
-pub fn ShieldIcon(class: Option<String>) -> Element {
+pub fn LockOpenIcon(class: Option<String>) -> Element {
     let class = class.unwrap_or_default();
 
     rsx! {
         svg {
             class: "{class}",
-            view_box: "0 0 24 24",
-            fill: "none",
-            stroke: "currentColor",
-            stroke_width: "2",
-            stroke_linecap: "round",
-            stroke_linejoin: "round",
+            view_box: "0 0 48 48",
+            fill: "currentColor",
+            // Lock body and open shackle
             path {
-                d: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
+                d: "M40,18H16V13a7,7,0,0,1,7-7h2a7.1,7.1,0,0,1,5,2.1,2,2,0,0,0,2.2.5h.1a1.9,1.9,0,0,0,.6-3.1A10.9,10.9,0,0,0,25,2H23A11,11,0,0,0,12,13v5H8a2,2,0,0,0-2,2V44a2,2,0,0,0,2,2H40a2,2,0,0,0,2-2V20A2,2,0,0,0,40,18ZM38,42H10V22H38Z"
+            }
+            // Terminal prompt arrow
+            path {
+                d: "M15,40a2,2,0,0,1-1.3-3.5L19,32l-5.3-4.5a2,2,0,0,1,2.6-3l7,6a2,2,0,0,1,0,3l-7,6A1.9,1.9,0,0,1,15,40Z",
+                opacity: "0.7"
+            }
+            // Terminal cursor
+            path {
+                d: "M33,38H27a2,2,0,0,1,0-4h6a2,2,0,0,1,0,4Z",
+                opacity: "0.7"
             }
         }
+    }
+}
+
+/// Alias for backward compatibility - use LockOpenIcon instead.
+#[component]
+pub fn ShieldIcon(class: Option<String>) -> Element {
+    rsx! {
+        LockOpenIcon { class: class }
     }
 }
 

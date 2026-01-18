@@ -129,7 +129,7 @@ pub fn ProfilesView() -> Element {
                                             class: if profile_enabled { "btn btn-primary btn-sm" } else { "btn btn-secondary btn-sm" },
                                             onclick: move |_| {
                                                 // Read current state and toggle
-                                                let (current_enabled, db_result) = {
+                                                let (_current_enabled, db_result) = {
                                                     let state_ref = state.read();
                                                     let current = state_ref.profiles
                                                         .iter()
@@ -230,7 +230,11 @@ fn ProfileEditor(
     on_close: EventHandler<MouseEvent>,
     on_save: EventHandler<MouseEvent>,
 ) -> Element {
-    let title = if profile_id().is_some() { "Edit Profile" } else { "New Profile" };
+    let title = if profile_id().is_some() {
+        "Edit Profile"
+    } else {
+        "New Profile"
+    };
 
     // Sentiment config signals
     let mut sentiment_enabled = use_signal(|| sentiment_config().enabled);
@@ -450,13 +454,23 @@ fn save_profile(
 
     // When editing, preserve existing rules; when creating, use empty rules
     let (time_rules, content_rules) = if let Some(id) = profile_id() {
-        state.read().profiles
+        state
+            .read()
+            .profiles
             .iter()
             .find(|p| p.id == id)
             .map(|p| (p.time_rules.clone(), p.content_rules.clone()))
-            .unwrap_or_else(|| (serde_json::json!({"rules": []}), serde_json::json!({"rules": []})))
+            .unwrap_or_else(|| {
+                (
+                    serde_json::json!({"rules": []}),
+                    serde_json::json!({"rules": []}),
+                )
+            })
     } else {
-        (serde_json::json!({"rules": []}), serde_json::json!({"rules": []}))
+        (
+            serde_json::json!({"rules": []}),
+            serde_json::json!({"rules": []}),
+        )
     };
 
     let new_profile = aegis_storage::NewProfile {

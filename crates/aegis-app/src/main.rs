@@ -487,6 +487,7 @@ fn spawn_dashboard_process() -> anyhow::Result<std::process::Child> {
 }
 
 /// Run the application with tray icon as primary interface.
+#[allow(unused_assignments)]
 fn run_with_tray(
     _db: Database,
     show_dashboard: bool,
@@ -569,7 +570,10 @@ fn run_with_tray(
                                 tracing::info!("Opening dashboard (subprocess)...");
                                 match spawn_dashboard_process() {
                                     Ok(child) => {
-                                        tracing::info!("Dashboard subprocess spawned, PID: {}", child.id());
+                                        tracing::info!(
+                                            "Dashboard subprocess spawned, PID: {}",
+                                            child.id()
+                                        );
                                         dashboard_process = Some(child);
                                     }
                                     Err(e) => {
@@ -672,8 +676,7 @@ fn main() -> anyhow::Result<()> {
     // Dashboard-only mode: just run the dashboard UI (spawned from main process)
     if args.dashboard_only {
         tracing::info!("Running in dashboard-only mode (subprocess)");
-        run_dashboard_with_filtering(db, None)
-            .map_err(|e| anyhow::anyhow!("UI error: {}", e))?;
+        run_dashboard_with_filtering(db, None).map_err(|e| anyhow::anyhow!("UI error: {}", e))?;
         tracing::info!("Dashboard subprocess exiting");
         return Ok(());
     }

@@ -102,6 +102,7 @@ pub fn run_dashboard_with_filtering(
                         .with_min_inner_size(dioxus::desktop::LogicalSize::new(800.0, 600.0))
                         .with_window_icon(icon),
                 )
+                .with_menu(None)
                 .with_disable_context_menu(true)
                 .with_close_behaviour(close_behaviour),
         )
@@ -130,7 +131,8 @@ fn App() -> Element {
         .and_then(|mut guard| guard.take())
         .unwrap_or_else(|| {
             // Fallback for tests or if somehow not set
-            let db = aegis_storage::Database::in_memory().expect("Failed to create in-memory database");
+            let db =
+                aegis_storage::Database::in_memory().expect("Failed to create in-memory database");
             AppState::new(db)
         });
 
@@ -173,7 +175,7 @@ fn AuthenticatedLayout() -> Element {
             // Refresh data less frequently (every 5 seconds)
             static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
             let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if count % 5 == 0 {
+            if count.is_multiple_of(5) {
                 let _ = state.write().refresh_data();
             }
         }

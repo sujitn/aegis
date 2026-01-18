@@ -25,7 +25,7 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: #1a73e8;
+  background: #3b82f6;
   color: white;
 }
 
@@ -261,7 +261,7 @@ body {
 }
 
 .toggle input:checked + .toggle-slider {
-  background-color: #4caf50;
+  background-color: #22c55e;
 }
 
 .toggle input:checked + .toggle-slider:before {
@@ -309,20 +309,20 @@ body {
 }
 
 .btn-primary {
-  background: #1a73e8;
+  background: #3b82f6;
   color: white;
 }
 
 .btn-primary:hover {
-  background: #1565c0;
+  background: #2a4a7f;
 }
 
 .btn-primary:active {
-  background: #0d47a1;
+  background: #1a365d;
 }
 
 .btn-primary:disabled {
-  background: #90caf9;
+  background: #93c5fd;
   cursor: not-allowed;
 }
 
