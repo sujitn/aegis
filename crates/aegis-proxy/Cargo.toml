@@ -19,7 +19,7 @@ hyper = { version = "1.8", features = ["full"] }
 http-body-util = "0.1"
 
 # TLS/Certificates
-rcgen = "0.13"
+rcgen = "0.14"
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
 rustls-pemfile = "2.2"
 pem = "3.0"

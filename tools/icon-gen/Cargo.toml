@@ -11,15 +11,15 @@ path = "src/main.rs"
 
 [dependencies]
 # SVG rendering
-resvg = "0.44"
-usvg = "0.44"
+resvg = "0.46"
+usvg = "0.46"
 tiny-skia = "0.11"
 
 # ICO file generation
-ico = "0.3"
+ico = "0.5"
 
 # PNG encoding (resvg uses tiny-skia which gives us raw pixels)
-png = "0.17"
+png = "0.18"
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }
