@@ -160,6 +160,7 @@ impl ContentRuleSet {
     /// - Jailbreak: 0.8 (block)
     /// - Hate: 0.7 (block)
     /// - Illegal: 0.7 (block)
+    /// - Profanity: 0.6 (block)
     pub fn family_safe_defaults() -> Self {
         Self {
             rules: vec![
@@ -169,6 +170,7 @@ impl ContentRuleSet {
                 ContentRule::block("jailbreak_block", Category::Jailbreak, 0.8),
                 ContentRule::block("hate_block", Category::Hate, 0.7),
                 ContentRule::block("illegal_block", Category::Illegal, 0.7),
+                ContentRule::block("profanity_block", Category::Profanity, 0.6),
             ],
         }
     }
@@ -183,6 +185,7 @@ impl ContentRuleSet {
                 ContentRule::warn("jailbreak_warn", Category::Jailbreak, 0.9),
                 ContentRule::warn("hate_warn", Category::Hate, 0.8),
                 ContentRule::warn("illegal_warn", Category::Illegal, 0.8),
+                ContentRule::warn("profanity_warn", Category::Profanity, 0.7),
             ],
         }
     }
@@ -411,7 +414,7 @@ mod tests {
     #[test]
     fn content_rule_set_family_safe_defaults() {
         let rules = ContentRuleSet::family_safe_defaults();
-        assert_eq!(rules.rules.len(), 6);
+        assert_eq!(rules.rules.len(), 7);
 
         // Check specific thresholds
         let violence = rules.get_rule("violence_block").unwrap();
@@ -427,7 +430,7 @@ mod tests {
     #[test]
     fn content_rule_set_permissive_defaults() {
         let rules = ContentRuleSet::permissive_defaults();
-        assert_eq!(rules.rules.len(), 6);
+        assert_eq!(rules.rules.len(), 7);
 
         // Violence should warn, not block
         let violence = rules.get_rule("violence_warn").unwrap();
@@ -516,11 +519,11 @@ mod tests {
     #[test]
     fn content_rule_set_enabled_rules() {
         let mut rules = ContentRuleSet::family_safe_defaults();
-        assert_eq!(rules.enabled_rules().len(), 6);
+        assert_eq!(rules.enabled_rules().len(), 7);
 
         rules.set_rule_enabled("violence_block", false);
         rules.set_rule_enabled("adult_block", false);
-        assert_eq!(rules.enabled_rules().len(), 4);
+        assert_eq!(rules.enabled_rules().len(), 5);
     }
 
     #[test]

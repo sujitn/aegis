@@ -21,6 +21,21 @@ import {
 
 const OVERLAY_ID = 'aegis-overlay';
 
+// Aegis lock-open logo SVG (matches app icon)
+const AEGIS_LOGO_SVG = `
+<svg class="aegis-logo" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <path d="M40,18H16V13a7,7,0,0,1,7-7h2a7.1,7.1,0,0,1,5,2.1,2,2,0,0,0,2.2.5h.1a1.9,1.9,0,0,0,.6-3.1A10.9,10.9,0,0,0,25,2H23A11,11,0,0,0,12,13v5H8a2,2,0,0,0-2,2V44a2,2,0,0,0,2,2H40a2,2,0,0,0,2-2V20A2,2,0,0,0,40,18ZM38,42H10V22H38Z"/>
+  <path d="M15,40a2,2,0,0,1-1.3-3.5L19,32l-5.3-4.5a2,2,0,0,1,2.6-3l7,6a2,2,0,0,1,0,3l-7,6A1.9,1.9,0,0,1,15,40Z" opacity="0.7"/>
+  <path d="M33,38H27a2,2,0,0,1,0-4h6a2,2,0,0,1,0,4Z" opacity="0.7"/>
+</svg>`;
+
+// Aegis branding header HTML
+const AEGIS_BRAND_HEADER = `
+<div class="aegis-brand">
+  ${AEGIS_LOGO_SVG}
+  <span class="aegis-brand-text">Aegis</span>
+</div>`;
+
 let isChecking = false;
 let siteHandler: SiteHandler | null = null;
 let failMode: 'open' | 'closed' = 'closed'; // Default to fail-closed for safety
@@ -62,6 +77,7 @@ function showCheckingOverlay(): void {
   overlay.className = 'aegis-overlay aegis-checking';
   overlay.innerHTML = `
     <div class="aegis-overlay-content">
+      ${AEGIS_BRAND_HEADER}
       <div class="aegis-spinner"></div>
       <div class="aegis-text">Checking prompt safety...</div>
     </div>
@@ -86,7 +102,8 @@ function showBlockedOverlay(response: CheckResponse): void {
   overlay.className = 'aegis-overlay aegis-blocked';
   overlay.innerHTML = `
     <div class="aegis-overlay-content">
-      <div class="aegis-icon">&#9888;</div>
+      ${AEGIS_BRAND_HEADER}
+      <div class="aegis-icon">&#128683;</div>
       <div class="aegis-title">Prompt Blocked</div>
       <div class="aegis-text">${response.reason}</div>
       ${categories ? `<div class="aegis-categories">Detected: ${categories}</div>` : ''}
@@ -119,6 +136,7 @@ function showWarningOverlay(response: CheckResponse, onProceed: () => void): voi
   overlay.className = 'aegis-overlay aegis-warning';
   overlay.innerHTML = `
     <div class="aegis-overlay-content">
+      ${AEGIS_BRAND_HEADER}
       <div class="aegis-icon">&#9888;</div>
       <div class="aegis-title">Warning</div>
       <div class="aegis-text">${response.reason}</div>
@@ -154,6 +172,7 @@ function showServiceUnavailableAllowed(): void {
   overlay.className = 'aegis-overlay aegis-offline';
   overlay.innerHTML = `
     <div class="aegis-overlay-content">
+      ${AEGIS_BRAND_HEADER}
       <div class="aegis-icon">&#128268;</div>
       <div class="aegis-title">Aegis Unavailable</div>
       <div class="aegis-text">Safety service is not running. Prompt was allowed.</div>
@@ -181,6 +200,7 @@ function showServiceUnavailableBlocked(): void {
   overlay.className = 'aegis-overlay aegis-blocked';
   overlay.innerHTML = `
     <div class="aegis-overlay-content">
+      ${AEGIS_BRAND_HEADER}
       <div class="aegis-icon">&#128274;</div>
       <div class="aegis-title">Prompt Blocked</div>
       <div class="aegis-text">Safety service is not running. Prompts are blocked for your protection.</div>
@@ -213,7 +233,8 @@ function showResponseBlockedOverlay(response: CheckResponse): void {
   overlay.className = 'aegis-overlay aegis-blocked aegis-response-blocked';
   overlay.innerHTML = `
     <div class="aegis-overlay-content">
-      <div class="aegis-icon">&#9888;</div>
+      ${AEGIS_BRAND_HEADER}
+      <div class="aegis-icon">&#128683;</div>
       <div class="aegis-title">Response Blocked</div>
       <div class="aegis-text">${response.reason}</div>
       ${categories ? `<div class="aegis-categories">Detected: ${categories}</div>` : ''}
