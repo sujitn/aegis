@@ -40,6 +40,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
 };
 
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS, HANDLE};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::Threading::CreateMutexW;
+
 /// Aegis - AI safety platform for filtering LLM interactions
 #[derive(Parser, Debug)]
 #[command(name = "aegis", version, about)]
@@ -72,6 +77,52 @@ struct Args {
 /// Get the logs directory path.
 fn logs_dir() -> Option<PathBuf> {
     ProjectDirs::from("", "aegis", "Aegis").map(|dirs| dirs.data_dir().join("logs"))
+}
+
+/// Single-instance guard that holds a named mutex on Windows.
+/// When dropped, the mutex is released.
+#[cfg(target_os = "windows")]
+struct SingleInstanceGuard {
+    _handle: HANDLE,
+}
+
+#[cfg(target_os = "windows")]
+impl SingleInstanceGuard {
+    /// Tries to acquire a single-instance lock.
+    /// Returns Ok(guard) if this is the first instance.
+    /// Returns Err if another instance is already running.
+    fn try_acquire() -> Result<Self, ()> {
+        // Create a named mutex. The name must be unique to this application.
+        // Using a wide string (UTF-16) for Windows API.
+        let mutex_name: Vec<u16> = "Global\\AegisAppSingleInstance\0".encode_utf16().collect();
+
+        let handle = unsafe { CreateMutexW(std::ptr::null(), 0, mutex_name.as_ptr()) };
+
+        if handle.is_null() {
+            // Failed to create mutex
+            return Err(());
+        }
+
+        // Check if the mutex already existed
+        let last_error = unsafe { GetLastError() };
+        if last_error == ERROR_ALREADY_EXISTS {
+            // Another instance is already running
+            return Err(());
+        }
+
+        Ok(Self { _handle: handle })
+    }
+}
+
+/// No-op on non-Windows platforms (single-instance not implemented yet).
+#[cfg(not(target_os = "windows"))]
+struct SingleInstanceGuard;
+
+#[cfg(not(target_os = "windows"))]
+impl SingleInstanceGuard {
+    fn try_acquire() -> Result<Self, ()> {
+        Ok(Self)
+    }
 }
 
 /// Initialize logging with file rotation.
@@ -663,6 +714,22 @@ fn run_with_tray(
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+
+    // Single-instance check (skip for dashboard subprocess)
+    // Must be done before logging to avoid file conflicts
+    let _instance_guard = if !args.dashboard_only {
+        match SingleInstanceGuard::try_acquire() {
+            Ok(guard) => Some(guard),
+            Err(()) => {
+                // Another instance is already running - exit silently
+                // On Windows, we can't easily bring the other window to focus,
+                // so we just exit. The user will see the existing tray icon.
+                return Ok(());
+            }
+        }
+    } else {
+        None
+    };
 
     // Initialize logging (keep guard alive for the duration of the program)
     let _log_guard = init_logging(&args);
