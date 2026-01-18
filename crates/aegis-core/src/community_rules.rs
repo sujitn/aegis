@@ -577,20 +577,33 @@ impl CommunityRuleManager {
     /// Loads community rules from a JSON string.
     /// The JSON should be an array of objects with 'pattern' and 'category' fields.
     /// Returns the number of rules loaded.
-    pub fn load_rules_from_json(&mut self, json: &str, source: RuleSource) -> Result<usize, String> {
+    pub fn load_rules_from_json(
+        &mut self,
+        json: &str,
+        source: RuleSource,
+    ) -> Result<usize, String> {
         self.load_from_json(json, source)
     }
 
     /// Loads community rules from a plain text file (one word per line).
     /// All words are treated as the specified category.
-    pub fn load_rules_from_txt(&mut self, txt: &str, category: Category, source: RuleSource) -> Result<usize, String> {
+    pub fn load_rules_from_txt(
+        &mut self,
+        txt: &str,
+        category: Category,
+        source: RuleSource,
+    ) -> Result<usize, String> {
         self.load_from_txt(txt, category, source)
     }
 
     /// Updates community rules from a local file.
-    pub fn update_from_file(&mut self, path: &std::path::Path, source: RuleSource) -> Result<usize, String> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read file: {}", e))?;
+    pub fn update_from_file(
+        &mut self,
+        path: &std::path::Path,
+        source: RuleSource,
+    ) -> Result<usize, String> {
+        let content =
+            std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
 
         // Detect format based on extension
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -621,106 +634,281 @@ impl CommunityRuleManager {
 
         vec![
             // LDNOOBW profanity patterns (List of Dirty, Naughty, Obscene, and Otherwise Bad Words)
-            CommunityRule::new("ldnoobw_001", "fuck", Category::Profanity, ldnoobw_source.clone())
-                .with_severity(Severity::Strong),
-            CommunityRule::new("ldnoobw_002", "shit", Category::Profanity, ldnoobw_source.clone())
-                .with_severity(Severity::Moderate),
-            CommunityRule::new("ldnoobw_003", "ass", Category::Profanity, ldnoobw_source.clone())
-                .with_severity(Severity::Mild),
-            CommunityRule::new("ldnoobw_004", "damn", Category::Profanity, ldnoobw_source.clone())
-                .with_severity(Severity::Mild),
-            CommunityRule::new("ldnoobw_005", "bitch", Category::Profanity, ldnoobw_source.clone())
-                .with_severity(Severity::Moderate),
-            CommunityRule::new("ldnoobw_006", "bastard", Category::Profanity, ldnoobw_source.clone())
-                .with_severity(Severity::Moderate),
-            CommunityRule::new("ldnoobw_007", "crap", Category::Profanity, ldnoobw_source.clone())
-                .with_severity(Severity::Mild),
-            CommunityRule::new("ldnoobw_008", "piss", Category::Profanity, ldnoobw_source.clone())
-                .with_severity(Severity::Mild),
-            CommunityRule::new("ldnoobw_009", "dick", Category::Profanity, ldnoobw_source.clone())
-                .with_severity(Severity::Moderate),
-            CommunityRule::new("ldnoobw_010", "cock", Category::Profanity, ldnoobw_source.clone())
-                .with_severity(Severity::Strong),
-
+            CommunityRule::new(
+                "ldnoobw_001",
+                "fuck",
+                Category::Profanity,
+                ldnoobw_source.clone(),
+            )
+            .with_severity(Severity::Strong),
+            CommunityRule::new(
+                "ldnoobw_002",
+                "shit",
+                Category::Profanity,
+                ldnoobw_source.clone(),
+            )
+            .with_severity(Severity::Moderate),
+            CommunityRule::new(
+                "ldnoobw_003",
+                "ass",
+                Category::Profanity,
+                ldnoobw_source.clone(),
+            )
+            .with_severity(Severity::Mild),
+            CommunityRule::new(
+                "ldnoobw_004",
+                "damn",
+                Category::Profanity,
+                ldnoobw_source.clone(),
+            )
+            .with_severity(Severity::Mild),
+            CommunityRule::new(
+                "ldnoobw_005",
+                "bitch",
+                Category::Profanity,
+                ldnoobw_source.clone(),
+            )
+            .with_severity(Severity::Moderate),
+            CommunityRule::new(
+                "ldnoobw_006",
+                "bastard",
+                Category::Profanity,
+                ldnoobw_source.clone(),
+            )
+            .with_severity(Severity::Moderate),
+            CommunityRule::new(
+                "ldnoobw_007",
+                "crap",
+                Category::Profanity,
+                ldnoobw_source.clone(),
+            )
+            .with_severity(Severity::Mild),
+            CommunityRule::new(
+                "ldnoobw_008",
+                "piss",
+                Category::Profanity,
+                ldnoobw_source.clone(),
+            )
+            .with_severity(Severity::Mild),
+            CommunityRule::new(
+                "ldnoobw_009",
+                "dick",
+                Category::Profanity,
+                ldnoobw_source.clone(),
+            )
+            .with_severity(Severity::Moderate),
+            CommunityRule::new(
+                "ldnoobw_010",
+                "cock",
+                Category::Profanity,
+                ldnoobw_source.clone(),
+            )
+            .with_severity(Severity::Strong),
             // Surge AI hate speech patterns
-            CommunityRule::new("surge_hate_001", r"\bn[i1]gg[ae3]r?\b", Category::Hate, surge_source.clone())
-                .with_regex()
-                .with_severity(Severity::Severe),
-            CommunityRule::new("surge_hate_002", r"\bf[a4]gg?[o0]t\b", Category::Hate, surge_source.clone())
-                .with_regex()
-                .with_severity(Severity::Severe),
-            CommunityRule::new("surge_hate_003", r"\bk[i1]ke\b", Category::Hate, surge_source.clone())
-                .with_regex()
-                .with_severity(Severity::Severe),
-            CommunityRule::new("surge_hate_004", r"\bsp[i1]c\b", Category::Hate, surge_source.clone())
-                .with_regex()
-                .with_severity(Severity::Severe),
-            CommunityRule::new("surge_hate_005", r"\bch[i1]nk\b", Category::Hate, surge_source.clone())
-                .with_regex()
-                .with_severity(Severity::Severe),
-            CommunityRule::new("surge_hate_006", r"\bwetback\b", Category::Hate, surge_source.clone())
-                .with_regex()
-                .with_severity(Severity::Severe),
-            CommunityRule::new("surge_hate_007", r"\bgook\b", Category::Hate, surge_source.clone())
-                .with_regex()
-                .with_severity(Severity::Severe),
-            CommunityRule::new("surge_hate_008", r"\btranny\b", Category::Hate, surge_source.clone())
-                .with_regex()
-                .with_severity(Severity::Strong),
-
+            CommunityRule::new(
+                "surge_hate_001",
+                r"\bn[i1]gg[ae3]r?\b",
+                Category::Hate,
+                surge_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe),
+            CommunityRule::new(
+                "surge_hate_002",
+                r"\bf[a4]gg?[o0]t\b",
+                Category::Hate,
+                surge_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe),
+            CommunityRule::new(
+                "surge_hate_003",
+                r"\bk[i1]ke\b",
+                Category::Hate,
+                surge_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe),
+            CommunityRule::new(
+                "surge_hate_004",
+                r"\bsp[i1]c\b",
+                Category::Hate,
+                surge_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe),
+            CommunityRule::new(
+                "surge_hate_005",
+                r"\bch[i1]nk\b",
+                Category::Hate,
+                surge_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe),
+            CommunityRule::new(
+                "surge_hate_006",
+                r"\bwetback\b",
+                Category::Hate,
+                surge_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe),
+            CommunityRule::new(
+                "surge_hate_007",
+                r"\bgook\b",
+                Category::Hate,
+                surge_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe),
+            CommunityRule::new(
+                "surge_hate_008",
+                r"\btranny\b",
+                Category::Hate,
+                surge_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Strong),
             // Adult content patterns
-            CommunityRule::new("surge_adult_001", "porn", Category::Adult, surge_source.clone())
-                .with_severity(Severity::Strong),
-            CommunityRule::new("surge_adult_002", "xxx", Category::Adult, surge_source.clone())
-                .with_severity(Severity::Strong),
-            CommunityRule::new("surge_adult_003", "nude", Category::Adult, surge_source.clone())
-                .with_severity(Severity::Moderate),
-            CommunityRule::new("surge_adult_004", "naked", Category::Adult, surge_source.clone())
-                .with_severity(Severity::Moderate),
-            CommunityRule::new("surge_adult_005", "nsfw", Category::Adult, surge_source.clone())
-                .with_severity(Severity::Strong),
-            CommunityRule::new("surge_adult_006", "hentai", Category::Adult, surge_source.clone())
-                .with_severity(Severity::Strong),
-            CommunityRule::new("surge_adult_007", r"\bsex(y|ual)?\b", Category::Adult, surge_source.clone())
-                .with_regex()
-                .with_severity(Severity::Moderate),
-
+            CommunityRule::new(
+                "surge_adult_001",
+                "porn",
+                Category::Adult,
+                surge_source.clone(),
+            )
+            .with_severity(Severity::Strong),
+            CommunityRule::new(
+                "surge_adult_002",
+                "xxx",
+                Category::Adult,
+                surge_source.clone(),
+            )
+            .with_severity(Severity::Strong),
+            CommunityRule::new(
+                "surge_adult_003",
+                "nude",
+                Category::Adult,
+                surge_source.clone(),
+            )
+            .with_severity(Severity::Moderate),
+            CommunityRule::new(
+                "surge_adult_004",
+                "naked",
+                Category::Adult,
+                surge_source.clone(),
+            )
+            .with_severity(Severity::Moderate),
+            CommunityRule::new(
+                "surge_adult_005",
+                "nsfw",
+                Category::Adult,
+                surge_source.clone(),
+            )
+            .with_severity(Severity::Strong),
+            CommunityRule::new(
+                "surge_adult_006",
+                "hentai",
+                Category::Adult,
+                surge_source.clone(),
+            )
+            .with_severity(Severity::Strong),
+            CommunityRule::new(
+                "surge_adult_007",
+                r"\bsex(y|ual)?\b",
+                Category::Adult,
+                surge_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Moderate),
             // Violence patterns from community sources
-            CommunityRule::new("comm_violence_001", r"\b(kill|murder)\s+(him|her|them|you)\b", Category::Violence, ldnoobw_source.clone())
-                .with_regex()
-                .with_severity(Severity::Strong),
-            CommunityRule::new("comm_violence_002", r"\b(stab|shoot|strangle)\s+(someone|people)\b", Category::Violence, ldnoobw_source.clone())
-                .with_regex()
-                .with_severity(Severity::Strong),
-            CommunityRule::new("comm_violence_003", "gore", Category::Violence, ldnoobw_source.clone())
-                .with_severity(Severity::Strong),
-            CommunityRule::new("comm_violence_004", "dismember", Category::Violence, ldnoobw_source.clone())
-                .with_severity(Severity::Severe),
-
+            CommunityRule::new(
+                "comm_violence_001",
+                r"\b(kill|murder)\s+(him|her|them|you)\b",
+                Category::Violence,
+                ldnoobw_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Strong),
+            CommunityRule::new(
+                "comm_violence_002",
+                r"\b(stab|shoot|strangle)\s+(someone|people)\b",
+                Category::Violence,
+                ldnoobw_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Strong),
+            CommunityRule::new(
+                "comm_violence_003",
+                "gore",
+                Category::Violence,
+                ldnoobw_source.clone(),
+            )
+            .with_severity(Severity::Strong),
+            CommunityRule::new(
+                "comm_violence_004",
+                "dismember",
+                Category::Violence,
+                ldnoobw_source.clone(),
+            )
+            .with_severity(Severity::Severe),
             // Self-harm patterns
-            CommunityRule::new("comm_selfharm_001", r"\bkill\s+(myself|yourself)\b", Category::SelfHarm, surge_source.clone())
-                .with_regex()
-                .with_severity(Severity::Severe),
-            CommunityRule::new("comm_selfharm_002", r"\bsuicid(e|al)\b", Category::SelfHarm, surge_source.clone())
-                .with_regex()
-                .with_severity(Severity::Severe),
-            CommunityRule::new("comm_selfharm_003", r"\bself[- ]?harm\b", Category::SelfHarm, surge_source.clone())
-                .with_regex()
-                .with_severity(Severity::Severe),
-            CommunityRule::new("comm_selfharm_004", r"\bcut(ting)?\s+(myself|yourself|wrists?)\b", Category::SelfHarm, surge_source.clone())
-                .with_regex()
-                .with_severity(Severity::Severe),
-
+            CommunityRule::new(
+                "comm_selfharm_001",
+                r"\bkill\s+(myself|yourself)\b",
+                Category::SelfHarm,
+                surge_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe),
+            CommunityRule::new(
+                "comm_selfharm_002",
+                r"\bsuicid(e|al)\b",
+                Category::SelfHarm,
+                surge_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe),
+            CommunityRule::new(
+                "comm_selfharm_003",
+                r"\bself[- ]?harm\b",
+                Category::SelfHarm,
+                surge_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe),
+            CommunityRule::new(
+                "comm_selfharm_004",
+                r"\bcut(ting)?\s+(myself|yourself|wrists?)\b",
+                Category::SelfHarm,
+                surge_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe),
             // Illegal activity patterns
-            CommunityRule::new("comm_illegal_001", r"\bbuy\s+(drugs?|cocaine|heroin|meth)\b", Category::Illegal, ldnoobw_source.clone())
-                .with_regex()
-                .with_severity(Severity::Severe),
-            CommunityRule::new("comm_illegal_002", r"\bmake\s+(bomb|explosive|weapon)\b", Category::Illegal, ldnoobw_source.clone())
-                .with_regex()
-                .with_severity(Severity::Severe),
-            CommunityRule::new("comm_illegal_003", r"\bhack(ing)?\s+(into|account|password)\b", Category::Illegal, ldnoobw_source.clone())
-                .with_regex()
-                .with_severity(Severity::Strong),
+            CommunityRule::new(
+                "comm_illegal_001",
+                r"\bbuy\s+(drugs?|cocaine|heroin|meth)\b",
+                Category::Illegal,
+                ldnoobw_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe),
+            CommunityRule::new(
+                "comm_illegal_002",
+                r"\bmake\s+(bomb|explosive|weapon)\b",
+                Category::Illegal,
+                ldnoobw_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Severe),
+            CommunityRule::new(
+                "comm_illegal_003",
+                r"\bhack(ing)?\s+(into|account|password)\b",
+                Category::Illegal,
+                ldnoobw_source.clone(),
+            )
+            .with_regex()
+            .with_severity(Severity::Strong),
         ]
     }
 

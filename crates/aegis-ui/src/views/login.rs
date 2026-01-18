@@ -2,8 +2,8 @@
 
 use dioxus::prelude::*;
 
-use crate::state::AppState;
 use crate::components::icons::ShieldIcon;
+use crate::state::AppState;
 
 /// Login view component.
 #[component]

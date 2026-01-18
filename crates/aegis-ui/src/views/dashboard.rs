@@ -2,8 +2,8 @@
 
 use dioxus::prelude::*;
 
-use crate::state::{AppState, View};
 use crate::components::cards::{HeroCard, StatCard};
+use crate::state::{AppState, View};
 
 /// Dashboard view component.
 #[component]

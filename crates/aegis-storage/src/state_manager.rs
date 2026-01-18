@@ -217,7 +217,9 @@ fn generate_session_token() -> String {
 
     // Simple token: timestamp + random suffix
     // In production, use a cryptographically secure random generator
-    let random: u64 = (timestamp as u64).wrapping_mul(0x5DEECE66D).wrapping_add(0xB);
+    let random: u64 = (timestamp as u64)
+        .wrapping_mul(0x5DEECE66D)
+        .wrapping_add(0xB);
     format!("sess_{}_{:016x}", timestamp, random)
 }
 
@@ -238,7 +240,8 @@ mod tests {
         assert!(mgr.is_filtering_enabled().unwrap());
 
         // Pause
-        mgr.pause_protection(PauseDuration::FIFTEEN_MINUTES).unwrap();
+        mgr.pause_protection(PauseDuration::FIFTEEN_MINUTES)
+            .unwrap();
         assert!(!mgr.is_filtering_enabled().unwrap());
 
         // Resume

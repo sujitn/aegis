@@ -3,8 +3,8 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use directories::ProjectDirs;
 use dioxus::prelude::*;
+use directories::ProjectDirs;
 
 /// Log level for display.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,9 +176,7 @@ pub fn SystemLogsView() -> Element {
 
             if !search().is_empty() {
                 let q = search().to_lowercase();
-                if !e.message.to_lowercase().contains(&q)
-                    && !e.target.to_lowercase().contains(&q)
-                {
+                if !e.message.to_lowercase().contains(&q) && !e.target.to_lowercase().contains(&q) {
                     return false;
                 }
             }

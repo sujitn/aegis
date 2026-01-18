@@ -127,8 +127,7 @@ impl Database {
 
         match value {
             Some(json) => {
-                let state: ProtectionState = serde_json::from_str(&json)
-                    .unwrap_or_default();
+                let state: ProtectionState = serde_json::from_str(&json).unwrap_or_default();
                 Ok(state)
             }
             None => Ok(ProtectionState::default()),
@@ -252,10 +251,7 @@ impl Database {
     pub fn cleanup_expired_sessions(&self) -> Result<u64> {
         let conn = self.pool.get()?;
         let now = Utc::now().to_rfc3339();
-        let deleted = conn.execute(
-            "DELETE FROM sessions WHERE expires_at < ?1",
-            params![now],
-        )?;
+        let deleted = conn.execute("DELETE FROM sessions WHERE expires_at < ?1", params![now])?;
         Ok(deleted as u64)
     }
 

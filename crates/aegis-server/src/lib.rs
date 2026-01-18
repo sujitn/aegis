@@ -180,7 +180,10 @@ impl Server {
             // Rules reload endpoint
             .route("/api/rules/reload", post(handlers::reload_rules))
             // Protection control endpoints
-            .route("/api/protection/status", get(handlers::get_protection_status))
+            .route(
+                "/api/protection/status",
+                get(handlers::get_protection_status),
+            )
             .route("/api/protection/pause", post(handlers::pause_protection))
             .route("/api/protection/resume", post(handlers::resume_protection))
             .layer(cors)

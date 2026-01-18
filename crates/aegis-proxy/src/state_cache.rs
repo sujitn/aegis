@@ -47,7 +47,10 @@ pub struct StateCache {
 impl std::fmt::Debug for StateCache {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StateCache")
-            .field("filtering_enabled", &self.filtering_enabled.load(Ordering::Relaxed))
+            .field(
+                "filtering_enabled",
+                &self.filtering_enabled.load(Ordering::Relaxed),
+            )
             .field("last_seq", &self.last_seq.load(Ordering::Relaxed))
             .field("poll_interval", &self.poll_interval)
             .finish()
@@ -60,9 +63,7 @@ impl StateCache {
         let state_manager = StateManager::new(db, "proxy");
 
         // Initialize cached state from database
-        let filtering_enabled = state_manager
-            .is_filtering_enabled()
-            .unwrap_or(true); // Default to enabled on error
+        let filtering_enabled = state_manager.is_filtering_enabled().unwrap_or(true); // Default to enabled on error
 
         let last_seq = state_manager.current_seq();
 
@@ -144,7 +145,8 @@ impl StateCache {
         }
 
         // Update sequence number
-        self.last_seq.store(self.state_manager.current_seq(), Ordering::Relaxed);
+        self.last_seq
+            .store(self.state_manager.current_seq(), Ordering::Relaxed);
     }
 
     /// Returns the underlying state manager.
@@ -196,7 +198,9 @@ mod tests {
 
         // Pause protection via state manager
         let manager = StateManager::new(db_arc, "test");
-        manager.pause_protection(aegis_storage::PauseDuration::FIFTEEN_MINUTES).unwrap();
+        manager
+            .pause_protection(aegis_storage::PauseDuration::FIFTEEN_MINUTES)
+            .unwrap();
 
         // Poll should detect the change
         std::thread::sleep(Duration::from_millis(5)); // Wait for poll interval
@@ -216,7 +220,9 @@ mod tests {
 
         // Pause protection directly via database
         let manager = StateManager::new(db_arc, "test");
-        manager.pause_protection(aegis_storage::PauseDuration::FIFTEEN_MINUTES).unwrap();
+        manager
+            .pause_protection(aegis_storage::PauseDuration::FIFTEEN_MINUTES)
+            .unwrap();
 
         // Force refresh
         cache.refresh();

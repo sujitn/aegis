@@ -2,8 +2,8 @@
 
 use dioxus::prelude::*;
 
-use crate::state::{AppState, View};
 use crate::components::icons::ShieldIcon;
+use crate::state::{AppState, View};
 
 /// Sidebar navigation component.
 #[component]
@@ -112,7 +112,11 @@ fn NavItem(
     active: bool,
     onclick: EventHandler<MouseEvent>,
 ) -> Element {
-    let class = if active { "nav-item active" } else { "nav-item" };
+    let class = if active {
+        "nav-item active"
+    } else {
+        "nav-item"
+    };
 
     rsx! {
         div {
@@ -133,7 +137,11 @@ fn NavItemWithBadge(
     badge_count: i64,
     onclick: EventHandler<MouseEvent>,
 ) -> Element {
-    let class = if active { "nav-item active" } else { "nav-item" };
+    let class = if active {
+        "nav-item active"
+    } else {
+        "nav-item"
+    };
     let badge_text = if badge_count > 99 {
         "99+".to_string()
     } else {

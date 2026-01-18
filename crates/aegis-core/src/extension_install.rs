@@ -249,14 +249,17 @@ fn install_windows(extension_path: &Path, browser: Browser) -> Result<(), Extens
     let release_dir = extension_path.join("release");
     let crx_path = if release_dir.exists() {
         // Find the CRX file
-        std::fs::read_dir(&release_dir)
-            .ok()
-            .and_then(|entries| {
-                entries
-                    .filter_map(|e| e.ok())
-                    .find(|e| e.path().extension().map(|ext| ext == "crx").unwrap_or(false))
-                    .map(|e| e.path())
-            })
+        std::fs::read_dir(&release_dir).ok().and_then(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .find(|e| {
+                    e.path()
+                        .extension()
+                        .map(|ext| ext == "crx")
+                        .unwrap_or(false)
+                })
+                .map(|e| e.path())
+        })
     } else {
         None
     };
