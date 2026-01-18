@@ -61,7 +61,8 @@ enum InterceptionMode {
 #[component]
 pub fn SettingsView() -> Element {
     let mut state = use_context::<Signal<AppState>>();
-    let mut autostart = use_signal(is_autostart_enabled);
+    let mut loading = use_signal(|| true);
+    let mut autostart = use_signal(|| false);
     let mut show_change_password = use_signal(|| false);
     let mut current_password = use_signal(String::new);
     let mut new_password = use_signal(String::new);
@@ -75,30 +76,62 @@ pub fn SettingsView() -> Element {
     // Proxy configuration constants
     const PROXY_HOST: &str = "127.0.0.1";
 
-    // Cache paths (computed once)
+    // Cache paths (computed once - these are fast)
     let ext_path = get_extension_path();
     let ext_path_display = ext_path.as_ref().map(|p| p.display().to_string());
     let version = env!("CARGO_PKG_VERSION");
 
-    // Get CA certificate path (computed once)
+    // Get CA certificate path (computed once - fast)
     let ca_path = CaManager::with_default_dir()
         .ok()
         .map(|m| m.cert_path())
         .filter(|p| p.exists());
     let ca_path_display = ca_path.as_ref().map(|p| p.display().to_string());
 
-    // Cache CA installation status - computed once lazily
-    let mut ca_installed_status = use_signal(|| {
-        ca_path
-            .as_ref()
-            .map(|p| is_ca_installed(p))
-            .unwrap_or(false)
-    });
-    let ca_installed = ca_installed_status();
+    // Deferred status checks - these are slow system calls
+    let mut ca_installed_status = use_signal(|| false);
+    let mut proxy_enabled_status = use_signal(|| false);
 
-    // Cache proxy enabled status
-    let mut proxy_enabled_status = use_signal(|| is_proxy_enabled(PROXY_HOST, DEFAULT_PROXY_PORT));
+    // Clone ca_path for use in the effect closure
+    let ca_path_for_effect = ca_path.clone();
+
+    // Load slow system checks asynchronously on mount
+    use_effect(move || {
+        let ca_path_clone = ca_path_for_effect.clone();
+        spawn(async move {
+            // Run slow checks in background
+            let autostart_enabled = is_autostart_enabled();
+            let ca_installed = ca_path_clone
+                .as_ref()
+                .map(|p| is_ca_installed(p))
+                .unwrap_or(false);
+            let proxy_enabled = is_proxy_enabled(PROXY_HOST, DEFAULT_PROXY_PORT);
+
+            // Update signals
+            autostart.set(autostart_enabled);
+            ca_installed_status.set(ca_installed);
+            proxy_enabled_status.set(proxy_enabled);
+            loading.set(false);
+        });
+    });
+
+    let ca_installed = ca_installed_status();
     let proxy_enabled = proxy_enabled_status();
+
+    // Show loading indicator while checking system status
+    if loading() {
+        return rsx! {
+            div {
+                h1 { class: "text-lg font-bold mb-lg", "Settings" }
+                div { class: "card",
+                    div { class: "flex items-center justify-center gap-md py-xl",
+                        div { class: "spinner" }
+                        span { class: "text-muted", "Loading settings..." }
+                    }
+                }
+            }
+        };
+    }
 
     rsx! {
         div {
