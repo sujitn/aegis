@@ -1,0 +1,8 @@
+# Aegis AI Safety - robots.txt
+# https://parentalsafety.ai/
+
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://parentalsafety.ai/sitemap.xml
