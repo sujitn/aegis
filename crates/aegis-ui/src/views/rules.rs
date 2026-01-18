@@ -4,6 +4,8 @@ use std::collections::HashSet;
 
 use dioxus::prelude::*;
 
+use aegis_core::classifier::Category;
+use aegis_core::content_rules::{ContentAction, ContentRule, ContentRuleSet};
 use aegis_core::time_rules::{TimeOfDay, TimeRange, TimeRule, TimeRuleSet, Weekday};
 
 use crate::state::{AppState, RulesTab, View};
@@ -588,41 +590,247 @@ fn TimeRuleEditorModal(
     }
 }
 
-/// Content rules tab.
+/// Content rules tab with full CRUD functionality.
 #[component]
 fn ContentRulesTab() -> Element {
+    let state = use_context::<Signal<AppState>>();
+    let selected_profile_id = state.read().selected_profile_id;
+
+    // Load content rules from profile
+    let mut content_rules = use_signal(ContentRuleSet::new);
+
+    // Load rules on mount and when profile changes
+    use_effect(move || {
+        if let Some(profile_id) = selected_profile_id {
+            if let Ok(Some(profile)) = state.read().db.get_profile(profile_id) {
+                let rule_set = parse_content_rules(&profile.content_rules);
+                content_rules.set(rule_set);
+            }
+        }
+    });
+
     rsx! {
         div {
-            h3 { class: "font-bold mb-md", "Content Category Rules" }
-            p { class: "text-muted mb-md", "Configure how each content category is handled." }
+            // Header
+            div { class: "flex justify-between items-center mb-md",
+                div {
+                    h3 { class: "font-bold", "Content Category Rules" }
+                    p { class: "text-sm text-muted", "Configure how each content category is handled based on detection confidence." }
+                }
+            }
+
+            // Presets section
+            div { class: "mb-lg",
+                p { class: "text-sm text-muted mb-sm", "Quick Presets:" }
+                div { class: "flex gap-sm flex-wrap",
+                    button {
+                        class: "btn btn-secondary btn-sm",
+                        onclick: {
+                            let mut content_rules = content_rules.clone();
+                            let state = state.clone();
+                            move |_| {
+                                content_rules.set(create_family_safe_preset());
+                                save_content_rules(&state, &content_rules);
+                            }
+                        },
+                        "Family Safe (Recommended)"
+                    }
+                    button {
+                        class: "btn btn-secondary btn-sm",
+                        onclick: {
+                            let mut content_rules = content_rules.clone();
+                            let state = state.clone();
+                            move |_| {
+                                content_rules.set(create_permissive_preset());
+                                save_content_rules(&state, &content_rules);
+                            }
+                        },
+                        "Permissive (Warn Only)"
+                    }
+                }
+            }
 
             // Category list
-            ContentCategory { name: "Violence", description: "Violent content and threats", color: "var(--aegis-error)" }
-            ContentCategory { name: "Self-Harm", description: "Self-harm and suicide content", color: "var(--aegis-error)" }
-            ContentCategory { name: "Adult", description: "Sexual and adult material", color: "var(--aegis-warning)" }
-            ContentCategory { name: "Jailbreak", description: "AI manipulation attempts", color: "var(--aegis-warning)" }
-            ContentCategory { name: "Hate Speech", description: "Discriminatory content", color: "var(--aegis-error)" }
-            ContentCategory { name: "Illegal", description: "Illegal activities", color: "var(--aegis-error)" }
-            ContentCategory { name: "Profanity", description: "Offensive language", color: "var(--aegis-slate-400)" }
+            div { class: "space-y-sm",
+                ContentCategoryRow {
+                    category: Category::Violence,
+                    description: "Violent content and threats",
+                    color: "var(--aegis-error)",
+                    content_rules: content_rules,
+                    state: state,
+                }
+                ContentCategoryRow {
+                    category: Category::SelfHarm,
+                    description: "Self-harm and suicide content",
+                    color: "var(--aegis-error)",
+                    content_rules: content_rules,
+                    state: state,
+                }
+                ContentCategoryRow {
+                    category: Category::Adult,
+                    description: "Sexual and adult material",
+                    color: "var(--aegis-warning)",
+                    content_rules: content_rules,
+                    state: state,
+                }
+                ContentCategoryRow {
+                    category: Category::Jailbreak,
+                    description: "AI manipulation attempts",
+                    color: "var(--aegis-warning)",
+                    content_rules: content_rules,
+                    state: state,
+                }
+                ContentCategoryRow {
+                    category: Category::Hate,
+                    description: "Discriminatory content",
+                    color: "var(--aegis-error)",
+                    content_rules: content_rules,
+                    state: state,
+                }
+                ContentCategoryRow {
+                    category: Category::Illegal,
+                    description: "Illegal activities",
+                    color: "var(--aegis-error)",
+                    content_rules: content_rules,
+                    state: state,
+                }
+                ContentCategoryRow {
+                    category: Category::Profanity,
+                    description: "Offensive language",
+                    color: "var(--aegis-slate-400)",
+                    content_rules: content_rules,
+                    state: state,
+                }
+            }
+
+            // Legend
+            div { class: "mt-lg",
+                p { class: "text-sm font-bold mb-sm", "Sensitivity Guide:" }
+                div { class: "text-sm text-muted",
+                    p { "Low (0.9): Only block very obvious violations" }
+                    p { "Medium (0.7): Balanced detection (recommended)" }
+                    p { "High (0.5): More aggressive, may have false positives" }
+                }
+            }
         }
     }
 }
 
-/// Content category row.
+/// Content category row with action and threshold controls.
 #[component]
-fn ContentCategory(name: &'static str, description: &'static str, color: &'static str) -> Element {
+fn ContentCategoryRow(
+    category: Category,
+    description: &'static str,
+    color: &'static str,
+    content_rules: Signal<ContentRuleSet>,
+    state: Signal<AppState>,
+) -> Element {
+    let category_name = category.name();
+    let rule_id = get_rule_id_for_category(category);
+
+    // Get current rule state
+    let (current_action, current_threshold, is_enabled) = {
+        let rules = content_rules.read();
+        if let Some(rule) = rules.get_rule(&rule_id) {
+            (rule.action, rule.threshold, rule.enabled)
+        } else {
+            // Default: Block at 0.7 threshold
+            (ContentAction::Block, 0.7, true)
+        }
+    };
+
     rsx! {
         div { class: "rule-card",
+            // Category indicator
             span { class: "rule-category-dot", style: "background-color: {color};" }
-            div { class: "rule-info",
-                p { class: "rule-name", "{name}" }
-                p { class: "rule-description", "{description}" }
+
+            // Enable/disable toggle
+            button {
+                class: if is_enabled { "btn btn-primary btn-sm" } else { "btn btn-secondary btn-sm" },
+                style: "margin-right: 12px; min-width: 70px;",
+                onclick: {
+                    let rule_id = rule_id.clone();
+                    let mut content_rules = content_rules.clone();
+                    let state = state.clone();
+                    move |_| {
+                        ensure_rule_exists(&mut content_rules, category, &rule_id);
+                        let new_enabled = !content_rules.read().get_rule(&rule_id).map(|r| r.enabled).unwrap_or(true);
+                        content_rules.write().set_rule_enabled(&rule_id, new_enabled);
+                        save_content_rules(&state, &content_rules);
+                    }
+                },
+                if is_enabled { "Enabled" } else { "Disabled" }
             }
-            div { class: "rule-controls",
-                select { class: "select",
-                    option { "Block" }
-                    option { "Warn" }
-                    option { "Allow" }
+
+            // Category info
+            div { class: "rule-info", style: "flex: 1; min-width: 150px;",
+                p { class: "rule-name",
+                    style: if !is_enabled { "opacity: 0.5;" } else { "" },
+                    "{category_name}"
+                }
+                p { class: "rule-description",
+                    style: if !is_enabled { "opacity: 0.5;" } else { "" },
+                    "{description}"
+                }
+            }
+
+            // Action selector and threshold - fixed width container
+            div { class: "rule-controls", style: "display: flex; align-items: center; gap: 12px; min-width: 240px;",
+                div { style: "display: flex; flex-direction: column; gap: 4px;",
+                    label { class: "text-xs text-muted", "Action" }
+                    select {
+                        class: "select",
+                        style: "min-width: 80px;",
+                        disabled: !is_enabled,
+                        onchange: {
+                            let rule_id = rule_id.clone();
+                            let mut content_rules = content_rules.clone();
+                            let state = state.clone();
+                            move |evt: Event<FormData>| {
+                                let action = string_to_action(&evt.value());
+                                ensure_rule_exists(&mut content_rules, category, &rule_id);
+                                content_rules.write().set_rule_action(&rule_id, action);
+                                save_content_rules(&state, &content_rules);
+                            }
+                        },
+                        option { value: "block", selected: current_action == ContentAction::Block, "Block" }
+                        option { value: "warn", selected: current_action == ContentAction::Warn, "Warn" }
+                        option { value: "allow", selected: current_action == ContentAction::Allow, "Allow" }
+                    }
+                }
+
+                // Threshold slider - always render container for stable layout
+                div { style: "display: flex; flex-direction: column; gap: 4px; min-width: 130px;",
+                    if current_action != ContentAction::Allow {
+                        label { class: "text-xs text-muted", "Sensitivity: {format_threshold(current_threshold)}" }
+                        input {
+                            r#type: "range",
+                            class: "slider",
+                            style: "width: 100px;",
+                            disabled: !is_enabled,
+                            min: "30",
+                            max: "95",
+                            step: "5",
+                            value: "{(current_threshold * 100.0) as i32}",
+                            onchange: {
+                                let rule_id = rule_id.clone();
+                                let mut content_rules = content_rules.clone();
+                                let state = state.clone();
+                                move |evt: Event<FormData>| {
+                                    if let Ok(val) = evt.value().parse::<f32>() {
+                                        let threshold = val / 100.0;
+                                        ensure_rule_exists(&mut content_rules, category, &rule_id);
+                                        content_rules.write().set_rule_threshold(&rule_id, threshold);
+                                        save_content_rules(&state, &content_rules);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Placeholder to maintain layout
+                        label { class: "text-xs text-muted", style: "visibility: hidden;", "Sensitivity: N/A" }
+                        div { style: "width: 100px; height: 20px;" }
+                    }
                 }
             }
         }
@@ -913,4 +1121,141 @@ fn reload_rules_from_api(profile_id: i64) {
             }
         }
     });
+}
+
+// === Content Rules Helper Functions ===
+
+/// Parses content rules JSON into ContentRuleSet.
+fn parse_content_rules(json: &serde_json::Value) -> ContentRuleSet {
+    // Try to parse as ContentRuleSet directly
+    if let Ok(rule_set) = serde_json::from_value::<ContentRuleSet>(json.clone()) {
+        // If successfully parsed but empty, return defaults
+        if rule_set.rules.is_empty() {
+            return create_full_defaults();
+        }
+        return rule_set;
+    }
+
+    // Return defaults if parsing fails
+    create_full_defaults()
+}
+
+/// Creates a full default rule set with all 7 categories (same as family safe).
+fn create_full_defaults() -> ContentRuleSet {
+    create_family_safe_preset()
+}
+
+/// Creates Family Safe preset - blocks all categories with balanced thresholds.
+fn create_family_safe_preset() -> ContentRuleSet {
+    ContentRuleSet {
+        rules: vec![
+            ContentRule::new("violence_block", "Block Violence", Category::Violence, ContentAction::Block, 0.7),
+            ContentRule::new("selfharm_block", "Block Self-Harm", Category::SelfHarm, ContentAction::Block, 0.5),
+            ContentRule::new("adult_block", "Block Adult", Category::Adult, ContentAction::Block, 0.7),
+            ContentRule::new("jailbreak_block", "Block Jailbreak", Category::Jailbreak, ContentAction::Block, 0.8),
+            ContentRule::new("hate_block", "Block Hate", Category::Hate, ContentAction::Block, 0.7),
+            ContentRule::new("illegal_block", "Block Illegal", Category::Illegal, ContentAction::Block, 0.7),
+            ContentRule::new("profanity_block", "Block Profanity", Category::Profanity, ContentAction::Block, 0.8),
+        ],
+    }
+}
+
+/// Creates Permissive preset - warns instead of blocking (except self-harm).
+fn create_permissive_preset() -> ContentRuleSet {
+    ContentRuleSet {
+        rules: vec![
+            ContentRule::new("violence_block", "Warn Violence", Category::Violence, ContentAction::Warn, 0.8),
+            ContentRule::new("selfharm_block", "Block Self-Harm", Category::SelfHarm, ContentAction::Block, 0.5), // Always block self-harm
+            ContentRule::new("adult_block", "Warn Adult", Category::Adult, ContentAction::Warn, 0.8),
+            ContentRule::new("jailbreak_block", "Warn Jailbreak", Category::Jailbreak, ContentAction::Warn, 0.9),
+            ContentRule::new("hate_block", "Warn Hate", Category::Hate, ContentAction::Warn, 0.8),
+            ContentRule::new("illegal_block", "Warn Illegal", Category::Illegal, ContentAction::Warn, 0.8),
+            ContentRule::new("profanity_block", "Allow Profanity", Category::Profanity, ContentAction::Allow, 0.0),
+        ],
+    }
+}
+
+/// Gets the rule ID for a category.
+fn get_rule_id_for_category(category: Category) -> String {
+    match category {
+        Category::Violence => "violence_block".to_string(),
+        Category::SelfHarm => "selfharm_block".to_string(),
+        Category::Adult => "adult_block".to_string(),
+        Category::Jailbreak => "jailbreak_block".to_string(),
+        Category::Hate => "hate_block".to_string(),
+        Category::Illegal => "illegal_block".to_string(),
+        Category::Profanity => "profanity_block".to_string(),
+    }
+}
+
+/// Ensures a rule exists for the given category.
+fn ensure_rule_exists(content_rules: &mut Signal<ContentRuleSet>, category: Category, rule_id: &str) {
+    if content_rules.read().get_rule(rule_id).is_none() {
+        // Add default rule for this category
+        let rule = ContentRule::block(rule_id, category, 0.7);
+        content_rules.write().add_rule(rule);
+    }
+}
+
+/// Converts ContentAction to string.
+fn action_to_string(action: ContentAction) -> &'static str {
+    match action {
+        ContentAction::Block => "block",
+        ContentAction::Warn => "warn",
+        ContentAction::Allow => "allow",
+    }
+}
+
+/// Converts string to ContentAction.
+fn string_to_action(s: &str) -> ContentAction {
+    match s {
+        "warn" => ContentAction::Warn,
+        "allow" => ContentAction::Allow,
+        _ => ContentAction::Block,
+    }
+}
+
+/// Formats threshold as a human-readable string.
+fn format_threshold(threshold: f32) -> &'static str {
+    if threshold >= 0.85 {
+        "Low"
+    } else if threshold >= 0.6 {
+        "Medium"
+    } else {
+        "High"
+    }
+}
+
+/// Saves content rules to the database and notifies the proxy.
+fn save_content_rules(state: &Signal<AppState>, content_rules: &Signal<ContentRuleSet>) {
+    let state_ref = state.read();
+    let Some(profile_id) = state_ref.selected_profile_id else {
+        return;
+    };
+
+    let Ok(Some(profile)) = state_ref.db.get_profile(profile_id) else {
+        return;
+    };
+
+    // Convert ContentRuleSet to JSON
+    let content_rules_json = serde_json::to_value(content_rules.read().clone()).unwrap_or_default();
+
+    let updated_profile = aegis_storage::NewProfile {
+        name: profile.name,
+        os_username: profile.os_username,
+        time_rules: profile.time_rules,
+        content_rules: content_rules_json,
+        enabled: profile.enabled,
+        sentiment_config: profile.sentiment_config,
+    };
+
+    if let Err(e) = state_ref.db.update_profile(profile_id, updated_profile) {
+        tracing::error!("Failed to save content rules: {}", e);
+        return;
+    }
+
+    tracing::info!("Content rules saved for profile {}", profile_id);
+
+    // Notify the proxy to reload rules
+    reload_rules_from_api(profile_id);
 }
