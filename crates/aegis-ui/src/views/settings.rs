@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 use aegis_core::extension_install::get_extension_path;
 use aegis_proxy::setup::{
     disable_system_proxy, enable_system_proxy, install_ca_certificate, is_ca_installed,
-    is_proxy_enabled,
+    is_proxy_enabled, uninstall_ca_certificate,
 };
 use aegis_proxy::{CaManager, DEFAULT_PROXY_PORT};
 
@@ -210,7 +210,34 @@ pub fn SettingsView() -> Element {
                                 }
                             } else {
                                 div { class: "mb-md",
-                                    p { class: "text-sm text-success", "Certificate is installed and trusted by the system." }
+                                    p { class: "text-sm text-success mb-sm", "Certificate is installed and trusted by the system." }
+                                    button {
+                                        class: "btn btn-danger btn-sm",
+                                        disabled: ca_installing(),
+                                        onclick: {
+                                            let ca_path_clone = ca_path.clone();
+                                            move |_| {
+                                                if let Some(ref path) = ca_path_clone {
+                                                    ca_installing.set(true);
+                                                    // Disable proxy first if enabled
+                                                    if proxy_enabled_status() {
+                                                        let _ = disable_system_proxy();
+                                                        proxy_enabled_status.set(false);
+                                                    }
+                                                    let result = uninstall_ca_certificate(path);
+                                                    ca_installing.set(false);
+                                                    if result.success {
+                                                        state.write().set_success(&result.message);
+                                                        ca_installed_status.set(false);
+                                                    } else {
+                                                        state.write().set_error(&result.message);
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        if ca_installing() { "Removing..." } else { "Uninstall Certificate" }
+                                    }
+                                    p { class: "text-sm text-muted mt-sm", "This will also disable the system proxy if enabled." }
                                 }
                             }
 
