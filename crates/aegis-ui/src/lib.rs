@@ -26,6 +26,7 @@
 use std::sync::Mutex;
 
 use aegis_proxy::FilteringState;
+use directories::ProjectDirs;
 use dioxus::prelude::*;
 
 mod components;
@@ -90,22 +91,32 @@ pub fn run_dashboard_with_filtering(
     // Load window icon
     let icon = load_icon();
 
+    // Get WebView2 data directory (to avoid permission issues in Program Files)
+    let webview_data_dir = get_webview_data_dir();
+
     tracing::debug!("run_dashboard_with_filtering: launching dioxus");
 
-    dioxus::LaunchBuilder::desktop()
-        .with_cfg(
-            dioxus::desktop::Config::new()
-                .with_window(
-                    dioxus::desktop::WindowBuilder::new()
-                        .with_title("Aegis Dashboard")
-                        .with_inner_size(dioxus::desktop::LogicalSize::new(1000.0, 700.0))
-                        .with_min_inner_size(dioxus::desktop::LogicalSize::new(800.0, 600.0))
-                        .with_window_icon(icon),
-                )
-                .with_menu(None)
-                .with_disable_context_menu(true)
-                .with_close_behaviour(close_behaviour),
+    // Build config with optional data directory
+    let mut config = dioxus::desktop::Config::new()
+        .with_window(
+            dioxus::desktop::WindowBuilder::new()
+                .with_title("Aegis Dashboard")
+                .with_inner_size(dioxus::desktop::LogicalSize::new(1000.0, 700.0))
+                .with_min_inner_size(dioxus::desktop::LogicalSize::new(800.0, 600.0))
+                .with_window_icon(icon),
         )
+        .with_menu(None)
+        .with_disable_context_menu(true)
+        .with_close_behaviour(close_behaviour);
+
+    // Set custom data directory for WebView2 to avoid UAC issues in Program Files
+    if let Some(data_dir) = webview_data_dir {
+        tracing::debug!("Setting WebView2 data directory: {:?}", data_dir);
+        config = config.with_data_directory(data_dir);
+    }
+
+    dioxus::LaunchBuilder::desktop()
+        .with_cfg(config)
         .launch(App);
 
     tracing::debug!("run_dashboard_with_filtering: dioxus launch returned");
@@ -119,6 +130,14 @@ fn load_icon() -> Option<dioxus::desktop::tao::window::Icon> {
     let image = image::load_from_memory(icon_data).ok()?.into_rgba8();
     let (width, height) = image.dimensions();
     dioxus::desktop::tao::window::Icon::from_rgba(image.into_raw(), width, height).ok()
+}
+
+/// Gets the WebView2 user data directory.
+/// On Windows, WebView2 creates cache/data files next to the exe by default.
+/// This fails in Program Files due to UAC permissions.
+/// We redirect to AppData instead.
+fn get_webview_data_dir() -> Option<std::path::PathBuf> {
+    ProjectDirs::from("", "aegis", "Aegis").map(|dirs| dirs.data_dir().join("webview2"))
 }
 
 /// Main application component.
