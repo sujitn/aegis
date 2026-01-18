@@ -4,6 +4,10 @@ All notable changes to Aegis.
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-01-18
+
+## [0.2.5] - 2026-01-18
+
 ## [0.2.1] - 2026-01-17
 
 ### Added
