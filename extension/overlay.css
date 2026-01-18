@@ -1,4 +1,5 @@
 /* Aegis overlay styles - injected into AI chat sites */
+/* Matches Aegis dashboard theme */
 
 .aegis-overlay {
   position: fixed;
@@ -6,7 +7,7 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(15, 23, 42, 0.85);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -25,13 +26,14 @@
 }
 
 .aegis-overlay-content {
-  background: white;
+  background: #1e293b;
   padding: 32px 40px;
-  border-radius: 12px;
+  border-radius: 16px;
   text-align: center;
-  max-width: 400px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  max-width: 420px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   animation: aegis-scale-in 0.2s ease-out;
+  border: 1px solid #334155;
 }
 
 @keyframes aegis-scale-in {
@@ -45,6 +47,30 @@
   }
 }
 
+/* Aegis branding header */
+.aegis-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #334155;
+}
+
+.aegis-logo {
+  width: 32px;
+  height: 32px;
+  fill: #3b82f6;
+}
+
+.aegis-brand-text {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: 0.5px;
+}
+
 /* Checking state */
 .aegis-checking .aegis-overlay-content {
   padding: 24px 32px;
@@ -53,8 +79,8 @@
 .aegis-spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid #e0e0e0;
-  border-top-color: #1a73e8;
+  border: 3px solid #334155;
+  border-top-color: #3b82f6;
   border-radius: 50%;
   margin: 0 auto 16px;
   animation: aegis-spin 0.8s linear infinite;
@@ -68,77 +94,89 @@
 
 .aegis-text {
   font-size: 14px;
-  color: #666;
+  color: #94a3b8;
   margin-top: 8px;
+}
+
+/* Status icon */
+.aegis-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 28px;
 }
 
 /* Blocked state */
 .aegis-blocked .aegis-overlay-content {
-  border-left: 4px solid #f44336;
-}
-
-.aegis-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
+  border-left: 4px solid #ef4444;
 }
 
 .aegis-blocked .aegis-icon {
-  color: #f44336;
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
 }
 
 .aegis-title {
   font-size: 20px;
   font-weight: 600;
-  color: #333;
+  color: #f1f5f9;
   margin-bottom: 8px;
 }
 
 .aegis-blocked .aegis-title {
-  color: #c62828;
+  color: #fca5a5;
 }
 
 .aegis-categories {
   font-size: 12px;
-  color: #888;
+  color: #94a3b8;
   margin-top: 12px;
-  padding: 8px;
-  background: #f5f5f5;
-  border-radius: 4px;
+  padding: 10px 14px;
+  background: #0f172a;
+  border-radius: 8px;
+  border: 1px solid #334155;
 }
 
 .aegis-hint {
   font-size: 12px;
-  color: #888;
+  color: #64748b;
   margin-top: 12px;
   font-style: italic;
 }
 
-/* Response blocked state - slightly different styling */
+/* Response blocked state */
 .aegis-response-blocked .aegis-overlay-content {
-  border-left: 4px solid #9c27b0;
+  border-left: 4px solid #a855f7;
 }
 
 .aegis-response-blocked .aegis-icon {
-  color: #9c27b0;
+  background: rgba(168, 85, 247, 0.15);
+  color: #a855f7;
 }
 
 .aegis-response-blocked .aegis-title {
-  color: #7b1fa2;
+  color: #d8b4fe;
 }
 
 /* Warning state */
 .aegis-warning .aegis-overlay-content {
-  border-left: 4px solid #ff9800;
+  border-left: 4px solid #f59e0b;
 }
 
 .aegis-warning .aegis-icon {
-  color: #ff9800;
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
 }
 
 .aegis-warning .aegis-title {
-  color: #e65100;
+  color: #fcd34d;
 }
 
+/* Buttons container */
 .aegis-buttons {
   display: flex;
   gap: 12px;
@@ -149,7 +187,7 @@
 .aegis-buttons button {
   padding: 10px 24px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -157,105 +195,65 @@
 }
 
 .aegis-cancel {
-  background: #e0e0e0;
-  color: #333;
+  background: #334155;
+  color: #e2e8f0;
 }
 
 .aegis-cancel:hover {
-  background: #d0d0d0;
+  background: #475569;
 }
 
 .aegis-proceed {
-  background: #ff9800;
-  color: white;
+  background: #f59e0b;
+  color: #1e293b;
 }
 
 .aegis-proceed:hover {
-  background: #f57c00;
+  background: #fbbf24;
 }
 
 /* Offline state */
 .aegis-offline .aegis-overlay-content {
-  border-left: 4px solid #9e9e9e;
+  border-left: 4px solid #64748b;
 }
 
 .aegis-offline .aegis-icon {
-  color: #9e9e9e;
+  background: rgba(100, 116, 139, 0.15);
+  color: #64748b;
 }
 
 .aegis-offline .aegis-title {
-  color: #616161;
+  color: #cbd5e1;
 }
 
 /* Dismiss button */
 .aegis-dismiss {
   padding: 10px 32px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  background: #1a73e8;
+  background: #3b82f6;
   color: white;
   margin-top: 20px;
   transition: background 0.2s;
 }
 
 .aegis-dismiss:hover {
-  background: #1557b0;
+  background: #2563eb;
 }
 
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-  .aegis-overlay-content {
-    background: #2d2d2d;
-    color: #e0e0e0;
-  }
+/* Success/allowed states (for future use) */
+.aegis-success .aegis-overlay-content {
+  border-left: 4px solid #22c55e;
+}
 
-  .aegis-title {
-    color: #e0e0e0;
-  }
+.aegis-success .aegis-icon {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
 
-  .aegis-blocked .aegis-title {
-    color: #ef5350;
-  }
-
-  .aegis-warning .aegis-title {
-    color: #ffb74d;
-  }
-
-  .aegis-response-blocked .aegis-title {
-    color: #ce93d8;
-  }
-
-  .aegis-response-blocked .aegis-icon {
-    color: #ce93d8;
-  }
-
-  .aegis-text {
-    color: #aaa;
-  }
-
-  .aegis-hint {
-    color: #888;
-  }
-
-  .aegis-categories {
-    background: #3d3d3d;
-    color: #999;
-  }
-
-  .aegis-cancel {
-    background: #444;
-    color: #e0e0e0;
-  }
-
-  .aegis-cancel:hover {
-    background: #555;
-  }
-
-  .aegis-spinner {
-    border-color: #444;
-    border-top-color: #4fc3f7;
-  }
+.aegis-success .aegis-title {
+  color: #86efac;
 }

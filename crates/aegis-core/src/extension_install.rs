@@ -144,7 +144,7 @@ pub fn install_extension(extension_path: &Path) -> ExtensionInstallResult {
         ))
     } else {
         ExtensionInstallResult::success(format!(
-            "Extension installed for: {}. Restart browser(s) to apply.",
+            "Extension registered for: {}. Restart browser and check chrome://extensions to enable.",
             successes.join(", ")
         ))
     }
@@ -234,6 +234,36 @@ fn install_windows(extension_path: &Path, browser: Browser) -> Result<(), Extens
     use winreg::enums::*;
     use winreg::RegKey;
 
+    // Read the manifest to get the version
+    let manifest_path = extension_path.join("manifest.json");
+    let manifest_content = std::fs::read_to_string(&manifest_path)?;
+    let manifest: serde_json::Value = serde_json::from_str(&manifest_content).map_err(|e| {
+        ExtensionInstallError::FileSystemError(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            e.to_string(),
+        ))
+    })?;
+    let version = manifest["version"].as_str().unwrap_or("1.0.0");
+
+    // Look for CRX file in release folder
+    let release_dir = extension_path.join("release");
+    let crx_path = if release_dir.exists() {
+        // Find the CRX file
+        std::fs::read_dir(&release_dir).ok().and_then(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .find(|e| {
+                    e.path()
+                        .extension()
+                        .map(|ext| ext == "crx")
+                        .unwrap_or(false)
+                })
+                .map(|e| e.path())
+        })
+    } else {
+        None
+    };
+
     // Get the registry path for external extensions
     let reg_path = get_windows_external_extensions_path(browser);
 
@@ -243,20 +273,31 @@ fn install_windows(extension_path: &Path, browser: Browser) -> Result<(), Extens
         .create_subkey(&reg_path)
         .map_err(|e| ExtensionInstallError::RegistryError(e.to_string()))?;
 
-    // Use a consistent extension ID for Aegis
-    let extension_id = "aegis-extension";
+    // Read extension ID from manifest, or use default
+    let extension_id = manifest["key"]
+        .as_str()
+        .map(|_| "aegis-extension") // If there's a key, we'll use our ID
+        .unwrap_or("aegis-extension");
 
-    // Create the extension entry JSON pointing to local update manifest
-    let extension_json = serde_json::json!({
-        "external_update_url": format!("file:///{}/updates.xml", extension_path.display().to_string().replace('\\', "/"))
-    });
+    // Create the extension entry JSON
+    // Use external_crx if CRX file exists, otherwise fall back to update URL
+    let extension_json = if let Some(ref crx) = crx_path {
+        // Use CRX file directly - this is the most reliable method
+        serde_json::json!({
+            "external_crx": crx.display().to_string().replace('\\', "/"),
+            "external_version": version
+        })
+    } else {
+        // Fall back to update URL method (less reliable for local files)
+        create_updates_xml(extension_path)?;
+        serde_json::json!({
+            "external_update_url": format!("file:///{}/updates.xml", extension_path.display().to_string().replace('\\', "/"))
+        })
+    };
 
     // Set the registry value
     key.set_value(extension_id, &extension_json.to_string())
         .map_err(|e| ExtensionInstallError::RegistryError(e.to_string()))?;
-
-    // Create an updates.xml file for the extension
-    create_updates_xml(extension_path)?;
 
     Ok(())
 }

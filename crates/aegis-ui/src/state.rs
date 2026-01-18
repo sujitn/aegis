@@ -1,13 +1,19 @@
-//! Application state management.
+//! Application state management for Dioxus.
 
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use aegis_core::auth::{AuthManager, SessionToken, SESSION_TIMEOUT};
+use aegis_core::classifier::Category;
+use aegis_core::community_rules::ParentOverrides;
+use aegis_core::protection::{PauseDuration, ProtectionManager};
 use aegis_proxy::FilteringState;
-use aegis_storage::{DailyStats, Database, Event, FlaggedEvent, FlaggedEventStats, Profile};
+use aegis_storage::{
+    DailyStats, Database, Event, FlaggedEvent, FlaggedEventStats,
+    PauseDuration as StoragePauseDuration, Profile, StateManager,
+};
+use chrono::{DateTime, Utc};
 use chrono::{Local, NaiveDate};
-use eframe::egui;
 
 use crate::error::{Result, UiError};
 
@@ -33,13 +39,12 @@ impl ProtectionStatus {
         }
     }
 
-    /// Returns the color for this status.
-    pub fn color(&self) -> egui::Color32 {
-        use crate::theme::status;
+    /// Returns the CSS class for this status.
+    pub fn css_class(&self) -> &'static str {
         match self {
-            Self::Active => status::SUCCESS, // Friendly green
-            Self::Paused => status::WARNING, // Warm amber
-            Self::Disabled => status::ERROR, // Soft red
+            Self::Active => "active",
+            Self::Paused => "paused",
+            Self::Disabled => "disabled",
         }
     }
 }
@@ -112,24 +117,36 @@ pub struct LogFilter {
 }
 
 /// Application state for the dashboard.
+/// This state is shared via Dioxus context and must be Clone.
+#[derive(Clone)]
 pub struct AppState {
-    /// Database connection.
+    /// Database connection (Arc for cloning).
     pub db: Arc<Database>,
 
-    /// Authentication manager.
-    pub auth: AuthManager,
+    /// Authentication manager (Arc for cloning).
+    pub auth: Arc<AuthManager>,
+
+    /// Protection manager for pause/resume/disable.
+    pub protection: ProtectionManager,
+
+    /// Centralized state manager for cross-process state (F032).
+    pub state_manager: StateManager,
 
     /// Current session token.
     pub session: Option<SessionToken>,
 
-    /// Last activity time for session timeout.
-    pub last_activity: Instant,
+    /// Last activity time for session timeout (wrapped in Arc for cloning).
+    last_activity: Arc<std::sync::Mutex<Instant>>,
 
     /// Current view.
     pub view: View,
 
-    /// Protection status.
-    pub protection_status: ProtectionStatus,
+    /// Cached protection status for UI reactivity.
+    /// This is updated whenever protection state changes.
+    pub cached_protection_status: ProtectionStatus,
+
+    /// Cached pause expiry time (from database).
+    pub cached_pause_until: Option<DateTime<Utc>>,
 
     /// Interception mode.
     pub interception_mode: InterceptionMode,
@@ -179,6 +196,12 @@ pub struct AppState {
     /// Optional filtering state for live rule updates.
     /// When set, rule changes in the UI are immediately applied to the proxy.
     pub filtering_state: Option<FilteringState>,
+
+    /// Parent overrides for community rules (whitelist, blacklist, disabled rules).
+    pub parent_overrides: ParentOverrides,
+
+    /// Currently detected active profile ID (based on OS username).
+    pub active_profile_id: Option<i64>,
 }
 
 impl AppState {
@@ -192,8 +215,31 @@ impl AppState {
     /// If `filtering_state` is provided, rule changes made in the UI will be
     /// immediately applied to the running proxy.
     pub fn with_filtering_state(db: Database, filtering_state: Option<FilteringState>) -> Self {
+        let db_arc = Arc::new(db);
         let auth = AuthManager::new();
-        let is_first_setup = !db.is_auth_setup().unwrap_or(false);
+        let protection = ProtectionManager::new();
+        let state_manager = StateManager::new(db_arc.clone(), "dashboard");
+        let is_first_setup = !db_arc.is_auth_setup().unwrap_or(false);
+
+        // Get initial protection status from database (F032)
+        let (initial_protection_status, initial_pause_until) = state_manager
+            .get_protection_state()
+            .map(|ps| {
+                let status = if ps.is_disabled() {
+                    ProtectionStatus::Disabled
+                } else if ps.is_paused() {
+                    ProtectionStatus::Paused
+                } else {
+                    ProtectionStatus::Active
+                };
+                let pause_until = ps.pause_until.and_then(|s| {
+                    DateTime::parse_from_rfc3339(&s)
+                        .ok()
+                        .map(|dt| dt.with_timezone(&Utc))
+                });
+                (status, pause_until)
+            })
+            .unwrap_or((ProtectionStatus::Active, None));
 
         // Start with Setup view if first run, otherwise Login
         let initial_view = if is_first_setup {
@@ -203,12 +249,15 @@ impl AppState {
         };
 
         Self {
-            db: Arc::new(db),
-            auth,
+            db: db_arc,
+            auth: Arc::new(auth),
+            protection,
+            state_manager,
             session: None,
-            last_activity: Instant::now(),
+            last_activity: Arc::new(std::sync::Mutex::new(Instant::now())),
             view: initial_view,
-            protection_status: ProtectionStatus::Active,
+            cached_protection_status: initial_protection_status,
+            cached_pause_until: initial_pause_until,
             interception_mode: InterceptionMode::Proxy,
             selected_profile_id: None,
             rules_tab: RulesTab::Time,
@@ -225,7 +274,146 @@ impl AppState {
             confirm_password_input: String::new(),
             is_first_setup,
             filtering_state,
+            parent_overrides: ParentOverrides::new(),
+            active_profile_id: None,
         }
+    }
+
+    /// Detects the active profile based on the current OS username.
+    pub fn detect_active_profile(&mut self) {
+        // Get current OS username
+        #[cfg(target_os = "windows")]
+        let username = std::env::var("USERNAME").ok();
+
+        #[cfg(not(target_os = "windows"))]
+        let username = std::env::var("USER").ok();
+
+        if let Some(ref current_username) = username {
+            // Find a profile that matches this username
+            for profile in &self.profiles {
+                if let Some(ref os_username) = profile.os_username {
+                    if os_username.eq_ignore_ascii_case(current_username) {
+                        self.active_profile_id = Some(profile.id);
+                        return;
+                    }
+                }
+            }
+        }
+
+        // No matching profile found - use the first enabled profile if available
+        self.active_profile_id = self.profiles.iter().find(|p| p.enabled).map(|p| p.id);
+    }
+
+    /// Gets the active profile, if any.
+    pub fn get_active_profile(&self) -> Option<&Profile> {
+        self.active_profile_id
+            .and_then(|id| self.profiles.iter().find(|p| p.id == id))
+    }
+
+    /// Loads parent overrides from the database.
+    pub fn load_parent_overrides(&mut self) -> Result<()> {
+        if let Ok(Some(config)) = self.db.get_config("parent_overrides") {
+            if let Ok(overrides) = serde_json::from_value(config.value) {
+                self.parent_overrides = overrides;
+            }
+        }
+        Ok(())
+    }
+
+    /// Saves parent overrides to the database.
+    pub fn save_parent_overrides(&self) -> Result<()> {
+        let json = serde_json::to_value(&self.parent_overrides)
+            .map_err(|e| UiError::InvalidInput(e.to_string()))?;
+        self.db.set_config("parent_overrides", &json)?;
+        Ok(())
+    }
+
+    /// Adds a term to the whitelist.
+    pub fn add_whitelist_term(&mut self, term: &str) -> Result<()> {
+        self.parent_overrides.add_whitelist(term);
+        self.save_parent_overrides()
+    }
+
+    /// Removes a term from the whitelist.
+    pub fn remove_whitelist_term(&mut self, term: &str) -> Result<()> {
+        self.parent_overrides.remove_whitelist(term);
+        self.save_parent_overrides()
+    }
+
+    /// Adds a term to the blacklist with a category.
+    pub fn add_blacklist_term(&mut self, term: &str, category: Category) -> Result<()> {
+        self.parent_overrides.add_blacklist(term, category);
+        self.save_parent_overrides()
+    }
+
+    /// Removes a term from the blacklist.
+    pub fn remove_blacklist_term(&mut self, term: &str) -> Result<()> {
+        self.parent_overrides.remove_blacklist(term);
+        self.save_parent_overrides()
+    }
+
+    /// Updates community rules from content fetched from a URL.
+    /// Supports JSON arrays, CSV files, or plain text (one word per line for profanity).
+    /// This is a sync function - use with async fetch in UI.
+    pub fn load_community_rules_from_content(
+        &self,
+        content: &str,
+        source_name: &str,
+    ) -> std::result::Result<usize, String> {
+        use aegis_core::community_rules::{CommunityRuleManager, RuleSource};
+
+        let source = RuleSource::new(source_name, chrono::Utc::now().format("%Y%m%d").to_string());
+
+        let mut manager = CommunityRuleManager::with_defaults();
+
+        let trimmed = content.trim();
+
+        // Try to parse as JSON first
+        if trimmed.starts_with('[') {
+            manager.load_rules_from_json(content, source)
+        } else if source_name.ends_with(".csv")
+            || trimmed
+                .lines()
+                .next()
+                .map(|l| l.contains(','))
+                .unwrap_or(false)
+        {
+            // CSV format - extract words from first column, skip header
+            let words: Vec<&str> = trimmed
+                .lines()
+                .skip(1) // Skip header row
+                .filter_map(|line| {
+                    let word = line.split(',').next()?.trim();
+                    if word.is_empty() {
+                        None
+                    } else {
+                        Some(word)
+                    }
+                })
+                .collect();
+
+            let txt_content = words.join("\n");
+            manager.load_rules_from_txt(&txt_content, Category::Profanity, source)
+        } else {
+            // Plain text format - one word per line, treat as profanity
+            manager.load_rules_from_txt(content, Category::Profanity, source)
+        }
+    }
+
+    /// Updates community rules from a local file.
+    pub fn update_community_rules_from_file(
+        &self,
+        path: &std::path::Path,
+    ) -> std::result::Result<usize, String> {
+        use aegis_core::community_rules::{CommunityRuleManager, RuleSource};
+
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("custom-file");
+        let source = RuleSource::new(filename, chrono::Utc::now().format("%Y%m%d").to_string());
+        let mut manager = CommunityRuleManager::with_defaults();
+        manager.update_from_file(path, source)
     }
 
     /// Creates state with in-memory database (for testing).
@@ -237,8 +425,10 @@ impl AppState {
     /// Checks if session is valid and not expired.
     pub fn is_authenticated(&self) -> bool {
         if let Some(ref token) = self.session {
-            if self.last_activity.elapsed() > SESSION_TIMEOUT {
-                return false;
+            if let Ok(last) = self.last_activity.lock() {
+                if last.elapsed() > SESSION_TIMEOUT {
+                    return false;
+                }
             }
             self.auth.is_session_valid(token)
         } else {
@@ -248,7 +438,9 @@ impl AppState {
 
     /// Updates last activity time.
     pub fn touch_activity(&mut self) {
-        self.last_activity = Instant::now();
+        if let Ok(mut last) = self.last_activity.lock() {
+            *last = Instant::now();
+        }
     }
 
     /// Attempts to login with password.
@@ -258,7 +450,7 @@ impl AppState {
         if self.auth.verify_password(password, &hash)? {
             let token = self.auth.create_session();
             self.session = Some(token);
-            self.last_activity = Instant::now();
+            self.touch_activity();
             self.db.update_last_login()?;
             self.view = View::Dashboard;
             self.password_input.clear();
@@ -278,7 +470,7 @@ impl AppState {
         // Auto-login after setup
         let token = self.auth.create_session();
         self.session = Some(token);
-        self.last_activity = Instant::now();
+        self.touch_activity();
         self.view = View::Dashboard;
         self.password_input.clear();
 
@@ -337,6 +529,12 @@ impl AppState {
 
         // Load profiles
         self.profiles = self.load_profiles()?;
+
+        // Load parent overrides
+        let _ = self.load_parent_overrides();
+
+        // Detect active profile
+        self.detect_active_profile();
 
         Ok(())
     }
@@ -424,6 +622,188 @@ impl AppState {
         writer.flush()?;
         Ok(())
     }
+
+    // ==================== Protection Methods ====================
+
+    /// Returns the current protection status for UI display.
+    /// Uses the cached value for reactivity.
+    pub fn protection_status(&self) -> ProtectionStatus {
+        self.cached_protection_status
+    }
+
+    /// Syncs the cached protection status with the centralized state (F032).
+    /// Reads from database via StateManager.
+    fn sync_protection_status(&mut self) {
+        // Read from centralized state manager (database)
+        if let Ok(ps) = self.state_manager.get_protection_state() {
+            self.cached_protection_status = if ps.is_disabled() {
+                ProtectionStatus::Disabled
+            } else if ps.is_paused() {
+                ProtectionStatus::Paused
+            } else {
+                ProtectionStatus::Active
+            };
+
+            // Update pause expiry
+            self.cached_pause_until = ps.pause_until.and_then(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            });
+
+            // Also sync local ProtectionManager state (for consistency)
+            if self.cached_protection_status == ProtectionStatus::Active {
+                let _ = self.protection.resume();
+            }
+        }
+    }
+
+    /// Refreshes protection status from the database.
+    /// Call this to pick up changes made by other processes.
+    pub fn refresh_protection_status(&mut self) {
+        self.sync_protection_status();
+    }
+
+    /// Returns remaining pause time, if any.
+    /// Uses the cached pause expiry from the database.
+    pub fn pause_remaining(&self) -> Option<Duration> {
+        self.cached_pause_until.and_then(|until| {
+            let now = Utc::now();
+            if until > now {
+                let diff = until - now;
+                Some(Duration::from_secs(diff.num_seconds().max(0) as u64))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Formats the remaining pause time as a human-readable string.
+    pub fn pause_remaining_str(&self) -> Option<String> {
+        self.pause_remaining().map(|d| {
+            let total_secs = d.as_secs();
+            let hours = total_secs / 3600;
+            let mins = (total_secs % 3600) / 60;
+            let secs = total_secs % 60;
+
+            if hours > 0 {
+                format!("{}h {}m", hours, mins)
+            } else if mins > 0 {
+                format!("{}m {}s", mins, secs)
+            } else {
+                format!("{}s", secs)
+            }
+        })
+    }
+
+    /// Pauses protection for the specified duration.
+    /// Requires an authenticated session.
+    /// Persists to database and calls API to notify proxy.
+    pub fn pause_protection(&mut self, duration: PauseDuration) -> Result<()> {
+        let session = self
+            .session
+            .as_ref()
+            .ok_or(UiError::Auth(aegis_core::auth::AuthError::SessionInvalid))?;
+
+        // Convert aegis_core PauseDuration to aegis_storage PauseDuration
+        let storage_duration = match duration {
+            PauseDuration::Minutes(m) => StoragePauseDuration::Minutes(m),
+            PauseDuration::Hours(h) => StoragePauseDuration::Hours(h),
+            PauseDuration::Indefinite => StoragePauseDuration::Indefinite,
+        };
+
+        // Persist to database via StateManager (F032)
+        self.state_manager
+            .pause_protection(storage_duration)
+            .map_err(|e| UiError::InvalidInput(format!("Failed to pause: {}", e)))?;
+
+        // Also update local state for immediate UI feedback
+        let _ = self.protection.pause(duration, session, &self.auth);
+
+        // Call API to notify proxy (in case it's in a separate process)
+        let (duration_type, duration_value) = match duration {
+            PauseDuration::Minutes(m) => ("minutes", m),
+            PauseDuration::Hours(h) => ("hours", h),
+            PauseDuration::Indefinite => ("indefinite", 0),
+        };
+
+        let session_token = session.as_str().to_string();
+        let _ = std::thread::spawn(move || {
+            let client = reqwest::blocking::Client::new();
+            let _ = client
+                .post("http://127.0.0.1:48765/api/protection/pause")
+                .json(&serde_json::json!({
+                    "session_token": session_token,
+                    "duration_type": duration_type,
+                    "duration_value": duration_value
+                }))
+                .send();
+        });
+
+        self.sync_protection_status();
+        Ok(())
+    }
+
+    /// Resumes protection immediately.
+    /// Does not require authentication.
+    /// Persists to database and calls API to notify proxy.
+    pub fn resume_protection(&mut self) {
+        // Persist to database via StateManager (F032)
+        if let Err(e) = self.state_manager.resume_protection() {
+            tracing::warn!("Failed to resume protection in database: {}", e);
+        }
+
+        // Also update local state
+        let _ = self.protection.resume();
+
+        // Call API to notify proxy (in case it's in a separate process)
+        let _ = std::thread::spawn(|| {
+            let client = reqwest::blocking::Client::new();
+            let _ = client
+                .post("http://127.0.0.1:48765/api/protection/resume")
+                .json(&serde_json::json!({}))
+                .send();
+        });
+
+        self.sync_protection_status();
+    }
+
+    /// Disables protection completely.
+    /// Requires an authenticated session.
+    /// Persists to database and calls API to notify proxy.
+    pub fn disable_protection(&mut self) -> Result<()> {
+        let session = self
+            .session
+            .as_ref()
+            .ok_or(UiError::Auth(aegis_core::auth::AuthError::SessionInvalid))?;
+
+        // Persist to database via StateManager (F032)
+        self.state_manager
+            .disable_protection()
+            .map_err(|e| UiError::InvalidInput(format!("Failed to disable: {}", e)))?;
+
+        // Also update local state
+        let _ = self.protection.disable(session, &self.auth);
+
+        // Call API to notify proxy (in case it's in a separate process)
+        let session_token = session.as_str().to_string();
+        let _ = std::thread::spawn(move || {
+            let client = reqwest::blocking::Client::new();
+            let _ = client
+                .post("http://127.0.0.1:48765/api/protection/pause")
+                .json(&serde_json::json!({
+                    "session_token": session_token,
+                    "duration_type": "indefinite",
+                    "duration_value": 0
+                }))
+                .send();
+        });
+
+        self.sync_protection_status();
+        Ok(())
+    }
+
+    // ==================== Message Methods ====================
 
     /// Clears message after display.
     pub fn clear_messages(&mut self) {

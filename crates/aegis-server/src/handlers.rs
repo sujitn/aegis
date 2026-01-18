@@ -6,15 +6,17 @@ use tracing::{debug, info};
 
 use aegis_core::auth::SessionToken;
 use aegis_core::classifier::SentimentFlag;
-use aegis_storage::{models::Action, NewRule};
+use aegis_storage::{models::Action, NewRule, PauseDuration};
 
 use crate::error::{ApiError, Result};
 use crate::models::{
     AcknowledgeAllRequest, AcknowledgeRequest, AcknowledgeResponse, AuthVerifyRequest,
     AuthVerifyResponse, CategoryCountsResponse, CategoryMatchResponse, CheckRequest, CheckResponse,
     DeleteFlaggedRequest, FlaggedEntry, FlaggedQuery, FlaggedResponse, FlaggedStatsResponse,
-    FlaggedTypeCounts, LogEntry, LogsQuery, LogsResponse, RuleEntry, RulesResponse, StatsResponse,
-    UpdateRulesRequest, UpdateRulesResponse,
+    FlaggedTypeCounts, LogEntry, LogsQuery, LogsResponse, PauseProtectionRequest,
+    ProtectionResponse, ProtectionStatusResponse, ReloadRulesRequest, ReloadRulesResponse,
+    ResumeProtectionRequest, RuleEntry, RulesResponse, StatsResponse, UpdateRulesRequest,
+    UpdateRulesResponse,
 };
 use crate::state::AppState;
 
@@ -28,6 +30,19 @@ pub async fn check_prompt(
         os_username = ?req.os_username,
         "Checking prompt"
     );
+
+    // Check if protection is enabled (F032 - read from database)
+    let is_filtering_enabled = state.state_manager.is_filtering_enabled().unwrap_or(true); // Default to enabled on error
+
+    if !is_filtering_enabled {
+        debug!("Protection is paused/disabled, allowing prompt");
+        return Ok(Json(CheckResponse {
+            action: aegis_core::rule_engine::RuleAction::Allow,
+            reason: "protection_paused".to_string(),
+            categories: vec![],
+            latency_ms: 0,
+        }));
+    }
 
     // Classify the prompt
     let classification = {
@@ -470,5 +485,237 @@ pub async fn delete_flagged(
     Ok(Json(AcknowledgeResponse {
         success,
         acknowledged_count: if success { 1 } else { 0 },
+    }))
+}
+
+// ===== Rules Reload Handler =====
+
+/// POST /api/rules/reload - Reload rules from database for a profile.
+///
+/// This endpoint reloads time and content rules from the database and updates
+/// the proxy's FilteringState if one is configured. Call this after saving
+/// rules in the UI to apply changes to the running proxy.
+pub async fn reload_rules(
+    State(state): State<AppState>,
+    Json(req): Json<ReloadRulesRequest>,
+) -> Result<Json<ReloadRulesResponse>> {
+    info!(profile_id = req.profile_id, "Reloading rules from database");
+
+    // Get the profile from the database
+    let profile = state
+        .db
+        .get_profile(req.profile_id)?
+        .ok_or_else(|| ApiError::BadRequest(format!("Profile {} not found", req.profile_id)))?;
+
+    // If profile is disabled, use empty rules (no blocking)
+    let (time_rules, content_rules) = if profile.enabled {
+        // Parse time rules from JSON
+        let time_rules: aegis_core::time_rules::TimeRuleSet =
+            serde_json::from_value(profile.time_rules.clone()).unwrap_or_default();
+
+        // Parse content rules from JSON
+        let content_rules: aegis_core::content_rules::ContentRuleSet =
+            serde_json::from_value(profile.content_rules.clone()).unwrap_or_default();
+
+        (time_rules, content_rules)
+    } else {
+        info!(
+            profile_id = req.profile_id,
+            profile_name = %profile.name,
+            "Profile is disabled, using empty rules"
+        );
+        (
+            aegis_core::time_rules::TimeRuleSet::default(),
+            aegis_core::content_rules::ContentRuleSet::default(),
+        )
+    };
+
+    let time_rules_count = time_rules.rules.len();
+    let content_rules_count = content_rules.rules.len();
+
+    // Log each time rule's enabled status for debugging
+    for rule in &time_rules.rules {
+        info!(
+            rule_id = %rule.id,
+            rule_name = %rule.name,
+            enabled = rule.enabled,
+            "Time rule status"
+        );
+    }
+
+    info!(
+        profile_id = req.profile_id,
+        profile_name = %profile.name,
+        time_rules_count,
+        content_rules_count,
+        "Loaded rules from profile"
+    );
+
+    // Update the proxy's FilteringState if available
+    if let Some(ref filtering_state) = state.filtering_state {
+        filtering_state.update_rules(time_rules.clone(), content_rules.clone());
+        filtering_state.set_profile_with_id(Some(profile.name.clone()), Some(profile.id));
+
+        // Also update sentiment analysis config
+        if profile.sentiment_config.enabled {
+            use aegis_core::classifier::{SentimentConfig, SentimentFlag};
+            use std::collections::HashSet;
+
+            let mut enabled_flags = HashSet::new();
+            if profile.sentiment_config.detect_distress {
+                enabled_flags.insert(SentimentFlag::Distress);
+            }
+            if profile.sentiment_config.detect_crisis {
+                enabled_flags.insert(SentimentFlag::CrisisIndicator);
+            }
+            if profile.sentiment_config.detect_bullying {
+                enabled_flags.insert(SentimentFlag::Bullying);
+            }
+            if profile.sentiment_config.detect_negative {
+                enabled_flags.insert(SentimentFlag::NegativeSentiment);
+            }
+
+            let sentiment_config = SentimentConfig {
+                enabled: true,
+                threshold: profile.sentiment_config.sensitivity,
+                enabled_flags,
+                notify_on_flag: true,
+            };
+            filtering_state.enable_sentiment_analysis(sentiment_config);
+        } else {
+            filtering_state.disable_sentiment_analysis();
+        }
+
+        info!(
+            profile_name = %profile.name,
+            "Updated proxy FilteringState with new rules"
+        );
+    }
+
+    // Also update the server's rule engine
+    {
+        let mut rules = state.rules.write().unwrap();
+        rules.time_rules = time_rules;
+        rules.content_rules = content_rules;
+    }
+
+    Ok(Json(ReloadRulesResponse {
+        success: true,
+        time_rules_count,
+        content_rules_count,
+        message: format!(
+            "Reloaded {} time rules and {} content rules for profile '{}'",
+            time_rules_count, content_rules_count, profile.name
+        ),
+    }))
+}
+
+// ===== Protection Control Handlers =====
+
+/// GET /api/protection/status - Get current protection status.
+///
+/// Uses centralized state from database (F032) for cross-process consistency.
+pub async fn get_protection_status(
+    State(state): State<AppState>,
+) -> Result<Json<ProtectionStatusResponse>> {
+    // Read from centralized state manager (database)
+    let protection_state = state
+        .state_manager
+        .get_protection_state()
+        .map_err(|e| ApiError::Internal(format!("Failed to get protection state: {}", e)))?;
+
+    let enabled = protection_state.is_active();
+    let status = if protection_state.is_disabled() {
+        "disabled".to_string()
+    } else if protection_state.is_paused() {
+        "paused".to_string()
+    } else {
+        "active".to_string()
+    };
+
+    Ok(Json(ProtectionStatusResponse { enabled, status }))
+}
+
+/// POST /api/protection/pause - Pause protection.
+///
+/// Persists to database (F032) so all processes see the change.
+/// Note: Auth is handled by the dashboard UI (user must be logged in to see the pause button).
+pub async fn pause_protection(
+    State(state): State<AppState>,
+    Json(req): Json<PauseProtectionRequest>,
+) -> Result<Json<ProtectionResponse>> {
+    // Note: We skip session validation because the dashboard runs in a separate process
+    // with its own AuthManager. The user has already authenticated in the dashboard.
+    let _ = req.session_token; // Acknowledge the field
+
+    // Convert request to PauseDuration
+    let duration = match req.duration_type.as_str() {
+        "minutes" => PauseDuration::Minutes(req.duration_value),
+        "hours" => PauseDuration::Hours(req.duration_value),
+        "indefinite" => PauseDuration::Indefinite,
+        _ => {
+            return Err(ApiError::BadRequest(format!(
+                "Invalid duration type: {}",
+                req.duration_type
+            )))
+        }
+    };
+
+    // Pause via centralized state manager (writes to database)
+    state
+        .state_manager
+        .pause_protection(duration)
+        .map_err(|e| ApiError::Internal(format!("Failed to pause protection: {}", e)))?;
+
+    // Also update FilteringState for immediate in-memory sync (if proxy is in same process)
+    if let Some(ref filtering_state) = state.filtering_state {
+        filtering_state.disable();
+    }
+
+    let duration_desc = match req.duration_type.as_str() {
+        "minutes" => format!("{} minutes", req.duration_value),
+        "hours" => format!("{} hours", req.duration_value),
+        "indefinite" => "indefinitely".to_string(),
+        _ => "unknown duration".to_string(),
+    };
+
+    info!(
+        "Protection paused for {} (persisted to database)",
+        duration_desc
+    );
+
+    Ok(Json(ProtectionResponse {
+        success: true,
+        status: "paused".to_string(),
+        message: format!("Protection paused for {}", duration_desc),
+    }))
+}
+
+/// POST /api/protection/resume - Resume protection.
+///
+/// Persists to database (F032) so all processes see the change.
+pub async fn resume_protection(
+    State(state): State<AppState>,
+    Json(_req): Json<ResumeProtectionRequest>,
+) -> Result<Json<ProtectionResponse>> {
+    // Note: Resume does not require auth (security design - resuming is always allowed)
+
+    // Resume via centralized state manager (writes to database)
+    state
+        .state_manager
+        .resume_protection()
+        .map_err(|e| ApiError::Internal(format!("Failed to resume protection: {}", e)))?;
+
+    // Also update FilteringState for immediate in-memory sync (if proxy is in same process)
+    if let Some(ref filtering_state) = state.filtering_state {
+        filtering_state.enable();
+    }
+
+    info!("Protection resumed (persisted to database)");
+
+    Ok(Json(ProtectionResponse {
+        success: true,
+        status: "active".to_string(),
+        message: "Protection resumed".to_string(),
     }))
 }

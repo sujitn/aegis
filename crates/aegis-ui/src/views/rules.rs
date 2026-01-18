@@ -1,1303 +1,1697 @@
-//! Rules configuration view with Community, Content, and Time rules.
+//! Rules configuration view with time and content rule editing.
 
-use std::collections::HashMap;
+#![allow(clippy::clone_on_copy)]
+#![allow(clippy::double_ended_iterator_last)]
 
-use eframe::egui::{self, Color32, RichText};
-use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+
+use dioxus::prelude::*;
 
 use aegis_core::classifier::Category;
-use aegis_core::community_rules::{CommunityRuleManager, ParentOverrides, RuleTier};
+use aegis_core::community_rules::{CommunityRuleManager, RuleTier};
 use aegis_core::content_rules::{ContentAction, ContentRule, ContentRuleSet};
-use aegis_core::time_rules::{TimeRange, TimeRuleSet, Weekday};
+use aegis_core::time_rules::{TimeOfDay, TimeRange, TimeRule, TimeRuleSet, Weekday};
 
 use crate::state::{AppState, RulesTab, View};
-use crate::theme::{brand, status};
 
-/// State for the rules view.
-pub struct RulesState {
-    /// Community rule manager.
-    pub community_manager: CommunityRuleManager,
-    /// Whether rules have been initialized from profile.
-    pub initialized: bool,
-    /// Content rules state per category.
-    pub content_rules: HashMap<Category, ContentRuleState>,
-    /// Time rules list.
-    pub time_rules: Vec<TimeRule>,
-    /// Parent overrides.
-    pub overrides: ParentOverrides,
-    /// Time rule editor.
-    pub time_editor: TimeRuleEditor,
-    /// Whitelist input field.
-    pub whitelist_input: String,
-    /// Blacklist input field.
-    pub blacklist_input: String,
-    /// Blacklist category selection.
-    pub blacklist_category: Category,
-    /// Whether there are unsaved changes.
-    pub has_changes: bool,
-    /// Currently selected community tier filter.
-    pub community_tier_filter: Option<RuleTier>,
-    /// Search filter for community rules.
-    pub community_search: String,
-}
+/// Rules view component.
+#[component]
+pub fn RulesView() -> Element {
+    let mut state = use_context::<Signal<AppState>>();
+    let selected_profile_id = state.read().selected_profile_id;
+    let rules_tab = state.read().rules_tab;
+    let profiles = state.read().profiles.clone();
 
-impl Default for RulesState {
-    fn default() -> Self {
-        Self {
-            community_manager: CommunityRuleManager::default(),
-            initialized: false,
-            content_rules: HashMap::new(),
-            time_rules: Vec::new(),
-            overrides: ParentOverrides::default(),
-            time_editor: TimeRuleEditor::default(),
-            whitelist_input: String::new(),
-            blacklist_input: String::new(),
-            blacklist_category: Category::Profanity, // Default to Profanity
-            has_changes: false,
-            community_tier_filter: None,
-            community_search: String::new(),
-        }
-    }
-}
-
-/// State for a single content rule category.
-#[derive(Clone)]
-pub struct ContentRuleState {
-    pub action: ContentAction,
-    pub threshold: f32,
-    pub enabled: bool,
-}
-
-impl Default for ContentRuleState {
-    fn default() -> Self {
-        Self {
-            action: ContentAction::Block,
-            threshold: 0.7,
-            enabled: true,
-        }
-    }
-}
-
-/// A time rule configuration.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct TimeRule {
-    pub id: String,
-    pub name: String,
-    pub start_time: String,
-    pub end_time: String,
-    pub days: Vec<String>,
-    pub action: String,
-    pub enabled: bool,
-}
-
-impl Default for TimeRule {
-    fn default() -> Self {
-        Self {
-            id: uuid_simple(),
-            name: String::new(),
-            start_time: "21:00".to_string(),
-            end_time: "07:00".to_string(),
-            days: vec![
-                "Monday".to_string(),
-                "Tuesday".to_string(),
-                "Wednesday".to_string(),
-                "Thursday".to_string(),
-                "Friday".to_string(),
-            ],
-            action: "block".to_string(),
-            enabled: true,
-        }
-    }
-}
-
-/// Editor state for time rules.
-#[derive(Default)]
-pub struct TimeRuleEditor {
-    pub open: bool,
-    pub editing_index: Option<usize>,
-    pub rule: TimeRule,
-    pub confirm_delete: Option<usize>,
-}
-
-impl TimeRuleEditor {
-    pub fn new_rule(&mut self) {
-        self.open = true;
-        self.editing_index = None;
-        self.rule = TimeRule::default();
-    }
-
-    pub fn edit_rule(&mut self, index: usize, rule: &TimeRule) {
-        self.open = true;
-        self.editing_index = Some(index);
-        self.rule = rule.clone();
-    }
-
-    pub fn close(&mut self) {
-        self.open = false;
-        self.editing_index = None;
-        self.confirm_delete = None;
-    }
-}
-
-/// Generate a simple unique ID.
-fn uuid_simple() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!("rule_{:x}", nanos)
-}
-
-impl RulesState {
-    /// Creates a new rules state.
-    pub fn new() -> Self {
-        Self {
-            community_manager: CommunityRuleManager::with_defaults(),
-            ..Default::default()
-        }
-    }
-
-    /// Initializes state from a profile's rules.
-    pub fn load_from_profile(&mut self, profile: &aegis_storage::Profile) {
-        // Load content rules
-        self.content_rules.clear();
-        if let Some(rules) = profile
-            .content_rules
-            .get("categories")
-            .and_then(|v| v.as_object())
-        {
-            for (cat_str, config) in rules {
-                if let Some(category) = parse_category(cat_str) {
-                    let state = ContentRuleState {
-                        action: config
-                            .get("action")
-                            .and_then(|v| v.as_str())
-                            .map(parse_action)
-                            .unwrap_or(ContentAction::Block),
-                        threshold: config
-                            .get("threshold")
-                            .and_then(|v| v.as_f64())
-                            .unwrap_or(0.7) as f32,
-                        enabled: config
-                            .get("enabled")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(true),
-                    };
-                    self.content_rules.insert(category, state);
-                }
-            }
-        }
-
-        // Initialize defaults for missing categories
-        for category in all_categories() {
-            self.content_rules
-                .entry(category)
-                .or_insert_with(|| ContentRuleState {
-                    action: ContentAction::Block,
-                    threshold: default_threshold(category),
-                    enabled: true,
-                });
-        }
-
-        // Load time rules
-        self.time_rules.clear();
-        if let Some(rules) = profile.time_rules.get("rules").and_then(|v| v.as_array()) {
-            for rule in rules {
-                if let Ok(time_rule) = serde_json::from_value::<TimeRule>(rule.clone()) {
-                    self.time_rules.push(time_rule);
-                }
-            }
-        }
-
-        // Load parent overrides
-        if let Some(overrides) = profile.content_rules.get("overrides") {
-            if let Ok(o) = serde_json::from_value::<ParentOverrides>(overrides.clone()) {
-                self.overrides = o;
-                self.community_manager.set_overrides(self.overrides.clone());
-            }
-        }
-
-        self.initialized = true;
-        self.has_changes = false;
-    }
-
-    /// Saves rules to a profile JSON format.
-    pub fn save_to_profile(&self) -> (serde_json::Value, serde_json::Value) {
-        // Build content rules JSON
-        let mut categories = serde_json::Map::new();
-        for (category, state) in &self.content_rules {
-            let config = serde_json::json!({
-                "action": action_to_str(state.action),
-                "threshold": state.threshold,
-                "enabled": state.enabled,
-            });
-            categories.insert(category_to_str(category), config);
-        }
-
-        let content_rules = serde_json::json!({
-            "categories": categories,
-            "overrides": self.overrides,
-        });
-
-        // Build time rules JSON
-        let time_rules = serde_json::json!({
-            "rules": self.time_rules,
-        });
-
-        (content_rules, time_rules)
-    }
-}
-
-/// Renders the rules view.
-pub fn render(ui: &mut egui::Ui, state: &mut AppState, rules_state: &mut RulesState) {
-    // Get selected profile name and initialize if needed
-    let profile_name = state
-        .selected_profile_id
-        .and_then(|id| state.profiles.iter().find(|p| p.id == id))
+    // Get profile name
+    let profile_name = selected_profile_id
+        .and_then(|id| profiles.iter().find(|p| p.id == id))
         .map(|p| p.name.clone())
         .unwrap_or_else(|| "Unknown".to_string());
 
-    // Initialize rules state from profile if needed
-    if !rules_state.initialized {
-        if let Some(profile) = state
-            .selected_profile_id
-            .and_then(|id| state.profiles.iter().find(|p| p.id == id))
-        {
-            rules_state.load_from_profile(profile);
-        }
-    }
-
-    // Track actions to perform after UI rendering
-    let mut go_back = false;
-    let mut save_changes = false;
-
-    // Header with back button and save
-    ui.horizontal(|ui| {
-        if ui.button("< Back").clicked() {
-            go_back = true;
-        }
-        ui.heading(format!("Rules: {}", profile_name));
-
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let save_btn =
-                ui.add_enabled(rules_state.has_changes, egui::Button::new("Save Changes"));
-            if save_btn.clicked() {
-                save_changes = true;
-            }
-
-            if rules_state.has_changes {
-                ui.colored_label(status::WARNING, "Unsaved changes");
-            }
-        });
-    });
-
-    // Handle actions after UI
-    if go_back {
-        rules_state.initialized = false;
-        state.view = View::Profiles;
-        return;
-    }
-    if save_changes {
-        save_rules(state, rules_state);
-    }
-
-    ui.add_space(16.0);
-
-    // Tab bar
-    ui.horizontal(|ui| {
-        let tabs = [
-            (RulesTab::Time, "Time Rules"),
-            (RulesTab::Content, "Content Rules"),
-            (RulesTab::Community, "Community Rules"),
-        ];
-
-        for (tab, label) in tabs {
-            let selected = state.rules_tab == tab;
-            if ui.selectable_label(selected, label).clicked() {
-                state.rules_tab = tab;
-            }
-            ui.add_space(8.0);
-        }
-    });
-
-    ui.separator();
-    ui.add_space(8.0);
-
-    // Content based on selected tab
-    egui::ScrollArea::vertical().show(ui, |ui| match state.rules_tab {
-        RulesTab::Time => render_time_rules(ui, state, rules_state),
-        RulesTab::Content => render_content_rules(ui, rules_state),
-        RulesTab::Community => render_community_rules(ui, rules_state),
-    });
-
-    // Time rule editor dialog
-    if rules_state.time_editor.open {
-        render_time_rule_editor(ui, rules_state);
-    }
-}
-
-/// Renders the time rules tab.
-fn render_time_rules(ui: &mut egui::Ui, state: &mut AppState, rules_state: &mut RulesState) {
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("Time-based Access Rules").strong());
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("+ Add Rule").clicked() {
-                rules_state.time_editor.new_rule();
-            }
-        });
-    });
-
-    ui.add_space(8.0);
-
-    // Presets
-    ui.label(RichText::new("Quick Presets").size(12.0).weak());
-    ui.horizontal(|ui| {
-        if ui.button("School Night (9pm-7am)").clicked() {
-            let rule = TimeRule {
-                id: uuid_simple(),
-                name: "School Night Bedtime".to_string(),
-                start_time: "21:00".to_string(),
-                end_time: "07:00".to_string(),
-                days: vec![
-                    "Sunday".to_string(),
-                    "Monday".to_string(),
-                    "Tuesday".to_string(),
-                    "Wednesday".to_string(),
-                    "Thursday".to_string(),
-                ],
-                action: "block".to_string(),
-                enabled: true,
-            };
-            rules_state.time_rules.push(rule);
-            rules_state.has_changes = true;
-            state.set_success("Added school night preset");
-        }
-        if ui.button("Weekend (11pm-8am)").clicked() {
-            let rule = TimeRule {
-                id: uuid_simple(),
-                name: "Weekend Bedtime".to_string(),
-                start_time: "23:00".to_string(),
-                end_time: "08:00".to_string(),
-                days: vec!["Friday".to_string(), "Saturday".to_string()],
-                action: "block".to_string(),
-                enabled: true,
-            };
-            rules_state.time_rules.push(rule);
-            rules_state.has_changes = true;
-            state.set_success("Added weekend preset");
-        }
-    });
-
-    ui.add_space(16.0);
-
-    // Rules list
-    if rules_state.time_rules.is_empty() {
-        render_empty_time_rules(ui);
-    } else {
-        // Clone rules for iteration to avoid borrow issues
-        let rules_snapshot: Vec<(usize, TimeRule)> =
-            rules_state.time_rules.iter().cloned().enumerate().collect();
-
-        let mut delete_index = None;
-        let mut edit_action: Option<(usize, TimeRule)> = None;
-
-        for (i, rule) in rules_snapshot {
-            let confirm_delete = rules_state.time_editor.confirm_delete;
-            let action = render_time_rule_card_simple(ui, i, &rule, confirm_delete);
-            match action {
-                TimeRuleAction::Edit => {
-                    edit_action = Some((i, rule));
+    rsx! {
+        div {
+            // Header
+            div { class: "flex items-center gap-md mb-lg",
+                button {
+                    class: "btn btn-secondary btn-sm",
+                    onclick: move |_| state.write().view = View::Profiles,
+                    "< Back"
                 }
-                TimeRuleAction::Delete => {
-                    delete_index = Some(i);
-                }
-                TimeRuleAction::ConfirmDelete => {
-                    rules_state.time_editor.confirm_delete = Some(i);
-                }
-                TimeRuleAction::CancelDelete => {
-                    rules_state.time_editor.confirm_delete = None;
-                }
-                TimeRuleAction::None => {}
+                h1 { class: "text-lg font-bold", "Rules: {profile_name}" }
             }
-            ui.add_space(4.0);
-        }
 
-        // Handle edit
-        if let Some((idx, rule)) = edit_action {
-            rules_state.time_editor.edit_rule(idx, &rule);
-        }
+            // Tabs
+            div { class: "tabs",
+                div {
+                    class: if rules_tab == RulesTab::Time { "tab active" } else { "tab" },
+                    onclick: move |_| state.write().rules_tab = RulesTab::Time,
+                    "Time Rules"
+                }
+                div {
+                    class: if rules_tab == RulesTab::Content { "tab active" } else { "tab" },
+                    onclick: move |_| state.write().rules_tab = RulesTab::Content,
+                    "Content Rules"
+                }
+                div {
+                    class: if rules_tab == RulesTab::Community { "tab active" } else { "tab" },
+                    onclick: move |_| state.write().rules_tab = RulesTab::Community,
+                    "Community Rules"
+                }
+            }
 
-        // Handle delete
-        if let Some(idx) = delete_index {
-            rules_state.time_rules.remove(idx);
-            rules_state.has_changes = true;
-            rules_state.time_editor.confirm_delete = None;
+            // Tab content
+            div { class: "card mt-md",
+                match rules_tab {
+                    RulesTab::Time => rsx! { TimeRulesTab {} },
+                    RulesTab::Content => rsx! { ContentRulesTab {} },
+                    RulesTab::Community => rsx! { CommunityRulesTab {} },
+                }
+            }
         }
     }
 }
 
-enum TimeRuleAction {
-    None,
-    Edit,
-    Delete,
-    ConfirmDelete,
-    CancelDelete,
-}
+/// Time rules tab with full CRUD functionality.
+#[component]
+fn TimeRulesTab() -> Element {
+    let state = use_context::<Signal<AppState>>();
+    let selected_profile_id = state.read().selected_profile_id;
 
-/// Renders empty state for time rules.
-fn render_empty_time_rules(ui: &mut egui::Ui) {
-    egui::Frame::new()
-        .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .corner_radius(8.0)
-        .inner_margin(24.0)
-        .show(ui, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.label(RichText::new("No time rules configured").weak());
-                ui.label(
-                    RichText::new("Add rules to restrict access during certain times")
-                        .size(11.0)
-                        .weak(),
-                );
-            });
-        });
-}
+    // Load time rules from profile
+    let mut time_rules = use_signal(TimeRuleSet::new);
+    let mut show_editor = use_signal(|| false);
+    let mut editing_rule_id = use_signal(|| None::<String>);
+    let mut confirm_delete = use_signal(|| None::<String>);
 
-/// Renders a single time rule card (simplified version without mutable rules_state).
-fn render_time_rule_card_simple(
-    ui: &mut egui::Ui,
-    index: usize,
-    rule: &TimeRule,
-    confirm_delete: Option<usize>,
-) -> TimeRuleAction {
-    let mut action = TimeRuleAction::None;
+    // Load rules on mount and when profile changes
+    use_effect(move || {
+        if let Some(profile_id) = selected_profile_id {
+            if let Ok(Some(profile)) = state.read().db.get_profile(profile_id) {
+                let rule_set = parse_time_rules(&profile.time_rules);
+                time_rules.set(rule_set);
+            }
+        }
+    });
 
-    egui::Frame::new()
-        .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .corner_radius(8.0)
-        .inner_margin(12.0)
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                // Enabled toggle
-                let status_color = if rule.enabled {
-                    status::SUCCESS
-                } else {
-                    Color32::GRAY
-                };
-                ui.colored_label(status_color, "●");
+    let rules = time_rules.read().rules.clone();
 
-                // Rule details
-                ui.vertical(|ui| {
-                    ui.label(&rule.name);
-                    ui.label(
-                        RichText::new(format!(
-                            "{} - {} | {}",
-                            rule.start_time,
-                            rule.end_time,
-                            rule.days.join(", ")
-                        ))
-                        .size(11.0)
-                        .weak(),
-                    );
-                });
+    rsx! {
+        div {
+            // Header
+            div { class: "flex justify-between items-center mb-md",
+                div {
+                    h3 { class: "font-bold", "Time-based Access Rules" }
+                    p { class: "text-sm text-muted", "Block AI access during specific hours (e.g., bedtime, school)." }
+                }
+                button {
+                    class: "btn btn-primary",
+                    onclick: move |_| {
+                        editing_rule_id.set(None);
+                        show_editor.set(true);
+                    },
+                    "+ Add Rule"
+                }
+            }
 
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // Delete confirmation
-                    if confirm_delete == Some(index) {
-                        ui.colored_label(status::ERROR, "Delete?");
-                        if ui.button("Yes").clicked() {
-                            action = TimeRuleAction::Delete;
-                        }
-                        if ui.button("No").clicked() {
-                            action = TimeRuleAction::CancelDelete;
-                        }
-                    } else {
-                        if ui.button("Delete").clicked() {
-                            action = TimeRuleAction::ConfirmDelete;
-                        }
-                        if ui.button("Edit").clicked() {
-                            action = TimeRuleAction::Edit;
+            // Presets section
+            div { class: "mb-lg",
+                p { class: "text-sm text-muted mb-sm", "Quick Add Presets:" }
+                div { class: "flex gap-sm flex-wrap",
+                    button {
+                        class: "btn btn-secondary btn-sm",
+                        onclick: {
+                            let mut time_rules = time_rules.clone();
+                            let state = state.clone();
+                            move |_| {
+                                let preset = TimeRuleSet::bedtime_school_nights();
+                                add_rule_if_not_exists(&mut time_rules, preset);
+                                save_time_rules(&state, &time_rules);
+                            }
+                        },
+                        "Bedtime (School Nights)"
+                    }
+                    button {
+                        class: "btn btn-secondary btn-sm",
+                        onclick: {
+                            let mut time_rules = time_rules.clone();
+                            let state = state.clone();
+                            move |_| {
+                                let preset = TimeRuleSet::bedtime_weekends();
+                                add_rule_if_not_exists(&mut time_rules, preset);
+                                save_time_rules(&state, &time_rules);
+                            }
+                        },
+                        "Bedtime (Weekends)"
+                    }
+                    button {
+                        class: "btn btn-secondary btn-sm",
+                        onclick: {
+                            let mut time_rules = time_rules.clone();
+                            let state = state.clone();
+                            move |_| {
+                                let preset = TimeRuleSet::school_hours();
+                                add_rule_if_not_exists(&mut time_rules, preset);
+                                save_time_rules(&state, &time_rules);
+                            }
+                        },
+                        "School Hours"
+                    }
+                }
+            }
+
+            // Rules list
+            if rules.is_empty() {
+                div { class: "empty-state",
+                    p { class: "empty-state-text", "No time rules configured" }
+                    p { class: "empty-state-subtext", "Add a rule or use a preset to restrict AI access during specific hours." }
+                }
+            } else {
+                div { class: "space-y-sm",
+                    for rule in rules.iter() {
+                        {
+                            let rule_id = rule.id.clone();
+                            let rule_name = rule.name.clone();
+                            let rule_enabled = rule.enabled;
+                            let days_str = format_days(&rule.days);
+                            let time_str = format_time_range(&rule.time_range);
+                            let is_confirming = confirm_delete() == Some(rule_id.clone());
+
+                            rsx! {
+                                div { class: "rule-card",
+                                    // Enable toggle - use a button styled as toggle for reliable clicks
+                                    button {
+                                        class: if rule_enabled { "btn btn-primary btn-sm" } else { "btn btn-secondary btn-sm" },
+                                        style: "margin-right: 12px; min-width: 70px;",
+                                        onclick: {
+                                            let rule_id = rule_id.clone();
+                                            let mut time_rules = time_rules.clone();
+                                            let state = state.clone();
+                                            move |_| {
+                                                // Read current state from signal and toggle
+                                                let current = time_rules.read()
+                                                    .get_rule(&rule_id)
+                                                    .map(|r| r.enabled)
+                                                    .unwrap_or(false);
+                                                let new_enabled = !current;
+                                                tracing::info!("Toggling rule {} from {} to {}", rule_id, current, new_enabled);
+
+                                                // Directly mutate the signal
+                                                if let Some(rule) = time_rules.write().get_rule_mut(&rule_id) {
+                                                    if new_enabled {
+                                                        rule.enable();
+                                                    } else {
+                                                        rule.disable();
+                                                    }
+                                                }
+
+                                                save_time_rules(&state, &time_rules);
+                                            }
+                                        },
+                                        if rule_enabled { "Enabled" } else { "Disabled" }
+                                    }
+
+                                    // Rule info
+                                    div { class: "rule-info", style: "flex: 1;",
+                                        p { class: "rule-name",
+                                            style: if !rule_enabled { "opacity: 0.5;" } else { "" },
+                                            "{rule_name}"
+                                        }
+                                        p { class: "rule-description",
+                                            style: if !rule_enabled { "opacity: 0.5;" } else { "" },
+                                            "{days_str} | {time_str}"
+                                        }
+                                    }
+
+                                    // Actions
+                                    div { class: "rule-controls",
+                                        if is_confirming {
+                                            span { class: "text-sm", style: "color: var(--aegis-error); margin-right: 8px;", "Delete?" }
+                                            button {
+                                                class: "btn btn-danger btn-sm",
+                                                onclick: {
+                                                    let rule_id = rule_id.clone();
+                                                    let mut time_rules = time_rules.clone();
+                                                    let state = state.clone();
+                                                    let mut confirm_delete = confirm_delete.clone();
+                                                    move |_| {
+                                                        delete_rule(&mut time_rules, &rule_id);
+                                                        save_time_rules(&state, &time_rules);
+                                                        confirm_delete.set(None);
+                                                    }
+                                                },
+                                                "Yes"
+                                            }
+                                            button {
+                                                class: "btn btn-secondary btn-sm",
+                                                onclick: move |_| confirm_delete.set(None),
+                                                "No"
+                                            }
+                                        } else {
+                                            button {
+                                                class: "btn btn-secondary btn-sm",
+                                                onclick: {
+                                                    let rule_id = rule_id.clone();
+                                                    let mut editing_rule_id = editing_rule_id.clone();
+                                                    let mut show_editor = show_editor.clone();
+                                                    move |_| {
+                                                        editing_rule_id.set(Some(rule_id.clone()));
+                                                        show_editor.set(true);
+                                                    }
+                                                },
+                                                "Edit"
+                                            }
+                                            button {
+                                                class: "btn btn-secondary btn-sm",
+                                                onclick: {
+                                                    let rule_id = rule_id.clone();
+                                                    let mut confirm_delete = confirm_delete.clone();
+                                                    move |_| confirm_delete.set(Some(rule_id.clone()))
+                                                },
+                                                "Delete"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
-                });
-            });
-        });
+                }
+            }
+        }
 
-    action
+        // Editor modal - use key to force remount when editing different rule
+        if show_editor() {
+            TimeRuleEditorModal {
+                key: "{editing_rule_id():?}",
+                time_rules: time_rules,
+                editing_rule_id: editing_rule_id(),
+                on_close: move |_| show_editor.set(false),
+                on_save: {
+                    let state = state.clone();
+                    let mut show_editor = show_editor.clone();
+                    move |_| {
+                        save_time_rules(&state, &time_rules);
+                        show_editor.set(false);
+                    }
+                }
+            }
+        }
+    }
 }
 
-/// Renders the time rule editor dialog.
-fn render_time_rule_editor(ui: &mut egui::Ui, rules_state: &mut RulesState) {
-    let title = if rules_state.time_editor.editing_index.is_some() {
+/// Modal for creating/editing a time rule.
+#[component]
+fn TimeRuleEditorModal(
+    time_rules: Signal<TimeRuleSet>,
+    editing_rule_id: Option<String>,
+    on_close: EventHandler<MouseEvent>,
+    on_save: EventHandler<MouseEvent>,
+) -> Element {
+    let is_editing = editing_rule_id.is_some();
+    let title = if is_editing {
         "Edit Time Rule"
     } else {
         "New Time Rule"
     };
 
-    egui::Window::new(title)
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .show(ui.ctx(), |ui| {
-            ui.set_min_width(400.0);
+    // Initialize form state from existing rule or defaults
+    let existing_rule = editing_rule_id
+        .as_ref()
+        .and_then(|id| time_rules.read().get_rule(id).cloned());
 
-            // Name
-            ui.horizontal(|ui| {
-                ui.label("Name:");
-                ui.text_edit_singleline(&mut rules_state.time_editor.rule.name);
-            });
+    let mut rule_name = use_signal(|| {
+        existing_rule
+            .as_ref()
+            .map(|r| r.name.clone())
+            .unwrap_or_else(|| "New Rule".to_string())
+    });
 
-            ui.add_space(8.0);
+    let mut start_hour = use_signal(|| {
+        existing_rule
+            .as_ref()
+            .map(|r| r.time_range.start.hour)
+            .unwrap_or(21)
+    });
 
-            // Time range
-            ui.horizontal(|ui| {
-                ui.label("Start:");
-                ui.add(
-                    egui::TextEdit::singleline(&mut rules_state.time_editor.rule.start_time)
-                        .desired_width(60.0),
-                );
-                ui.label("End:");
-                ui.add(
-                    egui::TextEdit::singleline(&mut rules_state.time_editor.rule.end_time)
-                        .desired_width(60.0),
-                );
-            });
-            ui.label(
-                RichText::new("Use 24-hour format (HH:MM)")
-                    .size(11.0)
-                    .weak(),
-            );
+    let mut start_minute = use_signal(|| {
+        existing_rule
+            .as_ref()
+            .map(|r| r.time_range.start.minute)
+            .unwrap_or(0)
+    });
 
-            ui.add_space(8.0);
+    let mut end_hour = use_signal(|| {
+        existing_rule
+            .as_ref()
+            .map(|r| r.time_range.end.hour)
+            .unwrap_or(7)
+    });
 
-            // Days
-            ui.label("Days:");
-            ui.horizontal_wrapped(|ui| {
-                let all_days = [
-                    "Monday",
-                    "Tuesday",
-                    "Wednesday",
-                    "Thursday",
-                    "Friday",
-                    "Saturday",
-                    "Sunday",
-                ];
-                for day in all_days {
-                    let mut checked = rules_state.time_editor.rule.days.contains(&day.to_string());
-                    if ui.checkbox(&mut checked, day).changed() {
-                        if checked {
-                            rules_state.time_editor.rule.days.push(day.to_string());
-                        } else {
-                            rules_state.time_editor.rule.days.retain(|d| d != day);
-                        }
+    let mut end_minute = use_signal(|| {
+        existing_rule
+            .as_ref()
+            .map(|r| r.time_range.end.minute)
+            .unwrap_or(0)
+    });
+
+    let mut selected_days = use_signal(|| {
+        existing_rule
+            .as_ref()
+            .map(|r| r.days.clone())
+            .unwrap_or_else(|| Weekday::school_nights().into_iter().collect())
+    });
+
+    let mut error = use_signal(|| None::<String>);
+
+    rsx! {
+        div { class: "modal-overlay",
+            div { class: "modal", style: "max-width: 500px;",
+                div { class: "modal-header",
+                    h3 { class: "modal-title", "{title}" }
+                    button {
+                        class: "modal-close",
+                        onclick: move |evt| on_close.call(evt),
+                        "x"
                     }
                 }
-            });
 
-            ui.add_space(8.0);
-
-            // Action
-            ui.horizontal(|ui| {
-                ui.label("Action:");
-                egui::ComboBox::from_id_salt("time_action")
-                    .selected_text(&rules_state.time_editor.rule.action)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut rules_state.time_editor.rule.action,
-                            "block".to_string(),
-                            "Block",
-                        );
-                        ui.selectable_value(
-                            &mut rules_state.time_editor.rule.action,
-                            "warn".to_string(),
-                            "Warn",
-                        );
-                    });
-            });
-
-            // Enabled
-            ui.checkbox(&mut rules_state.time_editor.rule.enabled, "Enabled");
-
-            ui.add_space(16.0);
-
-            // Buttons
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Save").clicked()
-                        && !rules_state.time_editor.rule.name.trim().is_empty()
-                    {
-                        if let Some(idx) = rules_state.time_editor.editing_index {
-                            rules_state.time_rules[idx] = rules_state.time_editor.rule.clone();
-                        } else {
-                            rules_state
-                                .time_rules
-                                .push(rules_state.time_editor.rule.clone());
+                div { class: "modal-body",
+                    // Rule name
+                    div { class: "mb-md",
+                        label { class: "text-sm font-bold", "Rule Name:" }
+                        input {
+                            class: "input",
+                            value: "{rule_name}",
+                            placeholder: "e.g., School Night Bedtime",
+                            oninput: move |evt| rule_name.set(evt.value())
                         }
-                        rules_state.has_changes = true;
-                        rules_state.time_editor.close();
                     }
-                    if ui.button("Cancel").clicked() {
-                        rules_state.time_editor.close();
+
+                    // Days selection
+                    div { class: "mb-md",
+                        label { class: "text-sm font-bold mb-sm", style: "display: block;", "Active Days:" }
+                        div { class: "flex gap-sm flex-wrap",
+                            for day in Weekday::all() {
+                                {
+                                    let is_selected = selected_days.read().contains(&day);
+                                    let day_name = day_short_name(day);
+                                    rsx! {
+                                        button {
+                                            class: if is_selected { "btn btn-primary btn-sm" } else { "btn btn-secondary btn-sm" },
+                                            style: "min-width: 45px;",
+                                            onclick: {
+                                                let mut selected_days = selected_days.clone();
+                                                move |_| {
+                                                    let mut days = selected_days.read().clone();
+                                                    if days.contains(&day) {
+                                                        days.remove(&day);
+                                                    } else {
+                                                        days.insert(day);
+                                                    }
+                                                    selected_days.set(days);
+                                                }
+                                            },
+                                            "{day_name}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        div { class: "flex gap-sm mt-sm",
+                            button {
+                                class: "btn btn-secondary btn-sm",
+                                onclick: move |_| selected_days.set(Weekday::weekdays().into_iter().collect()),
+                                "Weekdays"
+                            }
+                            button {
+                                class: "btn btn-secondary btn-sm",
+                                onclick: move |_| selected_days.set(Weekday::weekends().into_iter().collect()),
+                                "Weekends"
+                            }
+                            button {
+                                class: "btn btn-secondary btn-sm",
+                                onclick: move |_| selected_days.set(Weekday::all().into_iter().collect()),
+                                "All"
+                            }
+                            button {
+                                class: "btn btn-secondary btn-sm",
+                                onclick: move |_| selected_days.set(Weekday::school_nights().into_iter().collect()),
+                                "School Nights"
+                            }
+                        }
                     }
-                });
-            });
-        });
-}
 
-/// Renders the content rules tab.
-fn render_content_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
-    ui.label(RichText::new("Content Category Rules").strong());
-    ui.label(
-        RichText::new("Configure how each content category is handled")
-            .size(12.0)
-            .weak(),
-    );
-    ui.add_space(12.0);
+                    // Time range
+                    div { class: "mb-md",
+                        label { class: "text-sm font-bold mb-sm", style: "display: block;", "Blocked Time Range:" }
+                        div { class: "flex items-center gap-sm",
+                            div { class: "flex items-center gap-xs",
+                                select {
+                                    class: "select",
+                                    style: "width: 70px;",
+                                    onchange: move |evt| {
+                                        if let Ok(h) = evt.value().parse::<u8>() {
+                                            start_hour.set(h);
+                                        }
+                                    },
+                                    for h in 0u8..24 {
+                                        option {
+                                            value: "{h}",
+                                            selected: h == start_hour(),
+                                            "{h:02}"
+                                        }
+                                    }
+                                }
+                                span { ":" }
+                                select {
+                                    class: "select",
+                                    style: "width: 70px;",
+                                    onchange: move |evt| {
+                                        if let Ok(m) = evt.value().parse::<u8>() {
+                                            start_minute.set(m);
+                                        }
+                                    },
+                                    for m in [0u8, 15, 30, 45] {
+                                        option {
+                                            value: "{m}",
+                                            selected: m == start_minute(),
+                                            "{m:02}"
+                                        }
+                                    }
+                                }
+                            }
 
-    // Category rules
-    let categories = [
-        (
-            Category::Violence,
-            "Violence",
-            "Violent content and threats",
-            status::ERROR,
-        ),
-        (
-            Category::SelfHarm,
-            "Self-Harm",
-            "Self-harm and suicide content",
-            status::ERROR,
-        ),
-        (
-            Category::Adult,
-            "Adult Content",
-            "Sexual and adult material",
-            status::WARNING,
-        ),
-        (
-            Category::Jailbreak,
-            "Jailbreak",
-            "AI manipulation attempts",
-            status::WARNING,
-        ),
-        (
-            Category::Hate,
-            "Hate Speech",
-            "Discriminatory content",
-            status::ERROR,
-        ),
-        (
-            Category::Illegal,
-            "Illegal",
-            "Illegal activities",
-            status::ERROR,
-        ),
-        (
-            Category::Profanity,
-            "Profanity",
-            "Offensive language",
-            Color32::GRAY,
-        ),
-    ];
+                            span { class: "text-muted", "to" }
 
-    for (category, name, description, color) in categories {
-        if render_content_rule_card(ui, category, name, description, color, rules_state) {
-            rules_state.has_changes = true;
+                            div { class: "flex items-center gap-xs",
+                                select {
+                                    class: "select",
+                                    style: "width: 70px;",
+                                    onchange: move |evt| {
+                                        if let Ok(h) = evt.value().parse::<u8>() {
+                                            end_hour.set(h);
+                                        }
+                                    },
+                                    for h in 0u8..24 {
+                                        option {
+                                            value: "{h}",
+                                            selected: h == end_hour(),
+                                            "{h:02}"
+                                        }
+                                    }
+                                }
+                                span { ":" }
+                                select {
+                                    class: "select",
+                                    style: "width: 70px;",
+                                    onchange: move |evt| {
+                                        if let Ok(m) = evt.value().parse::<u8>() {
+                                            end_minute.set(m);
+                                        }
+                                    },
+                                    for m in [0u8, 15, 30, 45] {
+                                        option {
+                                            value: "{m}",
+                                            selected: m == end_minute(),
+                                            "{m:02}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Preview
+                        {
+                            let start = TimeOfDay::new(start_hour(), start_minute());
+                            let end = TimeOfDay::new(end_hour(), end_minute());
+                            let range = TimeRange::new(start, end);
+                            let preview = if range.is_overnight() {
+                                format!("Blocks from {}:{:02} until {}:{:02} the next day", start_hour(), start_minute(), end_hour(), end_minute())
+                            } else {
+                                format!("Blocks from {}:{:02} to {}:{:02}", start_hour(), start_minute(), end_hour(), end_minute())
+                            };
+                            rsx! {
+                                p { class: "text-sm text-muted mt-sm", "{preview}" }
+                            }
+                        }
+                    }
+
+                    // Error display
+                    if let Some(err) = error() {
+                        div { class: "auth-error", "{err}" }
+                    }
+                }
+
+                div { class: "modal-footer",
+                    button {
+                        class: "btn btn-secondary",
+                        onclick: move |evt| on_close.call(evt),
+                        "Cancel"
+                    }
+                    button {
+                        class: "btn btn-primary",
+                        onclick: {
+                            let editing_rule_id = editing_rule_id.clone();
+                            let mut time_rules = time_rules.clone();
+                            move |evt| {
+                                let name = rule_name().trim().to_string();
+                                if name.is_empty() {
+                                    error.set(Some("Rule name is required".to_string()));
+                                    return;
+                                }
+                                if selected_days.read().is_empty() {
+                                    error.set(Some("Select at least one day".to_string()));
+                                    return;
+                                }
+
+                                let start = TimeOfDay::new(start_hour(), start_minute());
+                                let end = TimeOfDay::new(end_hour(), end_minute());
+                                let range = TimeRange::new(start, end);
+
+                                if let Some(ref existing_id) = editing_rule_id {
+                                    // Update existing rule
+                                    if let Some(rule) = time_rules.write().get_rule_mut(existing_id) {
+                                        rule.name = name;
+                                        rule.days = selected_days.read().clone();
+                                        rule.time_range = range;
+                                    }
+                                } else {
+                                    // Create new rule
+                                    let id = generate_rule_id();
+                                    let rule = TimeRule::new(
+                                        id,
+                                        name,
+                                        selected_days.read().iter().copied().collect::<Vec<_>>(),
+                                        range,
+                                    );
+                                    time_rules.write().add_rule(rule);
+                                }
+
+                                on_save.call(evt);
+                            }
+                        },
+                        "Save"
+                    }
+                }
+            }
         }
-        ui.add_space(6.0);
     }
 }
 
-/// Renders a single content rule card. Returns true if changed.
-fn render_content_rule_card(
-    ui: &mut egui::Ui,
+/// Content rules tab with full CRUD functionality.
+#[component]
+fn ContentRulesTab() -> Element {
+    let state = use_context::<Signal<AppState>>();
+    let selected_profile_id = state.read().selected_profile_id;
+
+    // Load content rules from profile
+    let mut content_rules = use_signal(ContentRuleSet::new);
+
+    // Load rules on mount and when profile changes
+    use_effect(move || {
+        if let Some(profile_id) = selected_profile_id {
+            if let Ok(Some(profile)) = state.read().db.get_profile(profile_id) {
+                let rule_set = parse_content_rules(&profile.content_rules);
+                content_rules.set(rule_set);
+            }
+        }
+    });
+
+    rsx! {
+        div {
+            // Header
+            div { class: "flex justify-between items-center mb-md",
+                div {
+                    h3 { class: "font-bold", "Content Category Rules" }
+                    p { class: "text-sm text-muted", "Configure how each content category is handled based on detection confidence." }
+                }
+            }
+
+            // Presets section
+            div { class: "mb-lg",
+                p { class: "text-sm text-muted mb-sm", "Quick Presets:" }
+                div { class: "flex gap-sm flex-wrap",
+                    button {
+                        class: "btn btn-secondary btn-sm",
+                        onclick: {
+                            let mut content_rules = content_rules.clone();
+                            let state = state.clone();
+                            move |_| {
+                                content_rules.set(create_family_safe_preset());
+                                save_content_rules(&state, &content_rules);
+                            }
+                        },
+                        "Family Safe (Recommended)"
+                    }
+                    button {
+                        class: "btn btn-secondary btn-sm",
+                        onclick: {
+                            let mut content_rules = content_rules.clone();
+                            let state = state.clone();
+                            move |_| {
+                                content_rules.set(create_permissive_preset());
+                                save_content_rules(&state, &content_rules);
+                            }
+                        },
+                        "Permissive (Warn Only)"
+                    }
+                }
+            }
+
+            // Category list
+            div { class: "space-y-sm",
+                ContentCategoryRow {
+                    category: Category::Violence,
+                    description: "Violent content and threats",
+                    color: "var(--aegis-error)",
+                    content_rules: content_rules,
+                    state: state,
+                }
+                ContentCategoryRow {
+                    category: Category::SelfHarm,
+                    description: "Self-harm and suicide content",
+                    color: "var(--aegis-error)",
+                    content_rules: content_rules,
+                    state: state,
+                }
+                ContentCategoryRow {
+                    category: Category::Adult,
+                    description: "Sexual and adult material",
+                    color: "var(--aegis-warning)",
+                    content_rules: content_rules,
+                    state: state,
+                }
+                ContentCategoryRow {
+                    category: Category::Jailbreak,
+                    description: "AI manipulation attempts",
+                    color: "var(--aegis-warning)",
+                    content_rules: content_rules,
+                    state: state,
+                }
+                ContentCategoryRow {
+                    category: Category::Hate,
+                    description: "Discriminatory content",
+                    color: "var(--aegis-error)",
+                    content_rules: content_rules,
+                    state: state,
+                }
+                ContentCategoryRow {
+                    category: Category::Illegal,
+                    description: "Illegal activities",
+                    color: "var(--aegis-error)",
+                    content_rules: content_rules,
+                    state: state,
+                }
+                ContentCategoryRow {
+                    category: Category::Profanity,
+                    description: "Offensive language",
+                    color: "var(--aegis-slate-400)",
+                    content_rules: content_rules,
+                    state: state,
+                }
+            }
+
+            // Legend
+            div { class: "mt-lg",
+                p { class: "text-sm font-bold mb-sm", "Sensitivity Guide:" }
+                div { class: "text-sm text-muted",
+                    p { "Low (0.9): Only block very obvious violations" }
+                    p { "Medium (0.7): Balanced detection (recommended)" }
+                    p { "High (0.5): More aggressive, may have false positives" }
+                }
+            }
+        }
+    }
+}
+
+/// Content category row with action and threshold controls.
+#[component]
+fn ContentCategoryRow(
     category: Category,
-    name: &str,
-    description: &str,
-    color: Color32,
-    rules_state: &mut RulesState,
-) -> bool {
-    let mut changed = false;
+    description: &'static str,
+    color: &'static str,
+    content_rules: Signal<ContentRuleSet>,
+    state: Signal<AppState>,
+) -> Element {
+    let category_name = category.name();
+    let rule_id = get_rule_id_for_category(category);
 
-    let state = rules_state.content_rules.entry(category).or_default();
-
-    egui::Frame::new()
-        .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .corner_radius(8.0)
-        .inner_margin(12.0)
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                // Category indicator and name
-                ui.colored_label(color, "●");
-                ui.vertical(|ui| {
-                    ui.label(RichText::new(name).strong());
-                    ui.label(RichText::new(description).size(11.0).weak());
-                });
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // Enabled toggle
-                    if ui.checkbox(&mut state.enabled, "").changed() {
-                        changed = true;
-                    }
-
-                    // Action dropdown
-                    let action_text = match state.action {
-                        ContentAction::Block => "Block",
-                        ContentAction::Warn => "Warn",
-                        ContentAction::Allow => "Allow",
-                    };
-
-                    let mut action_idx = match state.action {
-                        ContentAction::Block => 0,
-                        ContentAction::Warn => 1,
-                        ContentAction::Allow => 2,
-                    };
-
-                    egui::ComboBox::from_id_salt(format!("action_{:?}", category))
-                        .selected_text(action_text)
-                        .width(70.0)
-                        .show_ui(ui, |ui| {
-                            if ui.selectable_value(&mut action_idx, 0, "Block").changed() {
-                                state.action = ContentAction::Block;
-                                changed = true;
-                            }
-                            if ui.selectable_value(&mut action_idx, 1, "Warn").changed() {
-                                state.action = ContentAction::Warn;
-                                changed = true;
-                            }
-                            if ui.selectable_value(&mut action_idx, 2, "Allow").changed() {
-                                state.action = ContentAction::Allow;
-                                changed = true;
-                            }
-                        });
-
-                    // Threshold slider
-                    ui.add_space(8.0);
-                    ui.label(RichText::new(format!("{:.0}%", state.threshold * 100.0)).size(11.0));
-                    let slider = ui.add(
-                        egui::Slider::new(&mut state.threshold, 0.0..=1.0)
-                            .show_value(false)
-                            .custom_formatter(|v, _| format!("{:.0}%", v * 100.0)),
-                    );
-                    if slider.changed() {
-                        changed = true;
-                    }
-                    ui.label(RichText::new("Sensitivity:").size(11.0).weak());
-                });
-            });
-        });
-
-    changed
-}
-
-/// Renders the community rules tab.
-fn render_community_rules(ui: &mut egui::Ui, rules_state: &mut RulesState) {
-    ui.horizontal(|ui| {
-        ui.label(RichText::new("Community Rules").strong());
-        ui.label(
-            RichText::new(format!(
-                "({} rules loaded)",
-                rules_state.community_manager.rule_count()
-            ))
-            .size(12.0)
-            .weak(),
-        );
-    });
-
-    ui.add_space(12.0);
-
-    // Tier explanation
-    egui::Frame::new()
-        .fill(ui.style().visuals.widgets.noninteractive.bg_fill)
-        .corner_radius(8.0)
-        .inner_margin(12.0)
-        .show(ui, |ui| {
-            ui.label(
-                RichText::new("Rule Priority (highest to lowest):")
-                    .strong()
-                    .size(12.0),
-            );
-            ui.horizontal(|ui| {
-                ui.colored_label(brand::PRIMARY, "●");
-                ui.label("Parent (your customizations)");
-            });
-            ui.horizontal(|ui| {
-                ui.colored_label(brand::DARK, "●");
-                ui.label("Curated (Aegis-maintained)");
-            });
-            ui.horizontal(|ui| {
-                ui.colored_label(Color32::GRAY, "●");
-                ui.label("Community (open-source databases)");
-            });
-        });
-
-    ui.add_space(16.0);
-
-    // Whitelist section
-    ui.collapsing(RichText::new("Whitelist (Never Block)").strong(), |ui| {
-        ui.label(
-            RichText::new("Terms in this list will never be blocked, even if matched by rules")
-                .size(11.0)
-                .weak(),
-        );
-        ui.add_space(8.0);
-
-        ui.horizontal(|ui| {
-            ui.text_edit_singleline(&mut rules_state.whitelist_input);
-            if ui.button("Add").clicked() && !rules_state.whitelist_input.trim().is_empty() {
-                rules_state
-                    .overrides
-                    .add_whitelist(rules_state.whitelist_input.trim());
-                rules_state
-                    .community_manager
-                    .set_overrides(rules_state.overrides.clone());
-                rules_state.whitelist_input.clear();
-                rules_state.has_changes = true;
-            }
-        });
-
-        ui.add_space(8.0);
-
-        // Display whitelist
-        let whitelist: Vec<_> = rules_state.overrides.whitelist.iter().cloned().collect();
-        if whitelist.is_empty() {
-            ui.label(RichText::new("No whitelisted terms").weak().size(11.0));
+    // Get current rule state
+    let (current_action, current_threshold, is_enabled) = {
+        let rules = content_rules.read();
+        if let Some(rule) = rules.get_rule(&rule_id) {
+            (rule.action, rule.threshold, rule.enabled)
         } else {
-            ui.horizontal_wrapped(|ui| {
-                let mut to_remove = None;
-                for term in &whitelist {
-                    ui.horizontal(|ui| {
-                        egui::Frame::new()
-                            .fill(Color32::from_rgb(0x22, 0xc5, 0x5e).gamma_multiply(0.2))
-                            .corner_radius(4.0)
-                            .inner_margin(4.0)
-                            .show(ui, |ui| {
-                                ui.label(term);
-                                if ui.small_button("x").clicked() {
-                                    to_remove = Some(term.clone());
+            // Default: Block at 0.7 threshold
+            (ContentAction::Block, 0.7, true)
+        }
+    };
+
+    rsx! {
+        div { class: "rule-card",
+            // Category indicator
+            span { class: "rule-category-dot", style: "background-color: {color};" }
+
+            // Enable/disable toggle
+            button {
+                class: if is_enabled { "btn btn-primary btn-sm" } else { "btn btn-secondary btn-sm" },
+                style: "margin-right: 12px; min-width: 70px;",
+                onclick: {
+                    let rule_id = rule_id.clone();
+                    let mut content_rules = content_rules.clone();
+                    let state = state.clone();
+                    move |_| {
+                        ensure_rule_exists(&mut content_rules, category, &rule_id);
+                        let new_enabled = !content_rules.read().get_rule(&rule_id).map(|r| r.enabled).unwrap_or(true);
+                        content_rules.write().set_rule_enabled(&rule_id, new_enabled);
+                        save_content_rules(&state, &content_rules);
+                    }
+                },
+                if is_enabled { "Enabled" } else { "Disabled" }
+            }
+
+            // Category info
+            div { class: "rule-info", style: "flex: 1; min-width: 150px;",
+                p { class: "rule-name",
+                    style: if !is_enabled { "opacity: 0.5;" } else { "" },
+                    "{category_name}"
+                }
+                p { class: "rule-description",
+                    style: if !is_enabled { "opacity: 0.5;" } else { "" },
+                    "{description}"
+                }
+            }
+
+            // Action selector and threshold - fixed width container
+            div { class: "rule-controls", style: "display: flex; align-items: center; gap: 12px; min-width: 240px;",
+                div { style: "display: flex; flex-direction: column; gap: 4px;",
+                    label { class: "text-xs text-muted", "Action" }
+                    select {
+                        class: "select",
+                        style: "min-width: 80px;",
+                        disabled: !is_enabled,
+                        onchange: {
+                            let rule_id = rule_id.clone();
+                            let mut content_rules = content_rules.clone();
+                            let state = state.clone();
+                            move |evt: Event<FormData>| {
+                                let action = string_to_action(&evt.value());
+                                ensure_rule_exists(&mut content_rules, category, &rule_id);
+                                content_rules.write().set_rule_action(&rule_id, action);
+                                save_content_rules(&state, &content_rules);
+                            }
+                        },
+                        option { value: "block", selected: current_action == ContentAction::Block, "Block" }
+                        option { value: "warn", selected: current_action == ContentAction::Warn, "Warn" }
+                        option { value: "allow", selected: current_action == ContentAction::Allow, "Allow" }
+                    }
+                }
+
+                // Threshold slider - always render container for stable layout
+                div { style: "display: flex; flex-direction: column; gap: 4px; min-width: 130px;",
+                    if current_action != ContentAction::Allow {
+                        label { class: "text-xs text-muted", "Sensitivity: {format_threshold(current_threshold)}" }
+                        input {
+                            r#type: "range",
+                            class: "slider",
+                            style: "width: 100px;",
+                            disabled: !is_enabled,
+                            min: "30",
+                            max: "95",
+                            step: "5",
+                            value: "{(current_threshold * 100.0) as i32}",
+                            onchange: {
+                                let rule_id = rule_id.clone();
+                                let mut content_rules = content_rules.clone();
+                                let state = state.clone();
+                                move |evt: Event<FormData>| {
+                                    if let Ok(val) = evt.value().parse::<f32>() {
+                                        let threshold = val / 100.0;
+                                        ensure_rule_exists(&mut content_rules, category, &rule_id);
+                                        content_rules.write().set_rule_threshold(&rule_id, threshold);
+                                        save_content_rules(&state, &content_rules);
+                                    }
                                 }
-                            });
-                    });
-                }
-                if let Some(term) = to_remove {
-                    rules_state.overrides.remove_whitelist(&term);
-                    rules_state
-                        .community_manager
-                        .set_overrides(rules_state.overrides.clone());
-                    rules_state.has_changes = true;
-                }
-            });
-        }
-    });
-
-    ui.add_space(8.0);
-
-    // Blacklist section
-    ui.collapsing(RichText::new("Blacklist (Always Block)").strong(), |ui| {
-        ui.label(
-            RichText::new("Add custom terms to always block")
-                .size(11.0)
-                .weak(),
-        );
-        ui.add_space(8.0);
-
-        ui.horizontal(|ui| {
-            ui.text_edit_singleline(&mut rules_state.blacklist_input);
-
-            egui::ComboBox::from_id_salt("blacklist_category")
-                .selected_text(rules_state.blacklist_category.name())
-                .width(100.0)
-                .show_ui(ui, |ui| {
-                    for cat in all_categories() {
-                        ui.selectable_value(&mut rules_state.blacklist_category, cat, cat.name());
-                    }
-                });
-
-            if ui.button("Add").clicked() && !rules_state.blacklist_input.trim().is_empty() {
-                rules_state.overrides.add_blacklist(
-                    rules_state.blacklist_input.trim(),
-                    rules_state.blacklist_category,
-                );
-                rules_state
-                    .community_manager
-                    .set_overrides(rules_state.overrides.clone());
-                rules_state.blacklist_input.clear();
-                rules_state.has_changes = true;
-            }
-        });
-
-        ui.add_space(8.0);
-
-        // Display blacklist
-        let blacklist: Vec<_> = rules_state
-            .overrides
-            .blacklist
-            .iter()
-            .map(|(k, v)| (k.clone(), *v))
-            .collect();
-        if blacklist.is_empty() {
-            ui.label(RichText::new("No blacklisted terms").weak().size(11.0));
-        } else {
-            ui.horizontal_wrapped(|ui| {
-                let mut to_remove = None;
-                for (term, category) in &blacklist {
-                    ui.horizontal(|ui| {
-                        egui::Frame::new()
-                            .fill(Color32::from_rgb(0xef, 0x44, 0x44).gamma_multiply(0.2))
-                            .corner_radius(4.0)
-                            .inner_margin(4.0)
-                            .show(ui, |ui| {
-                                ui.label(format!("{} ({})", term, category.name()));
-                                if ui.small_button("x").clicked() {
-                                    to_remove = Some(term.clone());
-                                }
-                            });
-                    });
-                }
-                if let Some(term) = to_remove {
-                    rules_state.overrides.remove_blacklist(&term);
-                    rules_state
-                        .community_manager
-                        .set_overrides(rules_state.overrides.clone());
-                    rules_state.has_changes = true;
-                }
-            });
-        }
-    });
-
-    ui.add_space(8.0);
-
-    // Disabled rules section
-    ui.collapsing(RichText::new("Disabled Rules").strong(), |ui| {
-        ui.label(
-            RichText::new("Rules you've disabled will not trigger")
-                .size(11.0)
-                .weak(),
-        );
-        ui.add_space(8.0);
-
-        let disabled: Vec<_> = rules_state
-            .overrides
-            .disabled_rules
-            .iter()
-            .cloned()
-            .collect();
-        if disabled.is_empty() {
-            ui.label(RichText::new("No disabled rules").weak().size(11.0));
-        } else {
-            let mut to_enable = None;
-            for rule_id in &disabled {
-                ui.horizontal(|ui| {
-                    ui.label(rule_id);
-                    if ui.small_button("Enable").clicked() {
-                        to_enable = Some(rule_id.clone());
-                    }
-                });
-            }
-            if let Some(rule_id) = to_enable {
-                rules_state.overrides.enable_rule(&rule_id);
-                rules_state
-                    .community_manager
-                    .set_overrides(rules_state.overrides.clone());
-                rules_state.has_changes = true;
-            }
-        }
-    });
-
-    ui.add_space(16.0);
-
-    // Browse curated rules
-    ui.collapsing(RichText::new("Browse Curated Rules").strong(), |ui| {
-        ui.label(
-            RichText::new("View and disable individual Aegis curated rules")
-                .size(11.0)
-                .weak(),
-        );
-        ui.add_space(8.0);
-
-        // Search filter
-        ui.horizontal(|ui| {
-            ui.label("Search:");
-            ui.text_edit_singleline(&mut rules_state.community_search);
-        });
-
-        ui.add_space(8.0);
-
-        // Collect curated rules data first to avoid borrow issues
-        let search_lower = rules_state.community_search.to_lowercase();
-        let curated_rules: Vec<_> = rules_state
-            .community_manager
-            .rules_for_tier(RuleTier::Curated)
-            .iter()
-            .filter(|rule| {
-                search_lower.is_empty() || rule.pattern.to_lowercase().contains(&search_lower)
-            })
-            .map(|rule| {
-                (
-                    rule.id.clone(),
-                    rule.category,
-                    rule.pattern.clone(),
-                    rules_state.overrides.is_rule_disabled(&rule.id),
-                )
-            })
-            .collect();
-
-        let mut rule_to_toggle: Option<(String, bool)> = None;
-
-        for (rule_id, category, pattern, is_disabled) in curated_rules {
-            ui.horizontal(|ui| {
-                // Category color
-                let color = category_color(category);
-                ui.colored_label(color, "●");
-
-                // Rule info
-                ui.vertical(|ui| {
-                    ui.label(RichText::new(&rule_id).size(11.0));
-                    ui.label(
-                        RichText::new(format!(
-                            "{} | {}",
-                            category.name(),
-                            truncate_pattern(&pattern, 40)
-                        ))
-                        .size(10.0)
-                        .weak(),
-                    );
-                });
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if is_disabled {
-                        if ui.button("Enable").clicked() {
-                            rule_to_toggle = Some((rule_id.clone(), true));
+                            }
                         }
-                        ui.colored_label(Color32::GRAY, "Disabled");
                     } else {
-                        if ui.button("Disable").clicked() {
-                            rule_to_toggle = Some((rule_id.clone(), false));
-                        }
-                        ui.colored_label(status::SUCCESS, "Active");
+                        // Placeholder to maintain layout
+                        label { class: "text-xs text-muted", style: "visibility: hidden;", "Sensitivity: N/A" }
+                        div { style: "width: 100px; height: 20px;" }
                     }
-                });
-            });
-
-            ui.add_space(4.0);
-        }
-
-        // Apply rule toggle after iteration
-        if let Some((rule_id, enable)) = rule_to_toggle {
-            if enable {
-                rules_state.overrides.enable_rule(&rule_id);
-            } else {
-                rules_state.overrides.disable_rule(&rule_id);
+                }
             }
-            rules_state
-                .community_manager
-                .set_overrides(rules_state.overrides.clone());
-            rules_state.has_changes = true;
         }
+    }
+}
+
+/// Community rules tab with full whitelist/blacklist management.
+#[component]
+fn CommunityRulesTab() -> Element {
+    let mut state = use_context::<Signal<AppState>>();
+
+    // Local state for input fields
+    let mut whitelist_input = use_signal(String::new);
+    let mut blacklist_input = use_signal(String::new);
+    let mut blacklist_category = use_signal(|| Category::Profanity);
+    let mut show_curated_rules = use_signal(|| false);
+    let mut show_community_rules = use_signal(|| false);
+    let mut show_update_section = use_signal(|| false);
+    let mut update_url = use_signal(|| {
+        "https://raw.githubusercontent.com/dsojevic/profanity-list/main/en.txt".to_string()
     });
-}
+    let mut updating = use_signal(|| false);
 
-/// Saves rules to the profile.
-fn save_rules(state: &mut AppState, rules_state: &mut RulesState) {
-    if let Some(profile_id) = state.selected_profile_id {
-        let (content_rules_json, time_rules_json) = rules_state.save_to_profile();
+    // Get current overrides from state
+    let whitelist: Vec<String> = state
+        .read()
+        .parent_overrides
+        .whitelist
+        .iter()
+        .cloned()
+        .collect();
+    let blacklist: Vec<(String, Category)> = state
+        .read()
+        .parent_overrides
+        .blacklist
+        .iter()
+        .map(|(k, v)| (k.clone(), *v))
+        .collect();
 
-        // Find and update the profile
-        if let Some(profile) = state.profiles.iter().find(|p| p.id == profile_id) {
-            let updated = aegis_storage::NewProfile {
-                name: profile.name.clone(),
-                os_username: profile.os_username.clone(),
-                time_rules: time_rules_json.clone(),
-                content_rules: content_rules_json.clone(),
-                enabled: profile.enabled,
-                sentiment_config: profile.sentiment_config.clone(),
-            };
+    // Load community rules
+    let rule_manager = CommunityRuleManager::with_defaults();
+    let curated_rules = rule_manager.rules_for_tier(RuleTier::Curated);
+    let community_rules = rule_manager.rules_for_tier(RuleTier::Community);
 
-            match state.db.update_profile(profile_id, updated) {
-                Ok(()) => {
-                    rules_state.has_changes = false;
-                    state.set_success("Rules saved successfully");
-                    let _ = state.refresh_data();
+    rsx! {
+        div {
+            h3 { class: "font-bold mb-md", "Community Rules" }
+            p { class: "text-muted mb-md", "Customize how community-sourced rules apply to your profiles." }
 
-                    // Update the filtering state's rule engine if available
-                    if let Some(ref filtering_state) = state.filtering_state {
-                        // Convert the saved rules to core types
-                        let time_rules = parse_time_rules_from_json(&time_rules_json);
-                        let content_rules = parse_content_rules_from_json(&content_rules_json);
-
-                        filtering_state.update_rules(time_rules, content_rules);
-                        tracing::info!("Live rule update applied to proxy");
+            // Rule Priority Explanation Card
+            div { class: "card mb-lg",
+                h4 { class: "font-bold mb-sm", "Rule Priority (highest to lowest)" }
+                div { class: "space-y-sm",
+                    div { class: "flex items-center gap-sm",
+                        span { class: "tier-badge tier-parent", "1" }
+                        div {
+                            p { class: "font-bold", "{RuleTier::Parent.name()}" }
+                            p { class: "text-sm text-muted", "Your customizations (whitelist & blacklist below)" }
+                        }
+                    }
+                    div { class: "flex items-center gap-sm",
+                        span { class: "tier-badge tier-curated", "2" }
+                        div {
+                            p { class: "font-bold", "{RuleTier::Curated.name()}" }
+                            p { class: "text-sm text-muted", "Aegis-maintained safety patterns" }
+                        }
+                    }
+                    div { class: "flex items-center gap-sm",
+                        span { class: "tier-badge tier-community", "3" }
+                        div {
+                            p { class: "font-bold", "{RuleTier::Community.name()}" }
+                            p { class: "text-sm text-muted", "Open-source safety databases" }
+                        }
                     }
                 }
-                Err(e) => {
-                    state.set_error(format!("Failed to save rules: {}", e));
+            }
+
+            // Update Rules Section (collapsible)
+            div { class: "card mb-lg",
+                div {
+                    class: "collapsible-header",
+                    onclick: move |_| show_update_section.set(!show_update_section()),
+                    div { class: "flex items-center gap-sm",
+                        span { style: "font-size: 16px;", "🔄" }
+                        span { class: "font-bold", "Update Community Rules from Source" }
+                    }
+                    span { if show_update_section() { "▲" } else { "▼" } }
+                }
+
+                if show_update_section() {
+                    div { class: "mt-md",
+                        p { class: "text-sm text-muted mb-md", "Load additional community rules from an external JSON source (e.g., Surge AI, LDNOOBW)." }
+
+                        div { class: "mb-md",
+                            label { class: "text-sm font-bold mb-sm", style: "display: block;", "Rule Source URL:" }
+                            input {
+                                class: "input",
+                                style: "width: 100%;",
+                                placeholder: "https://example.com/rules.json",
+                                value: "{update_url}",
+                                oninput: move |evt| update_url.set(evt.value())
+                            }
+                        }
+
+                        div { class: "flex gap-sm items-center",
+                            button {
+                                class: "btn btn-primary",
+                                disabled: updating() || update_url().trim().is_empty(),
+                                onclick: move |_| {
+                                    let url = update_url().trim().to_string();
+                                    if !url.is_empty() {
+                                        updating.set(true);
+                                        // Use async fetch with spawn to avoid blocking runtime issues
+                                        spawn(async move {
+                                            let result = async {
+                                                let response = reqwest::get(&url).await
+                                                    .map_err(|e| format!("Failed to fetch rules: {}", e))?;
+
+                                                if !response.status().is_success() {
+                                                    return Err(format!("HTTP error: {}", response.status()));
+                                                }
+
+                                                let content = response.text().await
+                                                    .map_err(|e| format!("Failed to read response: {}", e))?;
+
+                                                let source_name = url.split('/').last().unwrap_or("custom-url");
+                                                state.read().load_community_rules_from_content(&content, source_name)
+                                            }.await;
+
+                                            match result {
+                                                Ok(count) => {
+                                                    state.write().set_success(format!("Loaded {} rules from source", count));
+                                                }
+                                                Err(e) => {
+                                                    state.write().set_error(format!("Failed to load rules: {}", e));
+                                                }
+                                            }
+                                            updating.set(false);
+                                        });
+                                    }
+                                },
+                                if updating() { "Loading..." } else { "Update Rules" }
+                            }
+                        }
+
+                        // Preset sources
+                        div { class: "mt-md",
+                            p { class: "text-sm text-muted mb-sm", "Quick presets:" }
+                            div { class: "flex gap-sm flex-wrap",
+                                button {
+                                    class: "btn btn-secondary btn-sm",
+                                    onclick: move |_| {
+                                        update_url.set("https://raw.githubusercontent.com/dsojevic/profanity-list/main/en.txt".to_string());
+                                    },
+                                    "Profanity List"
+                                }
+                                button {
+                                    class: "btn btn-secondary btn-sm",
+                                    onclick: move |_| {
+                                        update_url.set("https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en".to_string());
+                                    },
+                                    "LDNOOBW"
+                                }
+                            }
+                        }
+
+                        div { class: "mt-md",
+                            p { class: "text-sm text-muted", style: "font-style: italic;",
+                                "Supports JSON, CSV, and TXT formats. CSV files should have words in the first column."
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Whitelist Section
+            div { class: "card mb-lg",
+                h4 { class: "font-bold mb-sm", "Whitelist (Never Block)" }
+                p { class: "text-sm text-muted mb-md", "Terms in this list will never be blocked, even if they match other rules." }
+
+                // Add term form
+                div { class: "flex gap-sm mb-md",
+                    input {
+                        class: "input",
+                        style: "flex: 1;",
+                        placeholder: "Enter a term to whitelist...",
+                        value: "{whitelist_input}",
+                        oninput: move |evt| whitelist_input.set(evt.value())
+                    }
+                    button {
+                        class: "btn btn-primary btn-sm",
+                        disabled: whitelist_input().trim().is_empty(),
+                        onclick: move |_| {
+                            let term = whitelist_input().trim().to_string();
+                            if !term.is_empty() {
+                                if let Err(e) = state.write().add_whitelist_term(&term) {
+                                    tracing::error!("Failed to add whitelist term: {}", e);
+                                }
+                                whitelist_input.set(String::new());
+                            }
+                        },
+                        "Add"
+                    }
+                }
+
+                // Whitelist chips
+                if whitelist.is_empty() {
+                    p { class: "text-sm text-muted", "No whitelisted terms yet." }
+                } else {
+                    div { class: "term-chips",
+                        for term in whitelist.iter() {
+                            {
+                                let term_clone = term.clone();
+                                rsx! {
+                                    span { class: "term-chip",
+                                        "{term}"
+                                        button {
+                                            class: "term-chip-remove",
+                                            onclick: move |_| {
+                                                if let Err(e) = state.write().remove_whitelist_term(&term_clone) {
+                                                    tracing::error!("Failed to remove whitelist term: {}", e);
+                                                }
+                                            },
+                                            "×"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Blacklist Section
+            div { class: "card mb-lg",
+                h4 { class: "font-bold mb-sm", "Blacklist (Always Block)" }
+                p { class: "text-sm text-muted mb-md", "Add custom terms that should always be blocked, regardless of other rules." }
+
+                // Add term form
+                div { class: "flex gap-sm mb-md",
+                    input {
+                        class: "input",
+                        style: "flex: 1;",
+                        placeholder: "Enter a term to block...",
+                        value: "{blacklist_input}",
+                        oninput: move |evt| blacklist_input.set(evt.value())
+                    }
+                    select {
+                        class: "select",
+                        style: "min-width: 120px;",
+                        onchange: move |evt| {
+                            blacklist_category.set(string_to_category(&evt.value()));
+                        },
+                        option { value: "profanity", selected: blacklist_category() == Category::Profanity, "Profanity" }
+                        option { value: "violence", selected: blacklist_category() == Category::Violence, "Violence" }
+                        option { value: "adult", selected: blacklist_category() == Category::Adult, "Adult" }
+                        option { value: "hate", selected: blacklist_category() == Category::Hate, "Hate" }
+                        option { value: "illegal", selected: blacklist_category() == Category::Illegal, "Illegal" }
+                        option { value: "jailbreak", selected: blacklist_category() == Category::Jailbreak, "Jailbreak" }
+                        option { value: "selfharm", selected: blacklist_category() == Category::SelfHarm, "Self-Harm" }
+                    }
+                    button {
+                        class: "btn btn-primary btn-sm",
+                        disabled: blacklist_input().trim().is_empty(),
+                        onclick: move |_| {
+                            let term = blacklist_input().trim().to_string();
+                            if !term.is_empty() {
+                                if let Err(e) = state.write().add_blacklist_term(&term, blacklist_category()) {
+                                    tracing::error!("Failed to add blacklist term: {}", e);
+                                }
+                                blacklist_input.set(String::new());
+                            }
+                        },
+                        "Add"
+                    }
+                }
+
+                // Blacklist chips with category badges
+                if blacklist.is_empty() {
+                    p { class: "text-sm text-muted", "No blacklisted terms yet." }
+                } else {
+                    div { class: "term-chips",
+                        for (term, category) in blacklist.iter() {
+                            {
+                                let term_clone = term.clone();
+                                let category_name = category.name();
+                                let category_color = category_to_color(*category);
+                                rsx! {
+                                    span { class: "term-chip",
+                                        "{term}"
+                                        span {
+                                            class: "term-chip-category",
+                                            style: "background-color: {category_color};",
+                                            "{category_name}"
+                                        }
+                                        button {
+                                            class: "term-chip-remove",
+                                            onclick: move |_| {
+                                                if let Err(e) = state.write().remove_blacklist_term(&term_clone) {
+                                                    tracing::error!("Failed to remove blacklist term: {}", e);
+                                                }
+                                            },
+                                            "×"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Info about rule application
+            div { class: "card mb-lg",
+                h4 { class: "font-bold mb-sm", "How Rules Are Applied" }
+                div { class: "text-sm text-muted space-y-sm",
+                    p { "• Whitelisted terms are checked first and will always be allowed." }
+                    p { "• Blacklisted terms are checked next and will always be blocked." }
+                    p { "• Remaining content is evaluated against Curated and Community rules." }
+                    p { "• Higher-tier rules override lower-tier rules for the same pattern." }
+                }
+            }
+
+            // Curated Rules Section (collapsible)
+            div { class: "card mb-lg",
+                div {
+                    class: "collapsible-header",
+                    onclick: move |_| show_curated_rules.set(!show_curated_rules()),
+                    div { class: "flex items-center gap-sm",
+                        span { class: "tier-badge tier-curated", "{curated_rules.len()}" }
+                        span { class: "font-bold", "Curated Rules (Aegis-maintained)" }
+                    }
+                    span { if show_curated_rules() { "▲" } else { "▼" } }
+                }
+
+                if show_curated_rules() {
+                    div { class: "mt-md",
+                        if curated_rules.is_empty() {
+                            p { class: "text-sm text-muted", "No curated rules loaded." }
+                        } else {
+                            div { class: "space-y-sm", style: "max-height: 300px; overflow-y: auto;",
+                                for rule in curated_rules.iter() {
+                                    {
+                                        let pattern = &rule.pattern;
+                                        let category = rule.category;
+                                        let category_color = category_to_color(category);
+                                        let source_name = &rule.source.name;
+                                        rsx! {
+                                            div { class: "flex items-center gap-sm", style: "padding: 4px 0; border-bottom: 1px solid var(--aegis-slate-800);",
+                                                span {
+                                                    class: "tag",
+                                                    style: "background-color: {category_color}; font-size: 10px;",
+                                                    "{category.name()}"
+                                                }
+                                                span { class: "text-sm", style: "font-family: monospace;", "{pattern}" }
+                                                span { class: "text-sm text-muted", "({source_name})" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Community Rules Section (collapsible)
+            div { class: "card",
+                div {
+                    class: "collapsible-header",
+                    onclick: move |_| show_community_rules.set(!show_community_rules()),
+                    div { class: "flex items-center gap-sm",
+                        span { class: "tier-badge tier-community", "{community_rules.len()}" }
+                        span { class: "font-bold", "Community Rules (Open-source)" }
+                    }
+                    span { if show_community_rules() { "▲" } else { "▼" } }
+                }
+
+                if show_community_rules() {
+                    div { class: "mt-md",
+                        if community_rules.is_empty() {
+                            p { class: "text-sm text-muted", "No community rules loaded." }
+                        } else {
+                            div { class: "space-y-sm", style: "max-height: 300px; overflow-y: auto;",
+                                for rule in community_rules.iter() {
+                                    {
+                                        let pattern = &rule.pattern;
+                                        let category = rule.category;
+                                        let category_color = category_to_color(category);
+                                        let source_name = &rule.source.name;
+                                        rsx! {
+                                            div { class: "flex items-center gap-sm", style: "padding: 4px 0; border-bottom: 1px solid var(--aegis-slate-800);",
+                                                span {
+                                                    class: "tag",
+                                                    style: "background-color: {category_color}; font-size: 10px;",
+                                                    "{category.name()}"
+                                                }
+                                                span { class: "text-sm", style: "font-family: monospace;", "{pattern}" }
+                                                span { class: "text-sm text-muted", "({source_name})" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-/// Parses time rules from JSON into core TimeRuleSet.
-fn parse_time_rules_from_json(json: &serde_json::Value) -> TimeRuleSet {
-    let mut rule_set = TimeRuleSet::new();
-
-    if let Some(rules) = json.get("rules").and_then(|v| v.as_array()) {
-        for rule_json in rules {
-            if let Ok(ui_rule) = serde_json::from_value::<TimeRule>(rule_json.clone()) {
-                if !ui_rule.enabled {
-                    continue; // Skip disabled rules
-                }
-
-                // Parse time range
-                let start = parse_time(&ui_rule.start_time);
-                let end = parse_time(&ui_rule.end_time);
-                let time_range = TimeRange::new(start, end);
-
-                // Parse days
-                let days: Vec<Weekday> = ui_rule
-                    .days
-                    .iter()
-                    .filter_map(|d| parse_weekday(d))
-                    .collect();
-
-                if !days.is_empty() {
-                    let core_rule = aegis_core::time_rules::TimeRule::new(
-                        &ui_rule.id,
-                        &ui_rule.name,
-                        days,
-                        time_range,
-                    );
-                    rule_set.add_rule(core_rule);
-                }
-            }
-        }
+/// Converts a category string to a Category enum.
+fn string_to_category(s: &str) -> Category {
+    match s {
+        "violence" => Category::Violence,
+        "adult" => Category::Adult,
+        "hate" => Category::Hate,
+        "illegal" => Category::Illegal,
+        "jailbreak" => Category::Jailbreak,
+        "selfharm" => Category::SelfHarm,
+        _ => Category::Profanity,
     }
-
-    rule_set
 }
 
-/// Parses content rules from JSON into core ContentRuleSet.
-fn parse_content_rules_from_json(json: &serde_json::Value) -> ContentRuleSet {
-    let mut rule_set = ContentRuleSet::new();
+/// Returns a color for a category.
+fn category_to_color(category: Category) -> &'static str {
+    match category {
+        Category::Violence => "rgba(239, 68, 68, 0.3)",
+        Category::SelfHarm => "rgba(239, 68, 68, 0.3)",
+        Category::Adult => "rgba(245, 158, 11, 0.3)",
+        Category::Hate => "rgba(239, 68, 68, 0.3)",
+        Category::Illegal => "rgba(239, 68, 68, 0.3)",
+        Category::Jailbreak => "rgba(245, 158, 11, 0.3)",
+        Category::Profanity => "rgba(100, 116, 139, 0.3)",
+    }
+}
 
-    if let Some(categories) = json.get("categories").and_then(|v| v.as_object()) {
-        for (cat_str, config) in categories {
-            if let Some(category) = parse_category(cat_str) {
-                let enabled = config
-                    .get("enabled")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(true);
+// === Helper Functions ===
 
-                if !enabled {
-                    continue; // Skip disabled rules
-                }
+/// Parses time rules JSON into TimeRuleSet.
+fn parse_time_rules(json: &serde_json::Value) -> TimeRuleSet {
+    // Try to parse as TimeRuleSet directly
+    if let Ok(rule_set) = serde_json::from_value::<TimeRuleSet>(json.clone()) {
+        return rule_set;
+    }
 
-                let action = config
-                    .get("action")
-                    .and_then(|v| v.as_str())
-                    .map(parse_action)
-                    .unwrap_or(ContentAction::Block);
-
-                let threshold = config
-                    .get("threshold")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.7) as f32;
-
-                let rule = ContentRule::new(
-                    format!("{:?}_rule", category).to_lowercase(),
-                    format!("{:?} Rule", category),
-                    category,
-                    action,
-                    threshold,
-                );
+    // Try to parse old format: { "rules": [...] }
+    if let Some(rules_array) = json.get("rules").and_then(|r| r.as_array()) {
+        let mut rule_set = TimeRuleSet::new();
+        for rule_json in rules_array {
+            if let Ok(rule) = parse_legacy_rule(rule_json) {
                 rule_set.add_rule(rule);
             }
         }
+        return rule_set;
     }
 
-    rule_set
+    TimeRuleSet::new()
 }
 
-/// Parses a time string (HH:MM) into TimeOfDay.
-fn parse_time(s: &str) -> aegis_core::time_rules::TimeOfDay {
+/// Parses a legacy rule format.
+fn parse_legacy_rule(json: &serde_json::Value) -> Result<TimeRule, ()> {
+    let name = json
+        .get("name")
+        .and_then(|n| n.as_str())
+        .ok_or(())?
+        .to_string();
+    let enabled = json
+        .get("enabled")
+        .and_then(|e| e.as_bool())
+        .unwrap_or(true);
+
+    // Parse start time (e.g., "21:00")
+    let start_str = json.get("start_time").and_then(|s| s.as_str()).ok_or(())?;
+    let start = parse_time_str(start_str)?;
+
+    // Parse end time
+    let end_str = json.get("end_time").and_then(|e| e.as_str()).ok_or(())?;
+    let end = parse_time_str(end_str)?;
+
+    // Parse days
+    let days_array = json.get("days").and_then(|d| d.as_array()).ok_or(())?;
+    let days: Vec<Weekday> = days_array
+        .iter()
+        .filter_map(|d| d.as_str().and_then(parse_weekday))
+        .collect();
+
+    if days.is_empty() {
+        return Err(());
+    }
+
+    let id = generate_rule_id();
+    let mut rule = TimeRule::new(id, name, days, TimeRange::new(start, end));
+    if !enabled {
+        rule.disable();
+    }
+
+    Ok(rule)
+}
+
+/// Parses a time string like "21:00" into TimeOfDay.
+fn parse_time_str(s: &str) -> Result<TimeOfDay, ()> {
     let parts: Vec<&str> = s.split(':').collect();
-    let hour = parts.first().and_then(|h| h.parse().ok()).unwrap_or(0);
-    let minute = parts.get(1).and_then(|m| m.parse().ok()).unwrap_or(0);
-    aegis_core::time_rules::TimeOfDay::new(hour, minute)
+    if parts.len() != 2 {
+        return Err(());
+    }
+    let hour: u8 = parts[0].parse().map_err(|_| ())?;
+    let minute: u8 = parts[1].parse().map_err(|_| ())?;
+    if hour >= 24 || minute >= 60 {
+        return Err(());
+    }
+    Ok(TimeOfDay::new(hour, minute))
 }
 
-/// Parses a day name into Weekday.
+/// Parses a weekday string.
 fn parse_weekday(s: &str) -> Option<Weekday> {
     match s.to_lowercase().as_str() {
-        "monday" => Some(Weekday::Monday),
-        "tuesday" => Some(Weekday::Tuesday),
-        "wednesday" => Some(Weekday::Wednesday),
-        "thursday" => Some(Weekday::Thursday),
-        "friday" => Some(Weekday::Friday),
-        "saturday" => Some(Weekday::Saturday),
-        "sunday" => Some(Weekday::Sunday),
+        "monday" | "mon" => Some(Weekday::Monday),
+        "tuesday" | "tue" => Some(Weekday::Tuesday),
+        "wednesday" | "wed" => Some(Weekday::Wednesday),
+        "thursday" | "thu" => Some(Weekday::Thursday),
+        "friday" | "fri" => Some(Weekday::Friday),
+        "saturday" | "sat" => Some(Weekday::Saturday),
+        "sunday" | "sun" => Some(Weekday::Sunday),
         _ => None,
     }
 }
 
-// Helper functions
-
-fn all_categories() -> Vec<Category> {
-    vec![
-        Category::Violence,
-        Category::SelfHarm,
-        Category::Adult,
-        Category::Jailbreak,
-        Category::Hate,
-        Category::Illegal,
-        Category::Profanity,
-    ]
+/// Generates a unique rule ID.
+fn generate_rule_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!("rule_{}", timestamp)
 }
 
-fn default_threshold(category: Category) -> f32 {
+/// Formats days as a readable string.
+fn format_days(days: &HashSet<Weekday>) -> String {
+    let weekdays: HashSet<_> = Weekday::weekdays().into_iter().collect();
+    let weekends: HashSet<_> = Weekday::weekends().into_iter().collect();
+    let all: HashSet<_> = Weekday::all().into_iter().collect();
+    let school_nights: HashSet<_> = Weekday::school_nights().into_iter().collect();
+
+    if days == &all {
+        return "Every day".to_string();
+    }
+    if days == &weekdays {
+        return "Weekdays".to_string();
+    }
+    if days == &weekends {
+        return "Weekends".to_string();
+    }
+    if days == &school_nights {
+        return "School nights".to_string();
+    }
+
+    // List individual days
+    let mut sorted: Vec<_> = days.iter().copied().collect();
+    sorted.sort_by_key(|d| match d {
+        Weekday::Monday => 0,
+        Weekday::Tuesday => 1,
+        Weekday::Wednesday => 2,
+        Weekday::Thursday => 3,
+        Weekday::Friday => 4,
+        Weekday::Saturday => 5,
+        Weekday::Sunday => 6,
+    });
+
+    sorted
+        .iter()
+        .map(|d| day_short_name(*d))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Returns short day name.
+fn day_short_name(day: Weekday) -> &'static str {
+    match day {
+        Weekday::Monday => "Mon",
+        Weekday::Tuesday => "Tue",
+        Weekday::Wednesday => "Wed",
+        Weekday::Thursday => "Thu",
+        Weekday::Friday => "Fri",
+        Weekday::Saturday => "Sat",
+        Weekday::Sunday => "Sun",
+    }
+}
+
+/// Formats a time range as a readable string.
+fn format_time_range(range: &TimeRange) -> String {
+    let start = format!("{:02}:{:02}", range.start.hour, range.start.minute);
+    let end = format!("{:02}:{:02}", range.end.hour, range.end.minute);
+
+    if range.is_overnight() {
+        format!("{} - {} (next day)", start, end)
+    } else {
+        format!("{} - {}", start, end)
+    }
+}
+
+/// Adds a rule if one with the same ID doesn't exist.
+fn add_rule_if_not_exists(time_rules: &mut Signal<TimeRuleSet>, rule: TimeRule) {
+    let exists = time_rules.read().get_rule(&rule.id).is_some();
+    if !exists {
+        time_rules.write().add_rule(rule);
+    }
+}
+
+/// Toggles a rule's enabled state.
+#[allow(dead_code)]
+fn toggle_rule_enabled(time_rules: &mut Signal<TimeRuleSet>, rule_id: &str, enabled: bool) {
+    if let Some(rule) = time_rules.write().get_rule_mut(rule_id) {
+        if enabled {
+            rule.enable();
+        } else {
+            rule.disable();
+        }
+    }
+}
+
+/// Deletes a rule by ID.
+fn delete_rule(time_rules: &mut Signal<TimeRuleSet>, rule_id: &str) {
+    time_rules.write().remove_rule(rule_id);
+}
+
+/// Saves time rules to the database and notifies the proxy.
+fn save_time_rules(state: &Signal<AppState>, time_rules: &Signal<TimeRuleSet>) {
+    let state_ref = state.read();
+    let Some(profile_id) = state_ref.selected_profile_id else {
+        return;
+    };
+
+    let Ok(Some(profile)) = state_ref.db.get_profile(profile_id) else {
+        return;
+    };
+
+    // Convert TimeRuleSet to JSON
+    let time_rules_json = serde_json::to_value(time_rules.read().clone()).unwrap_or_default();
+
+    let updated_profile = aegis_storage::NewProfile {
+        name: profile.name,
+        os_username: profile.os_username,
+        time_rules: time_rules_json,
+        content_rules: profile.content_rules,
+        enabled: profile.enabled,
+        sentiment_config: profile.sentiment_config,
+    };
+
+    if let Err(e) = state_ref.db.update_profile(profile_id, updated_profile) {
+        tracing::error!("Failed to save time rules: {}", e);
+        return;
+    }
+
+    tracing::info!("Time rules saved for profile {}", profile_id);
+
+    // Notify the proxy to reload rules
+    reload_rules_from_api(profile_id);
+}
+
+/// Calls the API to reload rules into the proxy.
+fn reload_rules_from_api(profile_id: i64) {
+    // Use a separate thread to avoid blocking the UI
+    std::thread::spawn(move || {
+        let client = reqwest::blocking::Client::new();
+        let url = "http://127.0.0.1:48765/api/rules/reload";
+
+        match client
+            .post(url)
+            .json(&serde_json::json!({ "profile_id": profile_id }))
+            .send()
+        {
+            Ok(response) => {
+                if response.status().is_success() {
+                    tracing::info!("Rules reloaded in proxy for profile {}", profile_id);
+                } else {
+                    tracing::warn!("Failed to reload rules: HTTP {}", response.status());
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to call reload API: {}", e);
+            }
+        }
+    });
+}
+
+// === Content Rules Helper Functions ===
+
+/// Parses content rules JSON into ContentRuleSet.
+fn parse_content_rules(json: &serde_json::Value) -> ContentRuleSet {
+    // Try to parse as ContentRuleSet directly
+    if let Ok(rule_set) = serde_json::from_value::<ContentRuleSet>(json.clone()) {
+        // If successfully parsed but empty, return defaults
+        if rule_set.rules.is_empty() {
+            return create_full_defaults();
+        }
+        return rule_set;
+    }
+
+    // Return defaults if parsing fails
+    create_full_defaults()
+}
+
+/// Creates a full default rule set with all 7 categories (same as family safe).
+fn create_full_defaults() -> ContentRuleSet {
+    create_family_safe_preset()
+}
+
+/// Creates Family Safe preset - blocks all categories with balanced thresholds.
+fn create_family_safe_preset() -> ContentRuleSet {
+    ContentRuleSet {
+        rules: vec![
+            ContentRule::new(
+                "violence_block",
+                "Block Violence",
+                Category::Violence,
+                ContentAction::Block,
+                0.7,
+            ),
+            ContentRule::new(
+                "selfharm_block",
+                "Block Self-Harm",
+                Category::SelfHarm,
+                ContentAction::Block,
+                0.5,
+            ),
+            ContentRule::new(
+                "adult_block",
+                "Block Adult",
+                Category::Adult,
+                ContentAction::Block,
+                0.7,
+            ),
+            ContentRule::new(
+                "jailbreak_block",
+                "Block Jailbreak",
+                Category::Jailbreak,
+                ContentAction::Block,
+                0.8,
+            ),
+            ContentRule::new(
+                "hate_block",
+                "Block Hate",
+                Category::Hate,
+                ContentAction::Block,
+                0.7,
+            ),
+            ContentRule::new(
+                "illegal_block",
+                "Block Illegal",
+                Category::Illegal,
+                ContentAction::Block,
+                0.7,
+            ),
+            ContentRule::new(
+                "profanity_block",
+                "Block Profanity",
+                Category::Profanity,
+                ContentAction::Block,
+                0.8,
+            ),
+        ],
+    }
+}
+
+/// Creates Permissive preset - warns instead of blocking (except self-harm).
+fn create_permissive_preset() -> ContentRuleSet {
+    ContentRuleSet {
+        rules: vec![
+            ContentRule::new(
+                "violence_block",
+                "Warn Violence",
+                Category::Violence,
+                ContentAction::Warn,
+                0.8,
+            ),
+            ContentRule::new(
+                "selfharm_block",
+                "Block Self-Harm",
+                Category::SelfHarm,
+                ContentAction::Block,
+                0.5,
+            ), // Always block self-harm
+            ContentRule::new(
+                "adult_block",
+                "Warn Adult",
+                Category::Adult,
+                ContentAction::Warn,
+                0.8,
+            ),
+            ContentRule::new(
+                "jailbreak_block",
+                "Warn Jailbreak",
+                Category::Jailbreak,
+                ContentAction::Warn,
+                0.9,
+            ),
+            ContentRule::new(
+                "hate_block",
+                "Warn Hate",
+                Category::Hate,
+                ContentAction::Warn,
+                0.8,
+            ),
+            ContentRule::new(
+                "illegal_block",
+                "Warn Illegal",
+                Category::Illegal,
+                ContentAction::Warn,
+                0.8,
+            ),
+            ContentRule::new(
+                "profanity_block",
+                "Allow Profanity",
+                Category::Profanity,
+                ContentAction::Allow,
+                0.0,
+            ),
+        ],
+    }
+}
+
+/// Gets the rule ID for a category.
+fn get_rule_id_for_category(category: Category) -> String {
     match category {
-        Category::SelfHarm => 0.5,
-        Category::Jailbreak => 0.8,
-        _ => 0.7,
+        Category::Violence => "violence_block".to_string(),
+        Category::SelfHarm => "selfharm_block".to_string(),
+        Category::Adult => "adult_block".to_string(),
+        Category::Jailbreak => "jailbreak_block".to_string(),
+        Category::Hate => "hate_block".to_string(),
+        Category::Illegal => "illegal_block".to_string(),
+        Category::Profanity => "profanity_block".to_string(),
     }
 }
 
-fn parse_category(s: &str) -> Option<Category> {
-    match s.to_lowercase().as_str() {
-        "violence" => Some(Category::Violence),
-        "selfharm" | "self_harm" => Some(Category::SelfHarm),
-        "adult" => Some(Category::Adult),
-        "jailbreak" => Some(Category::Jailbreak),
-        "hate" => Some(Category::Hate),
-        "illegal" => Some(Category::Illegal),
-        "profanity" => Some(Category::Profanity),
-        _ => None,
+/// Ensures a rule exists for the given category.
+fn ensure_rule_exists(
+    content_rules: &mut Signal<ContentRuleSet>,
+    category: Category,
+    rule_id: &str,
+) {
+    if content_rules.read().get_rule(rule_id).is_none() {
+        // Add default rule for this category
+        let rule = ContentRule::block(rule_id, category, 0.7);
+        content_rules.write().add_rule(rule);
     }
 }
 
-fn category_to_str(category: &Category) -> String {
-    match category {
-        Category::Violence => "violence",
-        Category::SelfHarm => "selfharm",
-        Category::Adult => "adult",
-        Category::Jailbreak => "jailbreak",
-        Category::Hate => "hate",
-        Category::Illegal => "illegal",
-        Category::Profanity => "profanity",
-    }
-    .to_string()
-}
-
-fn parse_action(s: &str) -> ContentAction {
-    match s.to_lowercase().as_str() {
-        "block" => ContentAction::Block,
-        "warn" => ContentAction::Warn,
-        "allow" => ContentAction::Allow,
-        _ => ContentAction::Block,
-    }
-}
-
-fn action_to_str(action: ContentAction) -> &'static str {
+/// Converts ContentAction to string.
+#[allow(dead_code)]
+fn action_to_string(action: ContentAction) -> &'static str {
     match action {
         ContentAction::Block => "block",
         ContentAction::Warn => "warn",
@@ -1305,54 +1699,56 @@ fn action_to_str(action: ContentAction) -> &'static str {
     }
 }
 
-fn category_color(category: Category) -> Color32 {
-    match category {
-        Category::Violence | Category::SelfHarm | Category::Hate | Category::Illegal => {
-            status::ERROR
-        }
-        Category::Adult | Category::Jailbreak => status::WARNING,
-        Category::Profanity => Color32::GRAY,
+/// Converts string to ContentAction.
+fn string_to_action(s: &str) -> ContentAction {
+    match s {
+        "warn" => ContentAction::Warn,
+        "allow" => ContentAction::Allow,
+        _ => ContentAction::Block,
     }
 }
 
-fn truncate_pattern(s: &str, max_len: usize) -> String {
-    if s.len() > max_len {
-        format!("{}...", &s[..max_len])
+/// Formats threshold as a human-readable string.
+fn format_threshold(threshold: f32) -> &'static str {
+    if threshold >= 0.85 {
+        "Low"
+    } else if threshold >= 0.6 {
+        "Medium"
     } else {
-        s.to_string()
+        "High"
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Saves content rules to the database and notifies the proxy.
+fn save_content_rules(state: &Signal<AppState>, content_rules: &Signal<ContentRuleSet>) {
+    let state_ref = state.read();
+    let Some(profile_id) = state_ref.selected_profile_id else {
+        return;
+    };
 
-    #[test]
-    fn test_rules_tab_default() {
-        assert_eq!(RulesTab::default(), RulesTab::Time);
+    let Ok(Some(profile)) = state_ref.db.get_profile(profile_id) else {
+        return;
+    };
+
+    // Convert ContentRuleSet to JSON
+    let content_rules_json = serde_json::to_value(content_rules.read().clone()).unwrap_or_default();
+
+    let updated_profile = aegis_storage::NewProfile {
+        name: profile.name,
+        os_username: profile.os_username,
+        time_rules: profile.time_rules,
+        content_rules: content_rules_json,
+        enabled: profile.enabled,
+        sentiment_config: profile.sentiment_config,
+    };
+
+    if let Err(e) = state_ref.db.update_profile(profile_id, updated_profile) {
+        tracing::error!("Failed to save content rules: {}", e);
+        return;
     }
 
-    #[test]
-    fn test_time_rule_default() {
-        let rule = TimeRule::default();
-        assert!(!rule.id.is_empty());
-        assert_eq!(rule.start_time, "21:00");
-        assert_eq!(rule.end_time, "07:00");
-        assert!(rule.enabled);
-    }
+    tracing::info!("Content rules saved for profile {}", profile_id);
 
-    #[test]
-    fn test_content_rule_state_default() {
-        let state = ContentRuleState::default();
-        assert_eq!(state.action, ContentAction::Block);
-        assert_eq!(state.threshold, 0.7);
-        assert!(state.enabled);
-    }
-
-    #[test]
-    fn test_rules_state_new() {
-        let state = RulesState::new();
-        assert!(!state.initialized);
-        assert!(state.community_manager.rule_count() > 0);
-    }
+    // Notify the proxy to reload rules
+    reload_rules_from_api(profile_id);
 }

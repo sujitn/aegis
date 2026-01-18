@@ -22,7 +22,8 @@ use crate::repository::{
 /// High-level database interface for Aegis.
 #[derive(Clone)]
 pub struct Database {
-    pool: ConnectionPool,
+    /// Connection pool (pub(crate) for repository access).
+    pub(crate) pool: ConnectionPool,
 }
 
 impl Database {
@@ -309,34 +310,6 @@ impl Database {
     pub fn count_profiles(&self) -> Result<i64> {
         let conn = self.pool.get()?;
         ProfileRepo::count(&conn)
-    }
-
-    // === Protection State ===
-
-    /// Config key for protection state.
-    const PROTECTION_STATE_KEY: &'static str = "protection_state";
-
-    /// Get the current protection state.
-    ///
-    /// Returns `None` if not set (defaults to Active).
-    pub fn get_protection_state(&self) -> Result<Option<String>> {
-        let conn = self.pool.get()?;
-        match ConfigRepo::get(&conn, Self::PROTECTION_STATE_KEY)? {
-            Some(config) => {
-                if let Some(state) = config.value.as_str() {
-                    Ok(Some(state.to_string()))
-                } else {
-                    Ok(None)
-                }
-            }
-            None => Ok(None),
-        }
-    }
-
-    /// Set the protection state.
-    pub fn set_protection_state(&self, state: &str) -> Result<()> {
-        let conn = self.pool.get()?;
-        ConfigRepo::set(&conn, Self::PROTECTION_STATE_KEY, &serde_json::json!(state))
     }
 
     // === Sites ===
@@ -669,28 +642,23 @@ mod tests {
     fn test_protection_state() {
         let db = Database::in_memory().unwrap();
 
-        // Default is None (Active)
-        assert!(db.get_protection_state().unwrap().is_none());
+        // Default is Active (from migration)
+        let state = db.get_protection_state().unwrap();
+        assert!(state.is_active());
 
-        // Set to paused
-        db.set_protection_state("paused").unwrap();
-        assert_eq!(
-            db.get_protection_state().unwrap(),
-            Some("paused".to_string())
-        );
+        // Pause protection
+        db.pause_protection(None, "test").unwrap();
+        let state = db.get_protection_state().unwrap();
+        assert!(state.is_paused());
 
-        // Set to disabled
-        db.set_protection_state("disabled").unwrap();
-        assert_eq!(
-            db.get_protection_state().unwrap(),
-            Some("disabled".to_string())
-        );
+        // Disable protection
+        db.disable_protection("test").unwrap();
+        let state = db.get_protection_state().unwrap();
+        assert!(state.is_disabled());
 
-        // Set back to active
-        db.set_protection_state("active").unwrap();
-        assert_eq!(
-            db.get_protection_state().unwrap(),
-            Some("active".to_string())
-        );
+        // Resume protection
+        db.resume_protection("test").unwrap();
+        let state = db.get_protection_state().unwrap();
+        assert!(state.is_active());
     }
 }

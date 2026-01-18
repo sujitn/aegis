@@ -7,6 +7,7 @@ pub mod flagged;
 pub mod profiles;
 pub mod rules;
 pub mod sites;
+pub mod state;
 pub mod stats;
 
 pub use auth::AuthRepo;
@@ -16,4 +17,5 @@ pub use flagged::{create_snippet, FlaggedEventsRepo};
 pub use profiles::ProfileRepo;
 pub use rules::RulesRepo;
 pub use sites::{DisabledBundledRepo, SiteRepo};
+pub use state::{ProtectionState, SessionRecord, StateChange};
 pub use stats::StatsRepo;

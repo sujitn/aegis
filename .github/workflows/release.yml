@@ -67,7 +67,8 @@ jobs:
             libxcb1-dev \
             libatk1.0-dev \
             libpango1.0-dev \
-            libxdo-dev
+            libxdo-dev \
+            libwebkit2gtk-4.1-dev
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -372,7 +373,8 @@ jobs:
             libxcb1-dev \
             libatk1.0-dev \
             libpango1.0-dev \
-            libxdo-dev
+            libxdo-dev \
+            libwebkit2gtk-4.1-dev
 
       - name: Install cargo-deb
         run: cargo install cargo-deb
@@ -471,6 +473,7 @@ jobs:
             libatk1.0-dev \
             libpango1.0-dev \
             libxdo-dev \
+            libwebkit2gtk-4.1-dev \
             rpm
 
       - name: Install cargo-generate-rpm
@@ -566,6 +569,7 @@ jobs:
             libatk1.0-dev \
             libpango1.0-dev \
             libxdo-dev \
+            libwebkit2gtk-4.1-dev \
             fuse libfuse2 imagemagick
 
       - name: Download appimagetool

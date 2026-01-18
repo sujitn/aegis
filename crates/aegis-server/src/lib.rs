@@ -177,6 +177,15 @@ impl Server {
                 post(handlers::acknowledge_all_flagged),
             )
             .route("/api/flagged/{id}", delete(handlers::delete_flagged))
+            // Rules reload endpoint
+            .route("/api/rules/reload", post(handlers::reload_rules))
+            // Protection control endpoints
+            .route(
+                "/api/protection/status",
+                get(handlers::get_protection_status),
+            )
+            .route("/api/protection/pause", post(handlers::pause_protection))
+            .route("/api/protection/resume", post(handlers::resume_protection))
             .layer(cors)
             .with_state(state);
 

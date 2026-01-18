@@ -9,6 +9,7 @@ description = "HTTP API server for Aegis"
 [dependencies]
 aegis-core.workspace = true
 aegis-storage.workspace = true
+aegis-proxy.workspace = true
 axum.workspace = true
 tokio.workspace = true
 socket2 = "0.5"

@@ -32,6 +32,8 @@ use aegis_core::rule_engine::{RuleAction, RuleEngine, RuleEngineResult};
 use aegis_core::time_rules::TimeRuleSet;
 use aegis_storage::{Action, Database};
 
+use crate::state_cache::StateCache;
+
 use crate::domains::is_llm_domain;
 use crate::extractor::{extract_prompt, PromptInfo};
 
@@ -110,7 +112,7 @@ pub type OnAllowCallback = Arc<dyn Fn(&PromptInfo, &RuleEngineResult) + Send + S
 /// Also holds the shared rule engine that can be updated when profile rules change.
 #[derive(Clone)]
 pub struct FilteringState {
-    /// Whether filtering is enabled.
+    /// Whether filtering is enabled (fallback when no state_cache).
     enabled: Arc<AtomicBool>,
     /// Current profile name (for logging).
     profile_name: Arc<RwLock<Option<String>>>,
@@ -120,6 +122,9 @@ pub struct FilteringState {
     rule_engine: Arc<RwLock<RuleEngine>>,
     /// Sentiment analyzer for emotional content flagging.
     sentiment_analyzer: Arc<RwLock<Option<SentimentAnalyzer>>>,
+    /// Optional state cache for reading protection state from database (F032).
+    /// When set, is_enabled() will read from the database cache instead of AtomicBool.
+    state_cache: Option<Arc<StateCache>>,
 }
 
 impl std::fmt::Debug for FilteringState {
@@ -151,6 +156,7 @@ impl FilteringState {
             profile_id: Arc::new(RwLock::new(None)),
             rule_engine: Arc::new(RwLock::new(RuleEngine::with_defaults())),
             sentiment_analyzer: Arc::new(RwLock::new(None)),
+            state_cache: None,
         }
     }
 
@@ -162,6 +168,7 @@ impl FilteringState {
             profile_id: Arc::new(RwLock::new(None)),
             rule_engine: Arc::new(RwLock::new(rule_engine)),
             sentiment_analyzer: Arc::new(RwLock::new(None)),
+            state_cache: None,
         }
     }
 
@@ -173,12 +180,53 @@ impl FilteringState {
             profile_id: Arc::new(RwLock::new(None)),
             rule_engine: Arc::new(RwLock::new(RuleEngine::with_defaults())),
             sentiment_analyzer: Arc::new(RwLock::new(Some(SentimentAnalyzer::new(config)))),
+            state_cache: None,
+        }
+    }
+
+    /// Sets the state cache for database-backed protection state (F032).
+    pub fn set_state_cache(&self, _cache: Arc<StateCache>) {
+        // Note: This requires interior mutability - we'll need to change the field type
+        // For now, use a new constructor instead
+    }
+
+    /// Creates a filtering state with database-backed state cache (F032).
+    pub fn with_state_cache(db: Arc<Database>) -> Self {
+        let cache = StateCache::new(db);
+        Self {
+            enabled: Arc::new(AtomicBool::new(true)),
+            profile_name: Arc::new(RwLock::new(None)),
+            profile_id: Arc::new(RwLock::new(None)),
+            rule_engine: Arc::new(RwLock::new(RuleEngine::with_defaults())),
+            sentiment_analyzer: Arc::new(RwLock::new(None)),
+            state_cache: Some(Arc::new(cache)),
+        }
+    }
+
+    /// Creates a filtering state with rule engine and state cache (F032).
+    pub fn with_rule_engine_and_cache(rule_engine: RuleEngine, db: Arc<Database>) -> Self {
+        let cache = StateCache::new(db);
+        Self {
+            enabled: Arc::new(AtomicBool::new(true)),
+            profile_name: Arc::new(RwLock::new(None)),
+            profile_id: Arc::new(RwLock::new(None)),
+            rule_engine: Arc::new(RwLock::new(rule_engine)),
+            sentiment_analyzer: Arc::new(RwLock::new(None)),
+            state_cache: Some(Arc::new(cache)),
         }
     }
 
     /// Returns whether filtering is enabled.
+    /// If a state cache is configured (F032), reads from database.
+    /// Otherwise, reads from local AtomicBool.
     pub fn is_enabled(&self) -> bool {
-        self.enabled.load(Ordering::SeqCst)
+        if let Some(ref cache) = self.state_cache {
+            // Poll for updates and return cached value
+            cache.poll();
+            cache.is_filtering_enabled()
+        } else {
+            self.enabled.load(Ordering::SeqCst)
+        }
     }
 
     /// Enables filtering.

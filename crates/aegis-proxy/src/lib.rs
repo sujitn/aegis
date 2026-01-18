@@ -47,6 +47,7 @@ mod handler;
 mod proxy;
 pub mod setup;
 pub mod smart_parser;
+pub mod state_cache;
 
 pub use ca::{CaManager, CaManagerError};
 pub use domains::{get_bundled_sites, get_registry, is_llm_domain, parser_id, LLM_DOMAINS};
@@ -63,6 +64,7 @@ pub use smart_parser::{
     ExtractedPrompt, ParseContext, ParseResult, ParseWarning, ParserRegistry, PayloadParser,
     SmartParser, StreamAccumulator,
 };
+pub use state_cache::{StateCache, DEFAULT_POLL_INTERVAL};
 
 /// Default proxy port.
 pub const DEFAULT_PROXY_PORT: u16 = 8766;

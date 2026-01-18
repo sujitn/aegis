@@ -13,6 +13,7 @@ Thumbs.db
 # Node (browser extension)
 node_modules/
 dist/
+extension/key.pem
 
 # Models
 *.onnx

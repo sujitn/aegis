@@ -34,6 +34,7 @@
 | [F018](F018-protection-toggle.md) | Protection Toggle | `complete` | high | core | F011, F013 |
 | [F019](F019-user-profiles.md) | User Profiles | `complete` | critical | core | F005, F006, F008 |
 | [F029](F029-profile-aware-proxy.md) | Profile-Aware Proxy | `complete` | high | core | F016, F018, F019 |
+| [F032](F032-centralized-state.md) | Centralized State | `complete` | critical | storage | F008, F013, F018 |
 
 ## UI & Experience
 

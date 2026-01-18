@@ -81,6 +81,7 @@ impl KeywordClassifier {
             Self::build_jailbreak_patterns(),
             Self::build_hate_patterns(),
             Self::build_illegal_patterns(),
+            Self::build_profanity_patterns(),
         ]
     }
 
@@ -159,6 +160,30 @@ impl KeywordClassifier {
             r"\bhuman\s+trafficking\b",
         ];
         Self::build_category_patterns(Category::Illegal, &patterns, 0.95)
+    }
+
+    fn build_profanity_patterns() -> CategoryPatterns {
+        // Common profanity words - uses word boundaries to match whole words only
+        // Includes common variations and misspellings
+        let patterns = vec![
+            r"\b(fuck|f\*ck|fuk|fck|fuq|phuck|fvck)(ing|ed|er|s)?\b",
+            r"\b(shit|sh\*t|sh1t|sht)(ty|head|s)?\b",
+            r"\b(ass|a\*\*|azz)(hole|wipe|hat)?\b",
+            r"\b(bitch|b\*tch|biatch)(es|y)?\b",
+            r"\b(damn|dammit|damned)\b",
+            r"\b(crap|crappy)\b",
+            r"\b(bastard|b\*stard)(s)?\b",
+            r"\b(piss|p\*ss)(ed|ing|y)?\b",
+            r"\b(dick|d\*ck|dik)(head|s)?\b",
+            r"\b(cock|c\*ck)(s|sucker)?\b",
+            r"\b(cunt|c\*nt)(s)?\b",
+            r"\b(whore|wh\*re|hoe)(s)?\b",
+            r"\b(slut|sl\*t)(s|ty)?\b",
+            r"\bwtf\b",
+            r"\bstfu\b",
+            r"\blmfao\b",
+        ];
+        Self::build_category_patterns(Category::Profanity, &patterns, 0.85)
     }
 
     fn build_category_patterns(
@@ -426,6 +451,77 @@ mod tests {
     #[test]
     fn safe_recipe_request() {
         let result = classifier().classify("Give me a recipe for chocolate chip cookies");
+        assert!(!result.should_block);
+    }
+
+    // === Profanity Tests ===
+
+    #[test]
+    fn detects_profanity_fuck() {
+        let result = classifier().classify("what the fuck is this");
+        assert!(result.should_block);
+        assert!(result
+            .matches
+            .iter()
+            .any(|m| m.category == Category::Profanity));
+    }
+
+    #[test]
+    fn detects_profanity_shit() {
+        let result = classifier().classify("this is shit");
+        assert!(result.should_block);
+        assert!(result
+            .matches
+            .iter()
+            .any(|m| m.category == Category::Profanity));
+    }
+
+    #[test]
+    fn detects_profanity_bitch() {
+        let result = classifier().classify("you are a bitch");
+        assert!(result.should_block);
+        assert!(result
+            .matches
+            .iter()
+            .any(|m| m.category == Category::Profanity));
+    }
+
+    #[test]
+    fn detects_profanity_variations() {
+        // Test asterisk censored versions
+        let result = classifier().classify("what the f*ck");
+        assert!(result.should_block);
+        assert!(result
+            .matches
+            .iter()
+            .any(|m| m.category == Category::Profanity));
+    }
+
+    #[test]
+    fn detects_profanity_wtf() {
+        let result = classifier().classify("wtf is going on");
+        assert!(result.should_block);
+        assert!(result
+            .matches
+            .iter()
+            .any(|m| m.category == Category::Profanity));
+    }
+
+    #[test]
+    fn safe_duck_not_profanity() {
+        let result = classifier().classify("I like to feed the ducks at the park");
+        assert!(!result.should_block);
+    }
+
+    #[test]
+    fn safe_assume_not_profanity() {
+        let result = classifier().classify("Let's not assume anything");
+        assert!(!result.should_block);
+    }
+
+    #[test]
+    fn safe_grass_not_profanity() {
+        let result = classifier().classify("The grass is green");
         assert!(!result.should_block);
     }
 
