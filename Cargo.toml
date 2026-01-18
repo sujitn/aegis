@@ -34,7 +34,7 @@ tokio = { version = "1.49", features = ["full"] }
 axum = "0.8"
 
 # Database
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.38", features = ["bundled"] }
 
 # Date/Time
 chrono = { version = "0.4", features = ["serde"] }
@@ -78,7 +78,7 @@ tokenizers = { version = "0.20", default-features = false, features = ["onig"] }
 notify-rust = "4.11"
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.13", features = ["json", "rustls"], default-features = false }
 
 # Semver
 semver = "1.0"

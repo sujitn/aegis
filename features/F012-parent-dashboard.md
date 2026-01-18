@@ -81,7 +81,7 @@ Desktop GUI for parents. Full control over profiles, rules, and monitoring. Pass
 
 ## Implementation
 
-- `crates/aegis-ui/src/app.rs` - Main DashboardApp with eframe integration
+- `crates/aegis-ui/src/lib.rs` - Main App component with Dioxus integration
 - `crates/aegis-ui/src/state.rs` - AppState for application data management
 - `crates/aegis-ui/src/error.rs` - UiError types
 - `crates/aegis-ui/src/views/login.rs` - Login/password setup screen
@@ -92,9 +92,7 @@ Desktop GUI for parents. Full control over profiles, rules, and monitoring. Pass
 - `crates/aegis-ui/src/views/settings.rs` - Settings with password change
 
 ### Dependencies
-- `eframe` - Cross-platform native GUI framework
-- `egui` - Immediate mode GUI library
-- `egui_extras` - Additional widgets (datepicker)
+- `dioxus` - Rust GUI framework with desktop support
 - `csv` - CSV export functionality
 - `directories` - User directories for export
 
@@ -113,4 +111,4 @@ run_dashboard(db).expect("Failed to run dashboard");
 
 ## Notes
 
-Framework: egui (native) or Tauri (web-based). Design: clean, minimal, parent-friendly. Colors: green (safe), yellow (warn), red (block/error).
+Framework: Dioxus (native desktop). Design: clean, minimal, parent-friendly. Colors: green (safe), yellow (warn), red (block/error).

@@ -94,7 +94,7 @@ Privacy-first AI safety for families. Simple install, easy management, automatic
 | Proxy | hudsucker |
 | TLS | rcgen, rustls |
 | Database | SQLite (rusqlite) |
-| UI | egui |
+| UI | Dioxus |
 | Tray | tray-item |
 | Extension | TypeScript |
 | Installer | cargo-bundle, WiX, cargo-deb |

@@ -173,48 +173,8 @@ pub fn install_extension_linux(extension_path: &Path) -> Result<(), String> {
 
 ### Setup Wizard Integration
 
-Add to setup wizard (F015):
-
-```rust
-// Step: Install Browser Extension
-fn render_extension_install(ui: &mut egui::Ui, state: &mut SetupState) {
-    ui.heading("Install Browser Extension");
-
-    ui.label("The Aegis extension monitors AI chatbots in your browser.");
-
-    if ui.button("Install Extension Automatically").clicked() {
-        match install_extension_auto() {
-            Ok(()) => {
-                state.extension_installed = true;
-                ui.label("Extension installed! Please restart Chrome.");
-            }
-            Err(e) => {
-                state.extension_error = Some(e);
-            }
-        }
-    }
-
-    if let Some(ref error) = state.extension_error {
-        ui.colored_label(Color32::RED, error);
-        ui.label("Try manual installation instead:");
-        render_manual_install_instructions(ui);
-    }
-}
-
-fn render_manual_install_instructions(ui: &mut egui::Ui) {
-    ui.label("1. Open Chrome and go to chrome://extensions");
-    ui.label("2. Enable 'Developer mode' (toggle in top right)");
-    ui.label("3. Click 'Load unpacked'");
-    ui.label("4. Select the extension folder:");
-
-    if let Some(ext_path) = get_bundled_extension_path() {
-        ui.code(ext_path.display().to_string());
-        if ui.button("Open Folder").clicked() {
-            let _ = open::that(&ext_path);
-        }
-    }
-}
-```
+The setup wizard (F015) includes extension installation in the interception mode step.
+See `crates/aegis-ui/src/views/setup.rs` for the Dioxus implementation.
 
 ### Bundling Extension with App
 

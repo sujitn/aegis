@@ -68,15 +68,15 @@ pub fn run_dashboard_with_filtering(
     tracing::debug!("run_dashboard_with_filtering: starting");
 
     // Determine close behavior based on whether we have filtering_state
-    // - With filtering_state: running in-process (--no-tray mode), use CloseWindow
-    // - Without: running as subprocess, use LastWindowExitsApp so process exits
+    // - With filtering_state: running in-process (--no-tray mode), use WindowHides
+    // - Without: running as subprocess, use WindowCloses so process exits
     let is_subprocess = filtering_state.is_none();
     let close_behaviour = if is_subprocess {
-        tracing::debug!("Subprocess mode: using LastWindowExitsApp");
-        dioxus::desktop::WindowCloseBehaviour::LastWindowExitsApp
+        tracing::debug!("Subprocess mode: using WindowCloses");
+        dioxus::desktop::WindowCloseBehaviour::WindowCloses
     } else {
-        tracing::debug!("In-process mode: using CloseWindow");
-        dioxus::desktop::WindowCloseBehaviour::CloseWindow
+        tracing::debug!("In-process mode: using WindowHides");
+        dioxus::desktop::WindowCloseBehaviour::WindowHides
     };
 
     let initial_state = AppState::with_filtering_state(db, filtering_state);

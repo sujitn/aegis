@@ -677,6 +677,17 @@ fn main() -> anyhow::Result<()> {
     // Dashboard-only mode: just run the dashboard UI (spawned from main process)
     if args.dashboard_only {
         tracing::info!("Running in dashboard-only mode (subprocess)");
+
+        // Create a tokio runtime for the dashboard's async coroutines
+        // (needed for polling, HTTP requests, etc.)
+        let _runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| anyhow::anyhow!("Failed to create tokio runtime: {}", e))?;
+
+        // Enter the runtime context so async code can run
+        let _guard = _runtime.enter();
+
         run_dashboard_with_filtering(db, None).map_err(|e| anyhow::anyhow!("UI error: {}", e))?;
         tracing::info!("Dashboard subprocess exiting");
         return Ok(());

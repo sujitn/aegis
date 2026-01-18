@@ -12,10 +12,10 @@ thiserror.workspace = true
 tracing.workspace = true
 
 # Cross-platform tray icon
-tray-icon = "0.19"
+tray-icon = "0.21"
 
 # Menu support
-muda = "0.15"
+muda = "0.17"
 
 # Image loading for icons
 image = { version = "0.25", default-features = false, features = ["png"] }

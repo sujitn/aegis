@@ -27,7 +27,7 @@ directories.workspace = true
 thiserror.workspace = true
 serde_json.workspace = true
 open = "5.3"
-auto-launch = "0.5"
+auto-launch = "0.6"
 chrono.workspace = true
 csv = "1.4"
 reqwest.workspace = true
@@ -35,11 +35,11 @@ semver.workspace = true
 serde.workspace = true
 
 # For draining stale events from global receivers
-muda = "0.15"
-tray-icon = "0.19"
+muda = "0.17"
+tray-icon = "0.21"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging"] }
 
 [dev-dependencies]
 tempfile = "3.24"

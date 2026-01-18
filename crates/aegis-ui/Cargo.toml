@@ -17,7 +17,7 @@ chrono.workspace = true
 tracing.workspace = true
 
 # Dioxus GUI framework
-dioxus = { version = "0.6", features = ["desktop"] }
+dioxus = { version = "0.7", features = ["desktop"] }
 
 # CSV export
 csv = "1.4"
@@ -29,7 +29,7 @@ directories.workspace = true
 open = "5.3"
 
 # Autostart
-auto-launch = "0.5"
+auto-launch = "0.6"
 
 # Image loading for window icon
 image = { version = "0.25", default-features = false, features = ["png"] }
