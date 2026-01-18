@@ -694,9 +694,15 @@ fn main() -> anyhow::Result<()> {
     let first_run = is_first_run(&db);
     // Show dashboard if:
     // - First run (setup wizard needed) - always, even if --minimized is set
-    // - Explicitly requested via --show-dashboard
+    // - Explicitly requested via --show-dashboard (and not minimized)
     // When --minimized is set (autostart mode), start silently unless first_run
-    let show_dashboard = first_run || args.show_dashboard;
+    let show_dashboard = if args.minimized {
+        // Minimized mode: only show dashboard on first run (setup wizard)
+        first_run
+    } else {
+        // Normal mode: show on first run or if explicitly requested
+        first_run || args.show_dashboard
+    };
 
     if args.no_tray {
         // No tray mode: just run dashboard directly
