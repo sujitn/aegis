@@ -494,7 +494,7 @@ aegis-core     - Classification, rules, profiles, auth
 aegis-proxy    - MITM proxy, TLS, interception
 aegis-server   - HTTP API for extension
 aegis-storage  - SQLite persistence
-aegis-ui       - Parent dashboard (egui)
+aegis-ui       - Parent dashboard (Dioxus)
 aegis-tray     - System tray
 aegis-app      - Main binary
 ```
