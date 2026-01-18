@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "aegis-app"
-version = "0.2.6"
+version = "0.3.0"
 dependencies = [
  "aegis-core",
  "aegis-proxy",
@@ -42,7 +42,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-core"
-version = "0.2.6"
+version = "0.3.0"
 dependencies = [
  "argon2",
  "chrono",
@@ -74,7 +74,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-proxy"
-version = "0.2.6"
+version = "0.3.0"
 dependencies = [
  "aegis-core",
  "aegis-storage",
@@ -103,7 +103,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-server"
-version = "0.2.6"
+version = "0.3.0"
 dependencies = [
  "aegis-core",
  "aegis-proxy",
@@ -123,7 +123,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-storage"
-version = "0.2.6"
+version = "0.3.0"
 dependencies = [
  "aegis-core",
  "chrono",
@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-tray"
-version = "0.2.6"
+version = "0.3.0"
 dependencies = [
  "aegis-core",
  "image",
@@ -153,7 +153,7 @@ dependencies = [
 
 [[package]]
 name = "aegis-ui"
-version = "0.2.6"
+version = "0.3.0"
 dependencies = [
  "aegis-core",
  "aegis-proxy",
