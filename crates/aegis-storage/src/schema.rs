@@ -1,7 +1,7 @@
 //! Database schema and migrations.
 
 use rusqlite::Connection;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::error::Result;
 
@@ -14,7 +14,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
     if current_version < SCHEMA_VERSION {
         info!(
-            "Running migrations from version {} to {}",
+            "Database migration needed: v{} -> v{}",
             current_version, SCHEMA_VERSION
         );
 
@@ -43,7 +43,9 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         }
 
         set_schema_version(conn, SCHEMA_VERSION)?;
-        info!("Migrations complete");
+        info!("Database migration complete");
+    } else {
+        debug!("Database schema up to date (v{})", current_version);
     }
 
     Ok(())
@@ -80,7 +82,7 @@ fn set_schema_version(conn: &Connection, version: i32) -> Result<()> {
 
 /// Migration to version 1: Initial schema.
 fn migrate_v1(conn: &Connection) -> Result<()> {
-    info!("Applying migration v1: Initial schema");
+    debug!("Applying migration v1: Initial schema");
 
     // Events table - stores classification events (privacy-preserving)
     conn.execute(
@@ -161,7 +163,7 @@ fn migrate_v1(conn: &Connection) -> Result<()> {
 
 /// Migration to version 2: User profiles.
 fn migrate_v2(conn: &Connection) -> Result<()> {
-    info!("Applying migration v2: User profiles");
+    debug!("Applying migration v2: User profiles");
 
     // Profiles table - user profiles with rules
     conn.execute(
@@ -189,7 +191,7 @@ fn migrate_v2(conn: &Connection) -> Result<()> {
 
 /// Migration to version 3: Site registry.
 fn migrate_v3(conn: &Connection) -> Result<()> {
-    info!("Applying migration v3: Site registry");
+    debug!("Applying migration v3: Site registry");
 
     // Sites table - custom and remote sites
     conn.execute(
@@ -234,7 +236,7 @@ fn migrate_v3(conn: &Connection) -> Result<()> {
 
 /// Migration to version 4: Flagged events for sentiment analysis.
 fn migrate_v4(conn: &Connection) -> Result<()> {
-    info!("Applying migration v4: Flagged events for sentiment analysis");
+    debug!("Applying migration v4: Flagged events for sentiment analysis");
 
     // Flagged events table - stores sentiment analysis flags for parental review
     conn.execute(
@@ -283,7 +285,7 @@ fn migrate_v4(conn: &Connection) -> Result<()> {
 
 /// Migration to version 5: Sentiment configuration per profile.
 fn migrate_v5(conn: &Connection) -> Result<()> {
-    info!("Applying migration v5: Sentiment configuration per profile");
+    debug!("Applying migration v5: Sentiment configuration per profile");
 
     // Add sentiment_config column to profiles table
     // Default is enabled with standard sensitivity
@@ -298,7 +300,7 @@ fn migrate_v5(conn: &Connection) -> Result<()> {
 /// Migration to version 6: Centralized state management.
 /// Adds tables for cross-process state synchronization (F032).
 fn migrate_v6(conn: &Connection) -> Result<()> {
-    info!("Applying migration v6: Centralized state management");
+    debug!("Applying migration v6: Centralized state management");
 
     // App state table - central key-value store for application state
     // Used for protection status, interception mode, etc.
