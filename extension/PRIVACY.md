@@ -53,10 +53,15 @@ Aegis AI Safety is a parental control extension that monitors AI chatbot interac
 
 | Permission | Why We Need It |
 |------------|----------------|
-| `storage` | Store extension settings locally |
-| `activeTab` | Detect when user is on an AI chatbot site |
-| `host_permissions` (AI sites) | Inject content script to monitor prompts |
-| `host_permissions` (localhost) | Communicate with local Aegis app |
+| `storage` | Store extension settings locally (fail-safe mode preference) |
+| `host_permissions` (localhost only) | Communicate with local Aegis app at 127.0.0.1 |
+
+### Content Script Matching
+
+The extension uses declarative `content_scripts.matches` to run on AI chatbot sites. This is a standard Chrome extension pattern that:
+- Only activates on specific sites (ChatGPT, Claude, Gemini, etc.)
+- Does not require broad host permissions
+- Cannot access any other websites
 
 ## Children's Privacy
 

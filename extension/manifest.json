@@ -6,19 +6,10 @@
   "description": "Parental controls for AI chatbots. Protects children from harmful content on ChatGPT, Claude, and Gemini.",
   "homepage_url": "https://github.com/anthropics/aegis",
   "permissions": [
-    "storage",
-    "activeTab"
+    "storage"
   ],
   "host_permissions": [
-    "http://127.0.0.1:48765/*",
-    "https://chat.openai.com/*",
-    "https://chatgpt.com/*",
-    "https://claude.ai/*",
-    "https://gemini.google.com/*",
-    "https://copilot.microsoft.com/*",
-    "https://www.bing.com/chat/*",
-    "https://www.perplexity.ai/*",
-    "https://poe.com/*"
+    "http://127.0.0.1:48765/*"
   ],
   "action": {
     "default_popup": "popup.html",
