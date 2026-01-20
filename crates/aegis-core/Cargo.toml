@@ -8,7 +8,7 @@ description = "Core classification, rules, and authentication logic for Aegis"
 
 [features]
 default = ["notifications", "extension-install"]
-ml = ["dep:ort", "dep:ndarray", "dep:tokenizers"]
+ml = ["dep:ort", "dep:ndarray", "dep:tokenizers", "dep:image", "dep:base64"]
 notifications = ["dep:notify-rust"]
 extension-install = []
 
@@ -21,10 +21,24 @@ chrono = { workspace = true, features = ["serde"] }
 argon2.workspace = true
 rand.workspace = true
 
-# Optional ML dependencies (for Prompt Guard)
+# Optional ML dependencies (for Prompt Guard and NSFW Image Classifier)
 ort = { workspace = true, optional = true }
 ndarray = { workspace = true, optional = true }
 tokenizers = { workspace = true, optional = true }
+image = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
+
+# Logging
+tracing.workspace = true
+
+# Model downloading
+directories.workspace = true
+reqwest.workspace = true
+
+# Archive extraction
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+flate2 = "1.0"
+tar = "0.4"
 
 # Optional notifications
 notify-rust = { workspace = true, optional = true }

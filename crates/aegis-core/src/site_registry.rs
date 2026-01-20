@@ -29,6 +29,8 @@ pub enum SiteCategory {
     Api,
     /// Self-hosted, corporate (Azure OpenAI, Bedrock).
     Enterprise,
+    /// AI image generation services (DALL-E, Stable Diffusion, Midjourney).
+    ImageGen,
 }
 
 impl SiteCategory {
@@ -38,6 +40,7 @@ impl SiteCategory {
             SiteCategory::Consumer => "consumer",
             SiteCategory::Api => "api",
             SiteCategory::Enterprise => "enterprise",
+            SiteCategory::ImageGen => "image_gen",
         }
     }
 
@@ -47,8 +50,14 @@ impl SiteCategory {
             "consumer" => Some(SiteCategory::Consumer),
             "api" => Some(SiteCategory::Api),
             "enterprise" => Some(SiteCategory::Enterprise),
+            "image_gen" => Some(SiteCategory::ImageGen),
             _ => None,
         }
+    }
+
+    /// Returns true if this category is for image generation services.
+    pub fn is_image_gen(&self) -> bool {
+        matches!(self, SiteCategory::ImageGen)
     }
 }
 
@@ -337,7 +346,53 @@ pub fn bundled_sites() -> Vec<SiteEntry> {
             .with_priority(10),
         SiteEntry::bundled("*.huggingface.co", "Hugging Face", SiteCategory::Consumer)
             .with_priority(5),
+        // =================================================================
+        // Image Generation Services (F033)
+        // =================================================================
+        // Stability AI (Stable Diffusion)
+        SiteEntry::bundled("api.stability.ai", "Stability AI", SiteCategory::ImageGen)
+            .with_parser_id("stability_json")
+            .with_priority(10),
+        // Leonardo.ai
+        SiteEntry::bundled("cloud.leonardo.ai", "Leonardo.ai", SiteCategory::ImageGen)
+            .with_parser_id("leonardo_json")
+            .with_priority(10),
+        // Ideogram
+        SiteEntry::bundled("api.ideogram.ai", "Ideogram", SiteCategory::ImageGen)
+            .with_parser_id("ideogram_json")
+            .with_priority(10),
+        // Runway ML
+        SiteEntry::bundled("api.runwayml.com", "Runway ML", SiteCategory::ImageGen)
+            .with_parser_id("runway_json")
+            .with_priority(10),
+        // Black Forest Labs (Flux)
+        SiteEntry::bundled("api.bfl.ml", "Black Forest Labs", SiteCategory::ImageGen)
+            .with_parser_id("bfl_json")
+            .with_priority(10),
+        // Together AI (hosts Flux and other models)
+        SiteEntry::bundled("api.together.xyz", "Together AI", SiteCategory::ImageGen)
+            .with_parser_id("together_json")
+            .with_priority(10),
+        // Replicate (hosts many image models)
+        SiteEntry::bundled("api.replicate.com", "Replicate", SiteCategory::ImageGen)
+            .with_parser_id("replicate_json")
+            .with_priority(10),
+        // FAL.ai (hosts Flux and other models)
+        SiteEntry::bundled("fal.run", "FAL.ai", SiteCategory::ImageGen)
+            .with_parser_id("fal_json")
+            .with_priority(10),
+        SiteEntry::bundled("*.fal.run", "FAL.ai", SiteCategory::ImageGen)
+            .with_parser_id("fal_json")
+            .with_priority(5),
     ]
+}
+
+/// Returns bundled image generation sites only.
+pub fn bundled_image_gen_sites() -> Vec<SiteEntry> {
+    bundled_sites()
+        .into_iter()
+        .filter(|s| s.category == SiteCategory::ImageGen)
+        .collect()
 }
 
 // =============================================================================
@@ -488,6 +543,12 @@ impl SiteRegistry {
             .is_some_and(|lookup| lookup.entry.enabled)
     }
 
+    /// Checks if a host is an image generation domain (F033).
+    pub fn is_image_gen_domain(&self, host: &str) -> bool {
+        self.get_site(host)
+            .is_some_and(|lookup| lookup.entry.enabled && lookup.entry.category.is_image_gen())
+    }
+
     /// Gets the site entry for a host.
     pub fn get_site(&self, host: &str) -> Option<SiteLookup> {
         let host = host.split(':').next().unwrap_or(host).to_lowercase();
@@ -563,6 +624,15 @@ impl SiteRegistry {
             "Copilot" => "Copilot",
             "Character AI" => "Character AI",
             "Hugging Face" => "Hugging Face",
+            // Image Generation Services (F033)
+            "Stability AI" => "Stability AI",
+            "Leonardo.ai" => "Leonardo.ai",
+            "Ideogram" => "Ideogram",
+            "Runway ML" => "Runway ML",
+            "Black Forest Labs" => "Black Forest Labs",
+            "Together AI" => "Together AI",
+            "Replicate" => "Replicate",
+            "FAL.ai" => "FAL.ai",
             _ => "Unknown LLM",
         }
     }
@@ -1268,5 +1338,84 @@ mod tests {
         assert!(registry.is_monitored("gemini.google.com"));
         assert!(registry.is_monitored("perplexity.ai"));
         assert!(registry.is_monitored("mistral.ai"));
+    }
+
+    // ==================== Image Generation Tests (F033) ====================
+
+    #[test]
+    fn site_category_image_gen() {
+        assert_eq!(SiteCategory::ImageGen.as_str(), "image_gen");
+        assert_eq!(
+            SiteCategory::parse("image_gen"),
+            Some(SiteCategory::ImageGen)
+        );
+        assert!(SiteCategory::ImageGen.is_image_gen());
+        assert!(!SiteCategory::Consumer.is_image_gen());
+        assert!(!SiteCategory::Api.is_image_gen());
+    }
+
+    #[test]
+    fn bundled_sites_cover_image_gen_services() {
+        let registry = SiteRegistry::with_defaults();
+
+        // Image generation services should be covered
+        assert!(registry.is_monitored("api.stability.ai"));
+        assert!(registry.is_monitored("cloud.leonardo.ai"));
+        assert!(registry.is_monitored("api.ideogram.ai"));
+        assert!(registry.is_monitored("api.runwayml.com"));
+        assert!(registry.is_monitored("api.bfl.ml"));
+        assert!(registry.is_monitored("api.together.xyz"));
+        assert!(registry.is_monitored("api.replicate.com"));
+        assert!(registry.is_monitored("fal.run"));
+    }
+
+    #[test]
+    fn is_image_gen_domain_works() {
+        let registry = SiteRegistry::with_defaults();
+
+        // Image gen domains
+        assert!(registry.is_image_gen_domain("api.stability.ai"));
+        assert!(registry.is_image_gen_domain("cloud.leonardo.ai"));
+        assert!(registry.is_image_gen_domain("api.ideogram.ai"));
+
+        // Non-image gen domains (regular LLM APIs)
+        assert!(!registry.is_image_gen_domain("api.openai.com"));
+        assert!(!registry.is_image_gen_domain("claude.ai"));
+        assert!(!registry.is_image_gen_domain("chatgpt.com"));
+
+        // Unknown domains
+        assert!(!registry.is_image_gen_domain("example.com"));
+    }
+
+    #[test]
+    fn bundled_image_gen_sites_filter() {
+        let image_gen_sites = bundled_image_gen_sites();
+        assert!(!image_gen_sites.is_empty());
+
+        // All sites should be ImageGen category
+        for site in &image_gen_sites {
+            assert_eq!(
+                site.category,
+                SiteCategory::ImageGen,
+                "Site {} should be ImageGen category",
+                site.pattern
+            );
+        }
+    }
+
+    #[test]
+    fn image_gen_sites_have_parser_ids() {
+        let image_gen_sites = bundled_image_gen_sites();
+
+        // Most image gen sites should have parser IDs
+        let sites_with_parser: Vec<_> = image_gen_sites
+            .iter()
+            .filter(|s| s.parser_id.is_some())
+            .collect();
+
+        assert!(
+            !sites_with_parser.is_empty(),
+            "At least some image gen sites should have parser IDs"
+        );
     }
 }

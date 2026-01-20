@@ -16,14 +16,25 @@
 //! 3. Otherwise, ML runs and results are merged
 //!
 //! Typical latency: <25ms (keyword-only: <1ms, with ML: <50ms)
+//!
+//! ## Image Classification (F033)
+//!
+//! - **NSFW Image Classifier**: Vision Transformer model for detecting explicit images.
+//! - Lazy-loaded: Model only loads when first image is classified.
+//! - Target latency: <100ms on CPU.
 
 mod category;
+mod image;
 mod keyword;
 mod prompt_guard;
 mod sentiment;
 mod tiered;
 
 pub use category::{Category, CategoryMatch, ClassificationResult, ClassificationTier};
+pub use image::{
+    LazyNsfwClassifier, NsfwImageClassifier, NsfwImageConfig, NsfwImageError, NsfwImageResult,
+    NsfwThresholdPreset,
+};
 pub use keyword::KeywordClassifier;
 pub use prompt_guard::{
     PromptGuardClassifier, PromptGuardConfig, PromptGuardError, PromptGuardResult,

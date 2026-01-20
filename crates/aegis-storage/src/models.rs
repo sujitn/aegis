@@ -217,6 +217,53 @@ impl Default for ProfileSentimentConfig {
     }
 }
 
+/// NSFW threshold preset for image filtering.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NsfwThresholdPreset {
+    /// Child profile (< 13): Very aggressive blocking (0.3).
+    Child,
+    /// Teen profile (13-17): Balanced blocking (0.5).
+    #[default]
+    Teen,
+    /// Adult profile (18+): Permissive blocking (0.8).
+    Adult,
+    /// Custom threshold value.
+    Custom(f32),
+}
+
+impl NsfwThresholdPreset {
+    /// Returns the threshold value for this preset.
+    pub fn threshold(&self) -> f32 {
+        match self {
+            NsfwThresholdPreset::Child => 0.3,
+            NsfwThresholdPreset::Teen => 0.5,
+            NsfwThresholdPreset::Adult => 0.8,
+            NsfwThresholdPreset::Custom(t) => t.clamp(0.0, 1.0),
+        }
+    }
+}
+
+/// Configuration for image filtering on a profile.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileImageFilteringConfig {
+    /// Whether image filtering is enabled for this profile.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// NSFW threshold preset (child/teen/adult/custom).
+    #[serde(default)]
+    pub nsfw_threshold: NsfwThresholdPreset,
+}
+
+impl Default for ProfileImageFilteringConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            nsfw_threshold: NsfwThresholdPreset::Teen,
+        }
+    }
+}
+
 /// A user profile stored in the database.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
@@ -234,6 +281,8 @@ pub struct Profile {
     pub enabled: bool,
     /// Sentiment analysis configuration.
     pub sentiment_config: ProfileSentimentConfig,
+    /// Image filtering configuration (F033).
+    pub image_filtering_config: ProfileImageFilteringConfig,
     /// Created timestamp.
     pub created_at: DateTime<Utc>,
     /// Updated timestamp.
@@ -255,6 +304,8 @@ pub struct NewProfile {
     pub enabled: bool,
     /// Sentiment analysis configuration.
     pub sentiment_config: ProfileSentimentConfig,
+    /// Image filtering configuration (F033).
+    pub image_filtering_config: ProfileImageFilteringConfig,
 }
 
 /// A site entry stored in the database.

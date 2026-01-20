@@ -4,6 +4,9 @@ All notable changes to Aegis.
 
 ## [Unreleased]
 
+### Added
+- F033: Image Content Filtering - Filter NSFW/explicit content in AI image generation workflows with: NsfwImageClassifier using ONNX Vision Transformer model (Falconsai/nsfw_image_detection compatible), image response filtering for JSON (base64) and binary responses, image upload filtering for multipart/form-data, ImageGen category in SiteRegistry for image generation domains (Stability AI, Leonardo.ai, Ideogram, Runway ML, Black Forest Labs Flux, Together AI, Replicate, FAL.ai), LazyNsfwClassifier for efficient resource management (model loads on first image), NsfwThresholdPreset with age-based defaults (Child: 0.3, Teen: 0.5, Adult: 0.8), ExtractedImage with format detection from magic bytes, image extraction from multiple API response formats (OpenAI b64_json, Stability artifacts, xAI images, Replicate output, data URIs), image-specific explicit content rules added to community rules (curated_imagegen_001 through curated_imagegen_010), per-profile NSFW threshold settings via FilteringState, <100ms classification target on CPU, privacy-preserving (no images stored, only SHA-256 hash of blocked images for audit)
+
 ## [0.3.0] - 2026-01-18
 
 ## [0.2.6] - 2026-01-18

@@ -25,6 +25,7 @@
 | [F017](F017-interception-mode.md) | Interception Mode | `complete` | high | core | F010, F016 |
 | [F026](F026-smart-content-parsing.md) | Smart Content Parsing | `complete` | high | proxy | F016 |
 | [F027](F027-dynamic-site-registry.md) | Dynamic Site Registry | `complete` | high | core | F008, F016 |
+| [F033](F033-image-content-filtering.md) | Image Content Filtering | `complete` | high | core, proxy | F004, F016, F019, F027 |
 
 ## User Management
 

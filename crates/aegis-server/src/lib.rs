@@ -254,7 +254,8 @@ mod tests {
     use tower::ServiceExt;
 
     fn create_test_app() -> Router {
-        let state = AppState::in_memory();
+        // Use no_time_rules to avoid test failures when running during "bedtime" hours
+        let state = AppState::in_memory_no_time_rules();
 
         Router::new()
             .route("/api/check", post(handlers::check_prompt))

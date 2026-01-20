@@ -6,7 +6,7 @@ use tracing::{debug, info};
 use crate::error::Result;
 
 /// Current schema version.
-pub const SCHEMA_VERSION: i32 = 6;
+pub const SCHEMA_VERSION: i32 = 7;
 
 /// Run all pending migrations.
 pub fn run_migrations(conn: &Connection) -> Result<()> {
@@ -40,6 +40,10 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
         if current_version < 6 {
             migrate_v6(conn)?;
+        }
+
+        if current_version < 7 {
+            migrate_v7(conn)?;
         }
 
         set_schema_version(conn, SCHEMA_VERSION)?;
@@ -78,6 +82,24 @@ fn set_schema_version(conn: &Connection, version: i32) -> Result<()> {
         [version],
     )?;
     Ok(())
+}
+
+/// Check if a column exists in a table.
+fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
+    let sql = format!("PRAGMA table_info({})", table);
+    if let Ok(mut stmt) = conn.prepare(&sql) {
+        if let Ok(rows) = stmt.query_map([], |row| {
+            let name: String = row.get(1)?; // Column 1 is 'name'
+            Ok(name)
+        }) {
+            for row in rows.flatten() {
+                if row == column {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Migration to version 1: Initial schema.
@@ -287,12 +309,14 @@ fn migrate_v4(conn: &Connection) -> Result<()> {
 fn migrate_v5(conn: &Connection) -> Result<()> {
     debug!("Applying migration v5: Sentiment configuration per profile");
 
-    // Add sentiment_config column to profiles table
+    // Add sentiment_config column to profiles table (if not exists)
     // Default is enabled with standard sensitivity
-    conn.execute(
-        "ALTER TABLE profiles ADD COLUMN sentiment_config TEXT NOT NULL DEFAULT '{\"enabled\":true,\"sensitivity\":0.5,\"detect_distress\":true,\"detect_crisis\":true,\"detect_bullying\":true,\"detect_negative\":true}'",
-        [],
-    )?;
+    if !column_exists(conn, "profiles", "sentiment_config") {
+        conn.execute(
+            "ALTER TABLE profiles ADD COLUMN sentiment_config TEXT NOT NULL DEFAULT '{\"enabled\":true,\"sensitivity\":0.5,\"detect_distress\":true,\"detect_crisis\":true,\"detect_bullying\":true,\"detect_negative\":true}'",
+            [],
+        )?;
+    }
 
     Ok(())
 }
@@ -354,6 +378,22 @@ fn migrate_v6(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_state_changes_seq ON state_changes (seq)",
         [],
     )?;
+
+    Ok(())
+}
+
+/// Migration to version 7: Image filtering configuration per profile (F033).
+fn migrate_v7(conn: &Connection) -> Result<()> {
+    debug!("Applying migration v7: Image filtering configuration per profile");
+
+    // Add image_filtering_config column to profiles table (if not exists)
+    // Default is enabled with Teen preset (0.5 threshold)
+    if !column_exists(conn, "profiles", "image_filtering_config") {
+        conn.execute(
+            "ALTER TABLE profiles ADD COLUMN image_filtering_config TEXT NOT NULL DEFAULT '{\"enabled\":true,\"nsfw_threshold\":\"teen\"}'",
+            [],
+        )?;
+    }
 
     Ok(())
 }

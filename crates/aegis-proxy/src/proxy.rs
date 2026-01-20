@@ -10,8 +10,9 @@ use hudsucker::Proxy;
 use parking_lot::RwLock;
 use tokio::sync::broadcast;
 
-use aegis_core::classifier::TieredClassifier;
+use aegis_core::classifier::{LazyNsfwClassifier, TieredClassifier};
 use aegis_core::notifications::NotificationManager;
+use aegis_core::site_registry::SiteRegistry;
 use aegis_storage::Database;
 
 use crate::ca::CaManager;
@@ -226,6 +227,8 @@ impl ProxyServer {
             on_allow: self.on_allow.clone(),
             filtering_state: self.config.filtering_state.clone(),
             database: self.config.database.clone(),
+            nsfw_classifier: Arc::new(RwLock::new(LazyNsfwClassifier::with_defaults())),
+            site_registry: Arc::new(SiteRegistry::with_defaults()),
         };
 
         let handler = ProxyHandler::new(handler_config);
@@ -270,6 +273,8 @@ impl ProxyServer {
             on_allow: self.on_allow.clone(),
             filtering_state: self.config.filtering_state.clone(),
             database: self.config.database.clone(),
+            nsfw_classifier: Arc::new(RwLock::new(LazyNsfwClassifier::with_defaults())),
+            site_registry: Arc::new(SiteRegistry::with_defaults()),
         };
 
         let config_addr = self.config.addr;

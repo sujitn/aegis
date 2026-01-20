@@ -10,6 +10,11 @@ use dioxus::prelude::*;
 use crate::components::icons::ShieldIcon;
 use crate::state::{AppState, View};
 use aegis_core::extension_install::get_extension_path;
+use aegis_core::model_downloader::{self, ModelDownloader, MlStatus};
+use aegis_proxy::setup::{
+    enable_system_proxy, install_ca_certificate, is_ca_installed, is_proxy_enabled,
+};
+use aegis_proxy::{CaManager, DEFAULT_PROXY_PORT};
 
 /// App name for autostart.
 const APP_NAME: &str = "Aegis";
@@ -22,6 +27,8 @@ pub enum SetupStep {
     Password,
     ProtectionLevel,
     BrowserExtension,
+    MitmSetup,
+    ImageFiltering,
     Profile,
     Complete,
 }
@@ -34,13 +41,15 @@ impl SetupStep {
             Self::Password => 2,
             Self::ProtectionLevel => 3,
             Self::BrowserExtension => 4,
-            Self::Profile => 5,
-            Self::Complete => 6,
+            Self::MitmSetup => 5,
+            Self::ImageFiltering => 6,
+            Self::Profile => 7,
+            Self::Complete => 8,
         }
     }
 
     fn total() -> usize {
-        6
+        8
     }
 
     fn next(&self) -> Option<Self> {
@@ -48,7 +57,9 @@ impl SetupStep {
             Self::Welcome => Some(Self::Password),
             Self::Password => Some(Self::ProtectionLevel),
             Self::ProtectionLevel => Some(Self::BrowserExtension),
-            Self::BrowserExtension => Some(Self::Profile),
+            Self::BrowserExtension => Some(Self::MitmSetup),
+            Self::MitmSetup => Some(Self::ImageFiltering),
+            Self::ImageFiltering => Some(Self::Profile),
             Self::Profile => Some(Self::Complete),
             Self::Complete => None,
         }
@@ -60,7 +71,9 @@ impl SetupStep {
             Self::Password => Some(Self::Welcome),
             Self::ProtectionLevel => Some(Self::Password),
             Self::BrowserExtension => Some(Self::ProtectionLevel),
-            Self::Profile => Some(Self::BrowserExtension),
+            Self::MitmSetup => Some(Self::BrowserExtension),
+            Self::ImageFiltering => Some(Self::MitmSetup),
+            Self::Profile => Some(Self::ImageFiltering),
             Self::Complete => Some(Self::Profile),
         }
     }
@@ -93,6 +106,9 @@ impl ProtectionLevel {
     }
 }
 
+/// Proxy configuration constants.
+const PROXY_HOST: &str = "127.0.0.1";
+
 /// Setup view component.
 #[component]
 pub fn SetupView() -> Element {
@@ -105,6 +121,17 @@ pub fn SetupView() -> Element {
     let profile_os_username = use_signal(String::new);
     let mut error = use_signal(|| None::<String>);
     let enable_autostart = use_signal(|| true);
+
+    // MITM setup state
+    let ca_installed = use_signal(|| false);
+    let proxy_enabled = use_signal(|| false);
+    let ca_installing = use_signal(|| false);
+    let proxy_configuring = use_signal(|| false);
+
+    // ML status state
+    let ml_status = use_signal(|| model_downloader::get_ml_status());
+    let ml_downloading = use_signal(|| false);
+    let ml_progress_text = use_signal(|| String::new());
 
     let current_step = step();
 
@@ -144,8 +171,27 @@ pub fn SetupView() -> Element {
                     },
                     SetupStep::BrowserExtension => rsx! {
                         BrowserExtensionStep {
-                            on_next: move |_| step.set(SetupStep::Profile),
+                            on_next: move |_| step.set(SetupStep::MitmSetup),
                             on_prev: move |_| step.set(SetupStep::ProtectionLevel)
+                        }
+                    },
+                    SetupStep::MitmSetup => rsx! {
+                        MitmSetupStep {
+                            ca_installed: ca_installed,
+                            proxy_enabled: proxy_enabled,
+                            ca_installing: ca_installing,
+                            proxy_configuring: proxy_configuring,
+                            on_next: move |_| step.set(SetupStep::ImageFiltering),
+                            on_prev: move |_| step.set(SetupStep::BrowserExtension)
+                        }
+                    },
+                    SetupStep::ImageFiltering => rsx! {
+                        ImageFilteringStep {
+                            ml_status: ml_status,
+                            ml_downloading: ml_downloading,
+                            ml_progress_text: ml_progress_text,
+                            on_next: move |_| step.set(SetupStep::Profile),
+                            on_prev: move |_| step.set(SetupStep::MitmSetup)
                         }
                     },
                     SetupStep::Profile => rsx! {
@@ -156,7 +202,7 @@ pub fn SetupView() -> Element {
                             protection_level: protection_level(),
                             error: error,
                             on_next: move |_| step.set(SetupStep::Complete),
-                            on_prev: move |_| step.set(SetupStep::BrowserExtension)
+                            on_prev: move |_| step.set(SetupStep::ImageFiltering)
                         }
                     },
                     SetupStep::Complete => rsx! {
@@ -411,6 +457,263 @@ fn BrowserExtensionStep(
     }
 }
 
+/// MITM setup step (CA certificate and proxy).
+#[component]
+fn MitmSetupStep(
+    mut ca_installed: Signal<bool>,
+    mut proxy_enabled: Signal<bool>,
+    mut ca_installing: Signal<bool>,
+    mut proxy_configuring: Signal<bool>,
+    on_next: EventHandler<MouseEvent>,
+    on_prev: EventHandler<MouseEvent>,
+) -> Element {
+    // Get CA certificate path
+    let ca_path = CaManager::with_default_dir()
+        .ok()
+        .map(|m| m.cert_path())
+        .filter(|p| p.exists());
+
+    // Check status on mount
+    let ca_path_for_effect = ca_path.clone();
+    use_effect(move || {
+        let ca_path_clone = ca_path_for_effect.clone();
+        spawn(async move {
+            let ca_installed_val = ca_path_clone
+                .as_ref()
+                .map(|p| is_ca_installed(p))
+                .unwrap_or(false);
+            let proxy_enabled_val = is_proxy_enabled(PROXY_HOST, DEFAULT_PROXY_PORT);
+            ca_installed.set(ca_installed_val);
+            proxy_enabled.set(proxy_enabled_val);
+        });
+    });
+
+    rsx! {
+        div { class: "text-center",
+            h2 { class: "auth-card-title", "System Proxy Setup" }
+            p { class: "text-muted text-sm mb-lg", "For full protection, install the CA certificate and enable system proxy. This allows Aegis to filter all AI traffic, not just browser extensions." }
+
+            div { class: "text-left mb-lg",
+                // CA Certificate Section
+                div { class: "card mb-md", style: "background-color: var(--aegis-slate-800);",
+                    div { class: "flex items-center gap-sm mb-md",
+                        span { style: "font-size: 20px;", "🔐" }
+                        span { class: "font-bold", "CA Certificate" }
+                        if ca_installed() {
+                            span { class: "tag tag-success", "Installed" }
+                        } else {
+                            span { class: "tag tag-warning", "Required" }
+                        }
+                    }
+
+                    if let Some(ref path) = ca_path {
+                        if !ca_installed() {
+                            button {
+                                class: "btn btn-primary btn-sm",
+                                disabled: ca_installing(),
+                                onclick: {
+                                    let path_clone = path.clone();
+                                    move |_| {
+                                        ca_installing.set(true);
+                                        let result = install_ca_certificate(&path_clone);
+                                        ca_installing.set(false);
+                                        if result.success {
+                                            ca_installed.set(true);
+                                        }
+                                    }
+                                },
+                                if ca_installing() { "Installing..." } else { "Install Certificate" }
+                            }
+                            p { class: "text-sm text-muted mt-sm", "This will prompt for administrator privileges." }
+                        } else {
+                            p { class: "text-sm text-success", "Certificate is installed and trusted." }
+                        }
+                    } else {
+                        p { class: "text-sm text-muted", "Certificate not generated yet. Start the app once to generate it." }
+                    }
+                }
+
+                // System Proxy Section
+                div { class: "card", style: "background-color: var(--aegis-slate-800);",
+                    div { class: "flex items-center gap-sm mb-md",
+                        span { style: "font-size: 20px;", "🌐" }
+                        span { class: "font-bold", "System Proxy" }
+                        if proxy_enabled() {
+                            span { class: "tag tag-success", "Enabled" }
+                        } else {
+                            span { class: "tag tag-secondary", "Optional" }
+                        }
+                    }
+
+                    if ca_installed() {
+                        if !proxy_enabled() {
+                            button {
+                                class: "btn btn-primary btn-sm",
+                                disabled: proxy_configuring(),
+                                onclick: move |_| {
+                                    proxy_configuring.set(true);
+                                    let result = enable_system_proxy(PROXY_HOST, DEFAULT_PROXY_PORT);
+                                    proxy_configuring.set(false);
+                                    if result.success {
+                                        proxy_enabled.set(true);
+                                    }
+                                },
+                                if proxy_configuring() { "Enabling..." } else { "Enable System Proxy" }
+                            }
+                            p { class: "text-sm text-muted mt-sm", "Routes all system traffic through Aegis for filtering." }
+                        } else {
+                            p { class: "text-sm text-success", "System proxy is enabled. All traffic is being filtered." }
+                        }
+                    } else {
+                        p { class: "text-sm text-muted", "Install the CA certificate first to enable proxy." }
+                    }
+                }
+            }
+
+            p { class: "text-sm text-muted mb-md", "You can skip this step and configure it later in Settings." }
+
+            div { class: "flex justify-between",
+                button {
+                    class: "btn btn-secondary",
+                    onclick: move |evt| on_prev.call(evt),
+                    "Back"
+                }
+                button {
+                    class: "btn btn-primary",
+                    onclick: move |evt| on_next.call(evt),
+                    if ca_installed() && proxy_enabled() { "Continue" } else { "Skip" }
+                }
+            }
+        }
+    }
+}
+
+/// Image filtering (ML) setup step.
+#[component]
+fn ImageFilteringStep(
+    mut ml_status: Signal<MlStatus>,
+    mut ml_downloading: Signal<bool>,
+    mut ml_progress_text: Signal<String>,
+    on_next: EventHandler<MouseEvent>,
+    on_prev: EventHandler<MouseEvent>,
+) -> Element {
+    // Refresh status on mount
+    use_effect(move || {
+        ml_status.set(model_downloader::get_ml_status());
+    });
+
+    let is_ready = matches!(ml_status(), MlStatus::Ready);
+
+    rsx! {
+        div { class: "text-center",
+            h2 { class: "auth-card-title", "Image Content Filtering" }
+            p { class: "text-muted text-sm mb-lg", "Aegis can filter inappropriate images using machine learning. This requires downloading additional components (~50MB)." }
+
+            div { class: "text-left mb-lg",
+                div { class: "card", style: "background-color: var(--aegis-slate-800);",
+                    div { class: "flex items-center gap-sm mb-md",
+                        span { style: "font-size: 20px;", "🖼️" }
+                        span { class: "font-bold", "NSFW Image Detection" }
+                        match ml_status() {
+                            MlStatus::Ready => rsx! {
+                                span { class: "tag tag-success", "Ready" }
+                            },
+                            MlStatus::Downloading { .. } => rsx! {
+                                span { class: "tag tag-info", "Downloading" }
+                            },
+                            MlStatus::Failed { .. } => rsx! {
+                                span { class: "tag tag-danger", "Failed" }
+                            },
+                            _ => rsx! {
+                                span { class: "tag tag-warning", "Not Installed" }
+                            }
+                        }
+                    }
+
+                    p { class: "text-sm text-muted mb-md", "Detects and blocks inappropriate images in AI responses using an on-device ML model. No data is sent to external servers." }
+
+                    // Download progress text
+                    if !ml_progress_text().is_empty() {
+                        div { class: "card mb-md", style: "background-color: var(--aegis-slate-900);",
+                            p { class: "text-sm", "{ml_progress_text}" }
+                        }
+                    }
+
+                    // Show downloading spinner
+                    if ml_downloading() {
+                        div { class: "flex items-center gap-sm mb-md",
+                            div { class: "spinner" }
+                            span { class: "text-sm text-muted", "Downloading..." }
+                        }
+                    }
+
+                    if is_ready {
+                        p { class: "text-sm text-success", "Image filtering is ready to use." }
+                    } else if !ml_downloading() {
+                        button {
+                            class: "btn btn-primary btn-sm",
+                            onclick: move |_| {
+                                ml_downloading.set(true);
+                                ml_progress_text.set("Downloading ONNX Runtime and NSFW model...".to_string());
+                                ml_status.set(MlStatus::Downloading {
+                                    step: "Downloading...".to_string(),
+                                    progress: None,
+                                });
+
+                                spawn(async move {
+                                    let Some(downloader) = ModelDownloader::new() else {
+                                        ml_status.set(MlStatus::Failed {
+                                            error: "Failed to initialize downloader".to_string(),
+                                        });
+                                        ml_downloading.set(false);
+                                        ml_progress_text.set(String::new());
+                                        return;
+                                    };
+
+                                    match downloader.ensure_all(None).await {
+                                        Ok(()) => {
+                                            ml_status.set(MlStatus::Ready);
+                                            ml_progress_text.set("Download complete!".to_string());
+                                            downloader.setup_environment();
+                                        }
+                                        Err(e) => {
+                                            ml_status.set(MlStatus::Failed {
+                                                error: e.to_string(),
+                                            });
+                                            ml_progress_text.set(format!("Download failed: {}", e));
+                                        }
+                                    }
+                                    ml_downloading.set(false);
+                                });
+                            },
+                            "Download ML Components"
+                        }
+                    }
+
+                    if let MlStatus::Failed { error } = ml_status() {
+                        p { class: "text-sm text-danger mt-sm", "{error}" }
+                    }
+                }
+            }
+
+            p { class: "text-sm text-muted mb-md", "You can skip this step and download later in Settings." }
+
+            div { class: "flex justify-between",
+                button {
+                    class: "btn btn-secondary",
+                    onclick: move |evt| on_prev.call(evt),
+                    "Back"
+                }
+                button {
+                    class: "btn btn-primary",
+                    onclick: move |evt| on_next.call(evt),
+                    if is_ready { "Continue" } else { "Skip" }
+                }
+            }
+        }
+    }
+}
+
 /// Profile creation step.
 #[component]
 fn ProfileStep(
@@ -596,6 +899,7 @@ fn create_profile(
         content_rules,
         enabled: true,
         sentiment_config: aegis_storage::ProfileSentimentConfig::default(),
+        image_filtering_config: aegis_storage::ProfileImageFilteringConfig::default(),
     };
 
     match state.read().db.create_profile(new_profile) {
@@ -626,12 +930,13 @@ fn create_default_rules(level: ProtectionLevel) -> (serde_json::Value, serde_jso
 
             let content_rules = serde_json::json!({
                 "rules": [
-                    {"category": "violence", "action": "block", "threshold": 0.7},
-                    {"category": "self_harm", "action": "block", "threshold": 0.5},
-                    {"category": "adult", "action": "block", "threshold": 0.7},
-                    {"category": "jailbreak", "action": "block", "threshold": 0.6},
-                    {"category": "hate", "action": "block", "threshold": 0.7},
-                    {"category": "illegal", "action": "block", "threshold": 0.7}
+                    {"id": "violence_block", "name": "Block Violence", "category": "violence", "action": "block", "threshold": 0.7, "enabled": true},
+                    {"id": "selfharm_block", "name": "Block Self-Harm", "category": "self_harm", "action": "block", "threshold": 0.5, "enabled": true},
+                    {"id": "adult_block", "name": "Block Adult Content", "category": "adult", "action": "block", "threshold": 0.7, "enabled": true},
+                    {"id": "jailbreak_block", "name": "Block Jailbreak", "category": "jailbreak", "action": "block", "threshold": 0.6, "enabled": true},
+                    {"id": "hate_block", "name": "Block Hate Speech", "category": "hate", "action": "block", "threshold": 0.7, "enabled": true},
+                    {"id": "illegal_block", "name": "Block Illegal Content", "category": "illegal", "action": "block", "threshold": 0.7, "enabled": true},
+                    {"id": "profanity_block", "name": "Block Profanity", "category": "profanity", "action": "block", "threshold": 0.6, "enabled": true}
                 ]
             });
 
@@ -650,12 +955,13 @@ fn create_default_rules(level: ProtectionLevel) -> (serde_json::Value, serde_jso
 
             let content_rules = serde_json::json!({
                 "rules": [
-                    {"category": "violence", "action": "block", "threshold": 0.5},
-                    {"category": "self_harm", "action": "block", "threshold": 0.3},
-                    {"category": "adult", "action": "block", "threshold": 0.5},
-                    {"category": "jailbreak", "action": "block", "threshold": 0.4},
-                    {"category": "hate", "action": "block", "threshold": 0.5},
-                    {"category": "illegal", "action": "block", "threshold": 0.5}
+                    {"id": "violence_block", "name": "Block Violence", "category": "violence", "action": "block", "threshold": 0.5, "enabled": true},
+                    {"id": "selfharm_block", "name": "Block Self-Harm", "category": "self_harm", "action": "block", "threshold": 0.3, "enabled": true},
+                    {"id": "adult_block", "name": "Block Adult Content", "category": "adult", "action": "block", "threshold": 0.5, "enabled": true},
+                    {"id": "jailbreak_block", "name": "Block Jailbreak", "category": "jailbreak", "action": "block", "threshold": 0.4, "enabled": true},
+                    {"id": "hate_block", "name": "Block Hate Speech", "category": "hate", "action": "block", "threshold": 0.5, "enabled": true},
+                    {"id": "illegal_block", "name": "Block Illegal Content", "category": "illegal", "action": "block", "threshold": 0.5, "enabled": true},
+                    {"id": "profanity_block", "name": "Block Profanity", "category": "profanity", "action": "block", "threshold": 0.5, "enabled": true}
                 ]
             });
 

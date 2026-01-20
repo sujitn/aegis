@@ -24,11 +24,13 @@ fn bytes_to_body(bytes: Bytes) -> Body {
 }
 
 use aegis_core::classifier::{
-    ClassificationResult, SentimentAnalyzer, SentimentConfig, SentimentFlag, TieredClassifier,
+    Category, ClassificationResult, LazyNsfwClassifier, NsfwThresholdPreset, SentimentAnalyzer,
+    SentimentConfig, SentimentFlag, TieredClassifier,
 };
 use aegis_core::content_rules::ContentRuleSet;
 use aegis_core::notifications::{BlockedEvent, NotificationManager};
 use aegis_core::rule_engine::{RuleAction, RuleEngine, RuleEngineResult};
+use aegis_core::site_registry::SiteRegistry;
 use aegis_core::time_rules::TimeRuleSet;
 use aegis_storage::{Action, Database};
 
@@ -36,6 +38,9 @@ use crate::state_cache::StateCache;
 
 use crate::domains::is_llm_domain;
 use crate::extractor::{extract_prompt, PromptInfo};
+use crate::image_extractor::{
+    extract_image_from_binary, extract_images_from_json, extract_images_from_multipart,
+};
 
 /// Checks if a request is a WebSocket upgrade request.
 fn is_websocket_upgrade(req: &Request<Body>) -> bool {
@@ -125,6 +130,10 @@ pub struct FilteringState {
     /// Optional state cache for reading protection state from database (F032).
     /// When set, is_enabled() will read from the database cache instead of AtomicBool.
     state_cache: Option<Arc<StateCache>>,
+    /// NSFW image threshold preset (F033).
+    nsfw_threshold: Arc<RwLock<NsfwThresholdPreset>>,
+    /// Whether image filtering is enabled (F033).
+    image_filtering_enabled: Arc<AtomicBool>,
 }
 
 impl std::fmt::Debug for FilteringState {
@@ -136,6 +145,11 @@ impl std::fmt::Debug for FilteringState {
             .field(
                 "sentiment_enabled",
                 &self.sentiment_analyzer.read().is_some(),
+            )
+            .field("nsfw_threshold", &*self.nsfw_threshold.read())
+            .field(
+                "image_filtering_enabled",
+                &self.image_filtering_enabled.load(Ordering::SeqCst),
             )
             .finish()
     }
@@ -157,6 +171,8 @@ impl FilteringState {
             rule_engine: Arc::new(RwLock::new(RuleEngine::with_defaults())),
             sentiment_analyzer: Arc::new(RwLock::new(None)),
             state_cache: None,
+            nsfw_threshold: Arc::new(RwLock::new(NsfwThresholdPreset::default())),
+            image_filtering_enabled: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -169,6 +185,8 @@ impl FilteringState {
             rule_engine: Arc::new(RwLock::new(rule_engine)),
             sentiment_analyzer: Arc::new(RwLock::new(None)),
             state_cache: None,
+            nsfw_threshold: Arc::new(RwLock::new(NsfwThresholdPreset::default())),
+            image_filtering_enabled: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -181,6 +199,8 @@ impl FilteringState {
             rule_engine: Arc::new(RwLock::new(RuleEngine::with_defaults())),
             sentiment_analyzer: Arc::new(RwLock::new(Some(SentimentAnalyzer::new(config)))),
             state_cache: None,
+            nsfw_threshold: Arc::new(RwLock::new(NsfwThresholdPreset::default())),
+            image_filtering_enabled: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -200,6 +220,8 @@ impl FilteringState {
             rule_engine: Arc::new(RwLock::new(RuleEngine::with_defaults())),
             sentiment_analyzer: Arc::new(RwLock::new(None)),
             state_cache: Some(Arc::new(cache)),
+            nsfw_threshold: Arc::new(RwLock::new(NsfwThresholdPreset::default())),
+            image_filtering_enabled: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -213,6 +235,8 @@ impl FilteringState {
             rule_engine: Arc::new(RwLock::new(rule_engine)),
             sentiment_analyzer: Arc::new(RwLock::new(None)),
             state_cache: Some(Arc::new(cache)),
+            nsfw_threshold: Arc::new(RwLock::new(NsfwThresholdPreset::default())),
+            image_filtering_enabled: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -294,6 +318,40 @@ impl FilteringState {
         self.sentiment_analyzer.read().is_some()
     }
 
+    /// Returns whether image filtering is enabled (F033).
+    pub fn is_image_filtering_enabled(&self) -> bool {
+        self.image_filtering_enabled.load(Ordering::SeqCst)
+    }
+
+    /// Enables image filtering (F033).
+    pub fn enable_image_filtering(&self) {
+        self.image_filtering_enabled.store(true, Ordering::SeqCst);
+        tracing::info!("Image filtering enabled");
+    }
+
+    /// Disables image filtering (F033).
+    pub fn disable_image_filtering(&self) {
+        self.image_filtering_enabled.store(false, Ordering::SeqCst);
+        tracing::info!("Image filtering disabled");
+    }
+
+    /// Returns the current NSFW threshold preset (F033).
+    pub fn nsfw_threshold(&self) -> NsfwThresholdPreset {
+        *self.nsfw_threshold.read()
+    }
+
+    /// Sets the NSFW threshold preset (F033).
+    pub fn set_nsfw_threshold(&self, preset: NsfwThresholdPreset) {
+        *self.nsfw_threshold.write() = preset;
+        tracing::info!("NSFW threshold set to: {:?}", preset);
+    }
+
+    /// Sets the NSFW threshold from a profile age (F033).
+    pub fn set_nsfw_threshold_from_age(&self, age: u8) {
+        let preset = NsfwThresholdPreset::from_age(age);
+        self.set_nsfw_threshold(preset);
+    }
+
     /// Updates the rule engine with new time and content rules.
     ///
     /// Call this when a profile's rules are modified in the UI or when
@@ -329,6 +387,10 @@ pub struct HandlerConfig {
     pub filtering_state: FilteringState,
     /// Optional database for event logging.
     pub database: Option<Arc<Database>>,
+    /// Lazy-loaded NSFW image classifier (F033).
+    pub nsfw_classifier: Arc<RwLock<LazyNsfwClassifier>>,
+    /// Site registry for checking image gen domains (F033).
+    pub site_registry: Arc<SiteRegistry>,
 }
 
 impl std::fmt::Debug for HandlerConfig {
@@ -340,6 +402,8 @@ impl std::fmt::Debug for HandlerConfig {
             .field("on_allow", &self.on_allow.is_some())
             .field("filtering_state", &self.filtering_state)
             .field("database", &self.database.is_some())
+            .field("nsfw_classifier", &"LazyNsfwClassifier")
+            .field("site_registry", &"SiteRegistry")
             .finish()
     }
 }
@@ -369,6 +433,8 @@ impl ProxyHandler {
             on_allow: None,
             filtering_state: FilteringState::new(),
             database: None,
+            nsfw_classifier: Arc::new(RwLock::new(LazyNsfwClassifier::with_defaults())),
+            site_registry: Arc::new(SiteRegistry::with_defaults()),
         })
     }
 
@@ -384,6 +450,8 @@ impl ProxyHandler {
             on_allow: None,
             filtering_state,
             database: None,
+            nsfw_classifier: Arc::new(RwLock::new(LazyNsfwClassifier::with_defaults())),
+            site_registry: Arc::new(SiteRegistry::with_defaults()),
         })
     }
 
@@ -514,6 +582,16 @@ impl ProxyHandler {
         }
     }
 
+    /// Checks if a host is an image generation domain (F033).
+    fn is_image_gen_domain(&self, host: &str) -> bool {
+        self.config.site_registry.is_image_gen_domain(host)
+    }
+
+    /// Creates a block response for NSFW image content (F033).
+    fn create_image_block_response(&self, service: &str) -> Response<Body> {
+        self.create_block_response("NSFW/explicit image content detected", service)
+    }
+
     /// Creates a block response.
     fn create_block_response(&self, reason: &str, service: &str) -> Response<Body> {
         let html = BLOCK_PAGE_HTML
@@ -561,6 +639,86 @@ impl ProxyHandler {
                 return RequestOrResponse::Request(Request::from_parts(parts, Body::empty()));
             }
         };
+
+        // Check for multipart image uploads to image gen domains (F033)
+        if self.is_image_gen_domain(host)
+            && self.config.filtering_state.is_image_filtering_enabled()
+        {
+            let content_type = parts
+                .headers
+                .get(hyper::header::CONTENT_TYPE)
+                .and_then(|h| h.to_str().ok())
+                .unwrap_or("");
+
+            // Handle multipart/form-data uploads
+            if content_type.starts_with("multipart/form-data") {
+                if let Some(boundary) = extract_multipart_boundary(content_type) {
+                    let images = extract_images_from_multipart(&body_bytes, &boundary);
+
+                    if !images.is_empty() {
+                        let threshold = self.config.filtering_state.nsfw_threshold().threshold();
+                        tracing::info!(
+                            "Checking {} uploaded image(s) to {} for NSFW content",
+                            images.len(),
+                            host
+                        );
+
+                        for (field_name, img) in images {
+                            let mut classifier = self.config.nsfw_classifier.write();
+                            if let Some(Ok(result)) = classifier.classify_bytes(&img.data) {
+                                tracing::debug!(
+                                    "Upload image '{}' NSFW score: {:.3} (threshold: {:.3})",
+                                    field_name,
+                                    result.nsfw_probability,
+                                    threshold
+                                );
+
+                                if result.is_nsfw(threshold) {
+                                    let service_name = self.config.site_registry.service_name(host);
+
+                                    tracing::warn!(
+                                        "Blocked NSFW image upload '{}' to {}: score {:.3} exceeds threshold {:.3}",
+                                        field_name,
+                                        service_name,
+                                        result.nsfw_probability,
+                                        threshold
+                                    );
+
+                                    // Log the blocked event
+                                    if let Some(ref db) = self.config.database {
+                                        let _ = db.log_event(
+                                            &format!("[NSFW image upload blocked: {}]", field_name),
+                                            Some(Category::Adult),
+                                            Some(result.nsfw_probability),
+                                            Action::Blocked,
+                                            Some(service_name.to_string()),
+                                        );
+                                    }
+
+                                    // Send notification
+                                    if let Some(ref notifications) = self.config.notifications {
+                                        let event = BlockedEvent::new(
+                                            Some(service_name.to_string()),
+                                            Some(Category::Adult),
+                                            Some("NSFW image upload blocked".to_string()),
+                                            false,
+                                        );
+                                        let _ = notifications.notify_block(&event);
+                                    }
+
+                                    return RequestOrResponse::Response(
+                                        self.create_block_response(
+                                            "NSFW/explicit image upload detected",
+                                            service_name,
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Extract prompt
         let prompt_info = match extract_prompt(host, path, &body_bytes) {
@@ -718,8 +876,162 @@ impl HttpHandler for ProxyHandler {
     }
 
     async fn handle_response(&mut self, _ctx: &HttpContext, res: Response<Body>) -> Response<Body> {
-        // Pass through responses unchanged
-        res
+        // Check if image filtering is enabled
+        if !self.config.filtering_state.is_image_filtering_enabled() {
+            return res;
+        }
+
+        // Check if filtering is enabled at all
+        if !self.config.filtering_state.is_enabled() {
+            return res;
+        }
+
+        // Get content type before moving res
+        let content_type = res
+            .headers()
+            .get(hyper::header::CONTENT_TYPE)
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+
+        // Only process JSON or image responses that might contain generated images
+        // Note: We can't easily get the host in handle_response, so we filter based on content type
+        if !content_type.starts_with("application/json") && !content_type.starts_with("image/") {
+            return res;
+        }
+
+        // Read response body
+        let (parts, body) = res.into_parts();
+        let body_bytes = match body.collect().await {
+            Ok(collected) => collected.to_bytes(),
+            Err(e) => {
+                tracing::warn!("Failed to read response body: {}", e);
+                return Response::from_parts(parts, Body::empty());
+            }
+        };
+
+        // Get the NSFW threshold
+        let threshold = self.config.filtering_state.nsfw_threshold().threshold();
+
+        // Extract and classify images based on content type
+        let mut nsfw_detected = false;
+        let mut nsfw_score: f32 = 0.0;
+
+        if content_type.starts_with("application/json") {
+            // JSON response - extract base64 images
+            let images = extract_images_from_json(&body_bytes);
+            if !images.is_empty() {
+                tracing::info!(
+                    "Extracted {} image(s) from JSON response for NSFW check",
+                    images.len()
+                );
+
+                for img in images {
+                    let mut classifier = self.config.nsfw_classifier.write();
+                    match classifier.classify_bytes(&img.data) {
+                        Some(Ok(result)) => {
+                            tracing::info!(
+                                "Image {} NSFW score: {:.3} (threshold: {:.3})",
+                                img.source_path,
+                                result.nsfw_probability,
+                                threshold
+                            );
+
+                            if result.is_nsfw(threshold) {
+                                nsfw_detected = true;
+                                nsfw_score = nsfw_score.max(result.nsfw_probability);
+                                tracing::warn!(
+                                    "NSFW image detected: score {:.3} exceeds threshold {:.3}",
+                                    result.nsfw_probability,
+                                    threshold
+                                );
+                                break; // One NSFW image is enough to block
+                            }
+                        }
+                        Some(Err(e)) => {
+                            tracing::warn!("NSFW classification error for {}: {}", img.source_path, e);
+                        }
+                        None => {
+                            tracing::debug!(
+                                "NSFW classifier not available - skipping image check for {}",
+                                img.source_path
+                            );
+                        }
+                    }
+                }
+            }
+        } else if content_type.starts_with("image/") {
+            // Binary image response
+            if let Some(img) = extract_image_from_binary(&body_bytes, Some(&content_type)) {
+                tracing::info!(
+                    "Extracted binary image ({} bytes) for NSFW check",
+                    img.data.len()
+                );
+
+                let mut classifier = self.config.nsfw_classifier.write();
+                match classifier.classify_bytes(&img.data) {
+                    Some(Ok(result)) => {
+                        tracing::info!(
+                            "Binary image NSFW score: {:.3} (threshold: {:.3})",
+                            result.nsfw_probability,
+                            threshold
+                        );
+
+                        if result.is_nsfw(threshold) {
+                            nsfw_detected = true;
+                            nsfw_score = result.nsfw_probability;
+                            tracing::warn!(
+                                "NSFW image detected: score {:.3} exceeds threshold {:.3}",
+                                result.nsfw_probability,
+                                threshold
+                            );
+                        }
+                    }
+                    Some(Err(e)) => {
+                        tracing::warn!("NSFW classification error: {}", e);
+                    }
+                    None => {
+                        tracing::debug!("NSFW classifier not available - skipping binary image check");
+                    }
+                }
+            }
+        }
+
+        // Block if NSFW content detected
+        if nsfw_detected {
+            let service_name = "Image Service";
+
+            // Log the blocked event
+            if let Some(ref db) = self.config.database {
+                if let Err(e) = db.log_event(
+                    "[NSFW Image blocked]",
+                    Some(Category::Adult),
+                    Some(nsfw_score),
+                    Action::Blocked,
+                    Some(service_name.to_string()),
+                ) {
+                    tracing::warn!("Failed to log NSFW image block event: {}", e);
+                }
+            }
+
+            // Send notification
+            if let Some(ref notifications) = self.config.notifications {
+                let event = BlockedEvent::new(
+                    Some(service_name.to_string()),
+                    Some(Category::Adult),
+                    Some("NSFW image content detected".to_string()),
+                    false,
+                );
+                let _ = notifications.notify_block(&event);
+            }
+
+            tracing::info!("Blocked NSFW image response (score: {:.3})", nsfw_score);
+
+            return self.create_image_block_response(service_name);
+        }
+
+        // Pass through unchanged
+        Response::from_parts(parts, bytes_to_body(body_bytes))
     }
 }
 
@@ -831,6 +1143,16 @@ impl WebSocketHandler for ProxyHandler {
     }
 }
 
+/// Extracts the boundary from a multipart/form-data content-type header.
+fn extract_multipart_boundary(content_type: &str) -> Option<String> {
+    // Content-Type: multipart/form-data; boundary=----WebKitFormBoundary...
+    content_type.split(';').find_map(|part| {
+        part.trim()
+            .strip_prefix("boundary=")
+            .map(|b| b.trim_matches('"').to_string())
+    })
+}
+
 /// Extracts prompt text from a WebSocket message (usually JSON).
 fn extract_websocket_prompt(text: &str) -> Option<String> {
     // Try to parse as JSON and extract common prompt fields
@@ -930,6 +1252,8 @@ mod tests {
             on_allow: None,
             filtering_state: FilteringState::new(),
             database: None,
+            nsfw_classifier: Arc::new(RwLock::new(LazyNsfwClassifier::with_defaults())),
+            site_registry: Arc::new(SiteRegistry::with_defaults()),
         };
         let debug = format!("{:?}", config);
         assert!(debug.contains("HandlerConfig"));
@@ -940,6 +1264,96 @@ mod tests {
         let state = FilteringState::new();
         assert!(state.is_enabled());
         assert!(state.profile_name().is_none());
+    }
+
+    // ==================== Image Filtering Tests (F033) ====================
+
+    #[test]
+    fn filtering_state_image_filtering_default_enabled() {
+        let state = FilteringState::new();
+        assert!(state.is_image_filtering_enabled());
+        assert_eq!(state.nsfw_threshold(), NsfwThresholdPreset::Teen);
+    }
+
+    #[test]
+    fn filtering_state_set_nsfw_threshold() {
+        let state = FilteringState::new();
+
+        state.set_nsfw_threshold(NsfwThresholdPreset::Child);
+        assert_eq!(state.nsfw_threshold(), NsfwThresholdPreset::Child);
+        assert_eq!(state.nsfw_threshold().threshold(), 0.5);
+
+        state.set_nsfw_threshold(NsfwThresholdPreset::Adult);
+        assert_eq!(state.nsfw_threshold(), NsfwThresholdPreset::Adult);
+        assert_eq!(state.nsfw_threshold().threshold(), 0.85);
+
+        state.set_nsfw_threshold(NsfwThresholdPreset::Custom(0.6));
+        assert_eq!(state.nsfw_threshold().threshold(), 0.6);
+    }
+
+    #[test]
+    fn filtering_state_set_nsfw_threshold_from_age() {
+        let state = FilteringState::new();
+
+        state.set_nsfw_threshold_from_age(8);
+        assert_eq!(state.nsfw_threshold(), NsfwThresholdPreset::Child);
+
+        state.set_nsfw_threshold_from_age(15);
+        assert_eq!(state.nsfw_threshold(), NsfwThresholdPreset::Teen);
+
+        state.set_nsfw_threshold_from_age(25);
+        assert_eq!(state.nsfw_threshold(), NsfwThresholdPreset::Adult);
+    }
+
+    #[test]
+    fn filtering_state_disable_enable_image_filtering() {
+        let state = FilteringState::new();
+        assert!(state.is_image_filtering_enabled());
+
+        state.disable_image_filtering();
+        assert!(!state.is_image_filtering_enabled());
+
+        state.enable_image_filtering();
+        assert!(state.is_image_filtering_enabled());
+    }
+
+    #[test]
+    fn extract_multipart_boundary_basic() {
+        let content_type = "multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW";
+        let boundary = extract_multipart_boundary(content_type);
+        assert_eq!(
+            boundary,
+            Some("----WebKitFormBoundary7MA4YWxkTrZu0gW".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_multipart_boundary_quoted() {
+        let content_type = r#"multipart/form-data; boundary="----WebKitFormBoundary""#;
+        let boundary = extract_multipart_boundary(content_type);
+        assert_eq!(boundary, Some("----WebKitFormBoundary".to_string()));
+    }
+
+    #[test]
+    fn extract_multipart_boundary_none() {
+        let content_type = "application/json";
+        let boundary = extract_multipart_boundary(content_type);
+        assert!(boundary.is_none());
+    }
+
+    #[test]
+    fn handler_is_image_gen_domain() {
+        let handler = ProxyHandler::with_defaults();
+
+        // Image gen domains
+        assert!(handler.is_image_gen_domain("api.stability.ai"));
+        assert!(handler.is_image_gen_domain("cloud.leonardo.ai"));
+        assert!(handler.is_image_gen_domain("api.ideogram.ai"));
+
+        // Non-image gen domains
+        assert!(!handler.is_image_gen_domain("api.openai.com")); // Text LLM
+        assert!(!handler.is_image_gen_domain("chatgpt.com")); // Consumer LLM
+        assert!(!handler.is_image_gen_domain("example.com")); // Unknown
     }
 
     #[test]
@@ -1007,10 +1421,24 @@ mod tests {
 
     #[test]
     fn evaluate_rules_allows_safe() {
-        let handler = ProxyHandler::with_defaults();
+        use aegis_core::rule_engine::RuleEngine;
+
+        // Create handler without time rules to avoid bedtime blocking during tests
+        let filtering_state = FilteringState::with_rule_engine(RuleEngine::content_only());
+        let handler = ProxyHandler::with_filtering_state(filtering_state);
+
         let classification = handler.classify_prompt("What is the weather today?");
+        assert!(
+            classification.matches.is_empty(),
+            "Safe prompt should not match any rules, but matched: {:?}",
+            classification.matches
+        );
         let result = handler.evaluate_rules(&classification);
-        assert!(result.should_allow());
+        assert!(
+            result.should_allow(),
+            "Safe prompt should be allowed, but got action: {:?}",
+            result.action
+        );
     }
 
     #[test]
@@ -1089,7 +1517,7 @@ mod tests {
 
     #[test]
     fn sentiment_analysis_full_integration() {
-        use aegis_storage::{models::ProfileSentimentConfig, NewProfile};
+        use aegis_storage::{models::ProfileSentimentConfig, NewProfile, ProfileImageFilteringConfig};
         use std::collections::HashSet;
 
         // Create an in-memory database
@@ -1110,6 +1538,7 @@ mod tests {
                 detect_bullying: true,
                 detect_negative: true,
             },
+            image_filtering_config: ProfileImageFilteringConfig::default(),
         };
         let profile_id = db
             .create_profile(profile)
@@ -1143,6 +1572,8 @@ mod tests {
             on_allow: None,
             filtering_state,
             database: Some(db_arc),
+            nsfw_classifier: Arc::new(RwLock::new(LazyNsfwClassifier::with_defaults())),
+            site_registry: Arc::new(SiteRegistry::with_defaults()),
         });
 
         // Simulate analyzing emotional content

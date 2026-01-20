@@ -42,7 +42,8 @@ pub use error::{Result, StorageError};
 pub use models::{
     Action, Auth, CategoryCounts, Config, DailyStats, DisabledBundledSite, Event, FlaggedEvent,
     FlaggedEventFilter, FlaggedEventStats, FlaggedTypeCounts, NewEvent, NewFlaggedEvent,
-    NewProfile, NewRule, NewSite, Profile, ProfileSentimentConfig, Rule, Site,
+    NewProfile, NewRule, NewSite, NsfwThresholdPreset, Profile, ProfileImageFilteringConfig,
+    ProfileSentimentConfig, Rule, Site,
 };
 pub use pool::ConnectionPool;
 pub use repository::{
