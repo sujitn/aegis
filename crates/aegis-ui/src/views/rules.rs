@@ -1488,6 +1488,7 @@ fn save_time_rules(state: &Signal<AppState>, time_rules: &Signal<TimeRuleSet>) {
         content_rules: profile.content_rules,
         enabled: profile.enabled,
         sentiment_config: profile.sentiment_config,
+        image_filtering_config: profile.image_filtering_config,
     };
 
     if let Err(e) = state_ref.db.update_profile(profile_id, updated_profile) {
@@ -1740,6 +1741,7 @@ fn save_content_rules(state: &Signal<AppState>, content_rules: &Signal<ContentRu
         content_rules: content_rules_json,
         enabled: profile.enabled,
         sentiment_config: profile.sentiment_config,
+        image_filtering_config: profile.image_filtering_config,
     };
 
     if let Err(e) = state_ref.db.update_profile(profile_id, updated_profile) {

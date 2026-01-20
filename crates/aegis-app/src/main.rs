@@ -228,7 +228,9 @@ fn load_profiles_from_db(db: &Database) -> ProfileManager {
                     .unwrap_or_else(|_| TimeRuleSet::new());
                 let content_rules: ContentRuleSet =
                     serde_json::from_value(profile.content_rules.clone())
-                        .unwrap_or_else(|_| ContentRuleSet::new());
+                        .ok()
+                        .filter(|r: &ContentRuleSet| !r.rules.is_empty())
+                        .unwrap_or_else(ContentRuleSet::family_safe_defaults);
 
                 // Determine proxy mode based on profile name heuristic
                 // Profiles with "parent" in the name disable filtering; others enable it
@@ -418,7 +420,10 @@ fn load_initial_rules(db: &Database) -> RuleEngine {
                 let time_rules: TimeRuleSet =
                     serde_json::from_value(profile.time_rules.clone()).unwrap_or_default();
                 let content_rules: ContentRuleSet =
-                    serde_json::from_value(profile.content_rules.clone()).unwrap_or_default();
+                    serde_json::from_value(profile.content_rules.clone())
+                        .ok()
+                        .filter(|r: &ContentRuleSet| !r.rules.is_empty())
+                        .unwrap_or_else(ContentRuleSet::family_safe_defaults);
 
                 tracing::info!(
                     "Loaded initial rules from profile '{}': {} time rules, {} content rules",
@@ -451,7 +456,10 @@ fn load_profile_rules_by_name(db: &Database, profile_name: &str, filtering_state
                 let time_rules: TimeRuleSet =
                     serde_json::from_value(profile.time_rules.clone()).unwrap_or_default();
                 let content_rules: ContentRuleSet =
-                    serde_json::from_value(profile.content_rules.clone()).unwrap_or_default();
+                    serde_json::from_value(profile.content_rules.clone())
+                        .ok()
+                        .filter(|r: &ContentRuleSet| !r.rules.is_empty())
+                        .unwrap_or_else(ContentRuleSet::family_safe_defaults);
 
                 tracing::info!(
                     "Loading rules for profile '{}' (id={}): {} time rules, {} content rules",
@@ -736,6 +744,17 @@ fn main() -> anyhow::Result<()> {
 
     tracing::info!("Starting Aegis...");
     tracing::info!("Args: {:?}", args);
+
+    // Set up ONNX Runtime environment if ML dependencies are installed
+    if let Some(downloader) = aegis_core::model_downloader::ModelDownloader::new() {
+        if downloader.setup_environment() {
+            tracing::info!("ONNX Runtime environment configured");
+        } else {
+            tracing::info!(
+                "ML dependencies not installed - image filtering disabled (download via Settings)"
+            );
+        }
+    }
 
     // Open the database (creates if doesn't exist)
     let db = Database::new().map_err(|e| anyhow::anyhow!("Database error: {}", e))?;

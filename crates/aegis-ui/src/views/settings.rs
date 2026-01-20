@@ -6,6 +6,7 @@ use auto_launch::{AutoLaunch, AutoLaunchBuilder};
 use dioxus::prelude::*;
 
 use aegis_core::extension_install::get_extension_path;
+use aegis_core::model_downloader::{self, MlStatus, ModelDownloader};
 use aegis_proxy::setup::{
     disable_system_proxy, enable_system_proxy, install_ca_certificate, is_ca_installed,
     is_proxy_enabled, uninstall_ca_certificate,
@@ -72,6 +73,11 @@ pub fn SettingsView() -> Element {
     let mut show_proxy_instructions = use_signal(|| false);
     let mut ca_installing = use_signal(|| false);
     let mut proxy_configuring = use_signal(|| false);
+
+    // ML status state
+    let mut ml_status = use_signal(model_downloader::get_ml_status);
+    let mut ml_downloading = use_signal(|| false);
+    let mut ml_progress_text = use_signal(String::new);
 
     // Proxy configuration constants
     const PROXY_HOST: &str = "127.0.0.1";
@@ -414,6 +420,129 @@ pub fn SettingsView() -> Element {
                                     div { class: "mt-sm",
                                         ProxySetupInstructions {}
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ML Dependencies section
+            div { class: "card mb-lg",
+                h2 { class: "font-bold mb-md", "Image Filtering (ML)" }
+                p { class: "text-sm text-muted mb-md",
+                    "Image filtering requires ONNX Runtime and an NSFW detection model. These are downloaded separately due to their size (~50MB total)."
+                }
+
+                // Status display
+                div { class: "flex items-center gap-sm mb-md",
+                    match ml_status() {
+                        MlStatus::Ready => rsx! {
+                            span { class: "tag tag-success", "Ready" }
+                            span { class: "text-sm text-muted", "Image filtering is ready to use." }
+                        },
+                        MlStatus::MissingRuntime => rsx! {
+                            span { class: "tag tag-warning", "Missing Runtime" }
+                            span { class: "text-sm text-muted", "ONNX Runtime needs to be downloaded." }
+                        },
+                        MlStatus::MissingModel => rsx! {
+                            span { class: "tag tag-warning", "Missing Model" }
+                            span { class: "text-sm text-muted", "NSFW model needs to be downloaded." }
+                        },
+                        MlStatus::MissingAll => rsx! {
+                            span { class: "tag tag-warning", "Not Installed" }
+                            span { class: "text-sm text-muted", "ML dependencies need to be downloaded." }
+                        },
+                        MlStatus::Downloading { step, progress } => {
+                            let text = if let Some(p) = progress {
+                                format!("{} ({}%)", step, p)
+                            } else {
+                                step.clone()
+                            };
+                            rsx! {
+                                span { class: "tag tag-info", "Downloading" }
+                                span { class: "text-sm text-muted", "{text}" }
+                            }
+                        }
+                        MlStatus::Failed { error } => rsx! {
+                            span { class: "tag tag-danger", "Failed" }
+                            span { class: "text-sm text-danger", "{error}" }
+                        },
+                    }
+                }
+
+                // Download progress text
+                if !ml_progress_text().is_empty() {
+                    div { class: "card mb-md", style: "background-color: var(--aegis-slate-900);",
+                        p { class: "text-sm", "{ml_progress_text}" }
+                    }
+                }
+
+                // Download button
+                if !matches!(ml_status(), MlStatus::Ready) && !ml_downloading() {
+                    button {
+                        class: "btn btn-primary",
+                        onclick: move |_| {
+                            ml_downloading.set(true);
+                            ml_progress_text.set("Downloading ONNX Runtime and NSFW model... This may take a few minutes.".to_string());
+                            ml_status.set(MlStatus::Downloading {
+                                step: "Downloading...".to_string(),
+                                progress: None,
+                            });
+
+                            spawn(async move {
+                                let Some(downloader) = ModelDownloader::new() else {
+                                    ml_status.set(MlStatus::Failed {
+                                        error: "Failed to initialize downloader".to_string(),
+                                    });
+                                    ml_downloading.set(false);
+                                    ml_progress_text.set(String::new());
+                                    return;
+                                };
+
+                                // Download all dependencies (without real-time callback due to thread limitations)
+                                match downloader.ensure_all(None).await {
+                                    Ok(()) => {
+                                        ml_status.set(MlStatus::Ready);
+                                        ml_progress_text.set("Download complete! Image filtering is now ready.".to_string());
+                                        // Set up environment for ONNX Runtime
+                                        downloader.setup_environment();
+                                    }
+                                    Err(e) => {
+                                        ml_status.set(MlStatus::Failed {
+                                            error: e.to_string(),
+                                        });
+                                        ml_progress_text.set(format!("Download failed: {}", e));
+                                    }
+                                }
+                                ml_downloading.set(false);
+                            });
+                        },
+                        "Download ML Dependencies"
+                    }
+                }
+
+                // Show downloading spinner
+                if ml_downloading() {
+                    div { class: "flex items-center gap-sm mt-md",
+                        div { class: "spinner" }
+                        span { class: "text-sm text-muted", "Downloading..." }
+                    }
+                }
+
+                // Paths display (when installed)
+                if matches!(ml_status(), MlStatus::Ready) {
+                    if let Some(downloader) = ModelDownloader::new() {
+                        div { class: "card mt-md", style: "background-color: var(--aegis-slate-900);",
+                            p { class: "text-sm text-muted mb-sm", "Installation Paths:" }
+                            div { class: "text-sm", style: "font-family: monospace; word-break: break-all;",
+                                p { class: "mb-sm",
+                                    span { class: "text-muted", "Runtime: " }
+                                    "{downloader.onnx_runtime_path().display()}"
+                                }
+                                p {
+                                    span { class: "text-muted", "Model: " }
+                                    "{downloader.nsfw_model_path().display()}"
                                 }
                             }
                         }

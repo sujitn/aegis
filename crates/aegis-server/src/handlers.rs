@@ -513,9 +513,12 @@ pub async fn reload_rules(
         let time_rules: aegis_core::time_rules::TimeRuleSet =
             serde_json::from_value(profile.time_rules.clone()).unwrap_or_default();
 
-        // Parse content rules from JSON
+        // Parse content rules from JSON - use family_safe_defaults if parsing fails or empty
         let content_rules: aegis_core::content_rules::ContentRuleSet =
-            serde_json::from_value(profile.content_rules.clone()).unwrap_or_default();
+            serde_json::from_value(profile.content_rules.clone())
+                .ok()
+                .filter(|r: &aegis_core::content_rules::ContentRuleSet| !r.rules.is_empty())
+                .unwrap_or_else(aegis_core::content_rules::ContentRuleSet::family_safe_defaults);
 
         (time_rules, content_rules)
     } else {
