@@ -56,6 +56,28 @@ impl AppState {
         Self::new(Database::in_memory().expect("Failed to create in-memory database"))
     }
 
+    /// Creates application state for testing without time rules.
+    ///
+    /// This avoids test failures due to bedtime rules when running during certain hours.
+    #[cfg(test)]
+    pub fn in_memory_no_time_rules() -> Self {
+        let db = Database::in_memory().expect("Failed to create in-memory database");
+        let db_arc = Arc::new(db);
+        let state_manager = StateManager::new(db_arc.clone(), "server");
+        Self {
+            db: db_arc,
+            auth: Arc::new(AuthManager::new()),
+            classifier: Arc::new(RwLock::new(TieredClassifier::keyword_only())),
+            rules: Arc::new(RwLock::new(RuleEngine::content_only())),
+            profiles: Arc::new(RwLock::new(ProfileManager::new())),
+            sentiment_analyzer: Arc::new(RwLock::new(SentimentAnalyzer::new(
+                SentimentConfig::default(),
+            ))),
+            filtering_state: None,
+            state_manager,
+        }
+    }
+
     /// Creates application state with a shared FilteringState from the proxy.
     ///
     /// This allows rule reloads to also update the proxy's rule engine.

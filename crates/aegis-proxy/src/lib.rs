@@ -44,6 +44,7 @@ mod domains;
 mod error;
 mod extractor;
 mod handler;
+pub mod image_extractor;
 mod proxy;
 pub mod setup;
 pub mod smart_parser;
@@ -54,6 +55,10 @@ pub use domains::{get_bundled_sites, get_registry, is_llm_domain, parser_id, LLM
 pub use error::{ProxyError, Result};
 pub use extractor::{extract_prompt, PromptInfo};
 pub use handler::{FilteringState, HandlerConfig, ProxyHandler};
+pub use image_extractor::{
+    detect_image_format, extract_image_from_binary, extract_images_from_json,
+    extract_images_from_multipart, ExtractedImage,
+};
 pub use proxy::{ProxyConfig, ProxyServer};
 pub use setup::{
     disable_system_proxy, enable_system_proxy, install_ca_certificate, is_ca_installed,

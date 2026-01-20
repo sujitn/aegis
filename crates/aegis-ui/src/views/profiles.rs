@@ -2,7 +2,7 @@
 
 use dioxus::prelude::*;
 
-use aegis_storage::ProfileSentimentConfig;
+use aegis_storage::{NsfwThresholdPreset, ProfileImageFilteringConfig, ProfileSentimentConfig};
 
 use crate::state::{AppState, View};
 
@@ -42,6 +42,7 @@ pub fn ProfilesView() -> Element {
     let mut editor_os_username = use_signal(String::new);
     let mut editor_enabled = use_signal(|| true);
     let mut editor_sentiment_config = use_signal(ProfileSentimentConfig::default);
+    let mut editor_image_filtering_config = use_signal(ProfileImageFilteringConfig::default);
     let mut confirm_delete = use_signal(|| None::<i64>);
 
     rsx! {
@@ -57,6 +58,7 @@ pub fn ProfilesView() -> Element {
                         editor_os_username.set(String::new());
                         editor_enabled.set(true);
                         editor_sentiment_config.set(ProfileSentimentConfig::default());
+                        editor_image_filtering_config.set(ProfileImageFilteringConfig::default());
                         show_editor.set(true);
                     },
                     "+ New Profile"
@@ -76,6 +78,7 @@ pub fn ProfilesView() -> Element {
                             editor_os_username.set(String::new());
                             editor_enabled.set(true);
                             editor_sentiment_config.set(ProfileSentimentConfig::default());
+                            editor_image_filtering_config.set(ProfileImageFilteringConfig::default());
                             show_editor.set(true);
                         },
                         "Create First Profile"
@@ -167,11 +170,11 @@ pub fn ProfilesView() -> Element {
                                             onclick: {
                                                 let name_clone = profile_name.clone();
                                                 let os_username_clone = profile_os_username.clone();
-                                                // Get the sentiment config for this profile
-                                                let sentiment_config = state.read().profiles
+                                                // Get the configs for this profile
+                                                let (sentiment_config, image_filtering_config) = state.read().profiles
                                                     .iter()
                                                     .find(|p| p.id == profile_id)
-                                                    .map(|p| p.sentiment_config.clone())
+                                                    .map(|p| (p.sentiment_config.clone(), p.image_filtering_config.clone()))
                                                     .unwrap_or_default();
                                                 move |_| {
                                                     editor_profile_id.set(Some(profile_id));
@@ -179,6 +182,7 @@ pub fn ProfilesView() -> Element {
                                                     editor_os_username.set(os_username_clone.clone().unwrap_or_default());
                                                     editor_enabled.set(profile_enabled);
                                                     editor_sentiment_config.set(sentiment_config.clone());
+                                                    editor_image_filtering_config.set(image_filtering_config.clone());
                                                     show_editor.set(true);
                                                 }
                                             },
@@ -206,10 +210,11 @@ pub fn ProfilesView() -> Element {
                 os_username: editor_os_username,
                 enabled: editor_enabled,
                 sentiment_config: editor_sentiment_config,
+                image_filtering_config: editor_image_filtering_config,
                 state: state,
                 on_close: move |_| show_editor.set(false),
                 on_save: move |_| {
-                    if save_profile(&mut state, &editor_profile_id, &editor_name, &editor_os_username, &editor_enabled, &editor_sentiment_config) {
+                    if save_profile(&mut state, &editor_profile_id, &editor_name, &editor_os_username, &editor_enabled, &editor_sentiment_config, &editor_image_filtering_config) {
                         show_editor.set(false);
                     }
                 }
@@ -218,7 +223,7 @@ pub fn ProfilesView() -> Element {
     }
 }
 
-/// Profile editor modal with sentiment analysis configuration.
+/// Profile editor modal with sentiment analysis and image filtering configuration.
 #[component]
 fn ProfileEditor(
     profile_id: Signal<Option<i64>>,
@@ -226,6 +231,7 @@ fn ProfileEditor(
     os_username: Signal<String>,
     enabled: Signal<bool>,
     sentiment_config: Signal<ProfileSentimentConfig>,
+    image_filtering_config: Signal<ProfileImageFilteringConfig>,
     state: Signal<AppState>,
     on_close: EventHandler<MouseEvent>,
     on_save: EventHandler<MouseEvent>,
@@ -253,6 +259,18 @@ fn ProfileEditor(
             detect_crisis: detect_crisis(),
             detect_bullying: detect_bullying(),
             detect_negative: detect_negative(),
+        });
+    };
+
+    // Image filtering config signals
+    let mut image_filtering_enabled = use_signal(|| image_filtering_config().enabled);
+    let mut nsfw_threshold = use_signal(|| image_filtering_config().nsfw_threshold);
+
+    // Sync image filtering signals to the parent signal when they change
+    let mut sync_image_filtering = move || {
+        image_filtering_config.set(ProfileImageFilteringConfig {
+            enabled: image_filtering_enabled(),
+            nsfw_threshold: nsfw_threshold(),
         });
     };
 
@@ -412,6 +430,72 @@ fn ProfileEditor(
                             }
                         }
                     }
+
+                    // Image Filtering Section (F033)
+                    div { class: "card mt-md", style: "background-color: var(--aegis-slate-900); padding: var(--spacing-md);",
+                        h4 { class: "font-bold mb-md", "Image Filtering" }
+
+                        // Enable toggle
+                        div { class: "mb-md",
+                            label { class: "checkbox",
+                                input {
+                                    r#type: "checkbox",
+                                    checked: "{image_filtering_enabled}",
+                                    onchange: move |evt| {
+                                        image_filtering_enabled.set(evt.checked());
+                                        sync_image_filtering();
+                                    }
+                                }
+                                "Enable image content filtering"
+                            }
+                            p { class: "text-sm text-muted mt-sm", "Block explicit/NSFW images from AI image generators (requires Proxy mode)." }
+                        }
+
+                        // NSFW Threshold selector
+                        if image_filtering_enabled() {
+                            div { class: "mb-md",
+                                label { class: "text-sm font-bold mb-sm", style: "display: block;", "Sensitivity:" }
+                                div { class: "flex gap-sm",
+                                    button {
+                                        class: if matches!(nsfw_threshold(), NsfwThresholdPreset::Child) { "sensitivity-option selected" } else { "sensitivity-option" },
+                                        onclick: move |_| {
+                                            nsfw_threshold.set(NsfwThresholdPreset::Child);
+                                            sync_image_filtering();
+                                        },
+                                        "Child"
+                                    }
+                                    button {
+                                        class: if matches!(nsfw_threshold(), NsfwThresholdPreset::Teen) { "sensitivity-option selected" } else { "sensitivity-option" },
+                                        onclick: move |_| {
+                                            nsfw_threshold.set(NsfwThresholdPreset::Teen);
+                                            sync_image_filtering();
+                                        },
+                                        "Teen"
+                                    }
+                                    button {
+                                        class: if matches!(nsfw_threshold(), NsfwThresholdPreset::Adult) { "sensitivity-option selected" } else { "sensitivity-option" },
+                                        onclick: move |_| {
+                                            nsfw_threshold.set(NsfwThresholdPreset::Adult);
+                                            sync_image_filtering();
+                                        },
+                                        "Adult"
+                                    }
+                                }
+                                p { class: "text-sm text-muted mt-sm",
+                                    match nsfw_threshold() {
+                                        NsfwThresholdPreset::Child => "Most strict - blocks anything potentially inappropriate (threshold: 0.3)",
+                                        NsfwThresholdPreset::Teen => "Balanced - blocks explicit content (threshold: 0.5)",
+                                        NsfwThresholdPreset::Adult => "Permissive - only blocks clearly explicit content (threshold: 0.8)",
+                                        NsfwThresholdPreset::Custom(t) => {
+                                            if t < 0.4 { "Custom: strict filtering" }
+                                            else if t < 0.6 { "Custom: moderate filtering" }
+                                            else { "Custom: permissive filtering" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 div { class: "modal-footer",
@@ -439,6 +523,7 @@ fn save_profile(
     os_username: &Signal<String>,
     enabled: &Signal<bool>,
     sentiment_config: &Signal<ProfileSentimentConfig>,
+    image_filtering_config: &Signal<ProfileImageFilteringConfig>,
 ) -> bool {
     let name_str = name().trim().to_string();
     if name_str.is_empty() {
@@ -480,6 +565,7 @@ fn save_profile(
         content_rules,
         enabled: enabled(),
         sentiment_config: sentiment_config(),
+        image_filtering_config: image_filtering_config(),
     };
 
     let result = if let Some(id) = profile_id() {

@@ -25,6 +25,7 @@ pub mod content_rules;
 #[cfg(feature = "extension-install")]
 pub mod extension_install;
 pub mod interception;
+pub mod model_downloader;
 pub mod notifications;
 pub mod profile;
 pub mod profile_proxy;
