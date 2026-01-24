@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use icns::{IconFamily, IconType, Image as IcnsImage, PixelFormat};
 use ico::{IconDir, IconDirEntry, IconImage, ResourceType};
 use png::{BitDepth, ColorType, Encoder};
 use resvg::usvg::{Options, Tree};
@@ -71,6 +72,11 @@ fn main() -> Result<()> {
     let ico_path = args.output.join("icon.ico");
     generate_ico(&tree, &ico_path, args.verbose)?;
 
+    // Generate macOS ICNS file
+    println!("\nGenerating macOS ICNS file...");
+    let icns_path = args.output.join("icon.icns");
+    generate_icns(&tree, &icns_path, args.verbose)?;
+
     // Generate tray icons if requested
     if args.tray_icons {
         println!("\nGenerating tray icons...");
@@ -95,22 +101,10 @@ fn main() -> Result<()> {
 
     println!("\nIcon generation complete!");
     println!("Output directory: {}", args.output.display());
-
-    // Print instructions for macOS icns
-    println!("\n--- macOS .icns Generation ---");
-    println!("On macOS, run these commands to create icon.icns:");
-    println!("  mkdir -p icon.iconset");
-    println!("  sips -z 16 16 icon-1024.png --out icon.iconset/icon_16x16.png");
-    println!("  sips -z 32 32 icon-1024.png --out icon.iconset/icon_16x16@2x.png");
-    println!("  sips -z 32 32 icon-1024.png --out icon.iconset/icon_32x32.png");
-    println!("  sips -z 64 64 icon-1024.png --out icon.iconset/icon_32x32@2x.png");
-    println!("  sips -z 128 128 icon-1024.png --out icon.iconset/icon_128x128.png");
-    println!("  sips -z 256 256 icon-1024.png --out icon.iconset/icon_128x128@2x.png");
-    println!("  sips -z 256 256 icon-1024.png --out icon.iconset/icon_256x256.png");
-    println!("  sips -z 512 512 icon-1024.png --out icon.iconset/icon_256x256@2x.png");
-    println!("  sips -z 512 512 icon-1024.png --out icon.iconset/icon_512x512.png");
-    println!("  sips -z 1024 1024 icon-1024.png --out icon.iconset/icon_512x512@2x.png");
-    println!("  iconutil -c icns icon.iconset -o icon.icns");
+    println!("\nGenerated files:");
+    println!("  - icon.ico   (Windows)");
+    println!("  - icon.icns  (macOS)");
+    println!("  - icon-*.png (Linux/all platforms)");
 
     Ok(())
 }
@@ -234,6 +228,103 @@ fn generate_ico(tree: &Tree, output: &Path, verbose: bool) -> Result<()> {
     println!("  Created: {}", output.display());
 
     Ok(())
+}
+
+/// Generates a macOS ICNS file containing multiple sizes.
+fn generate_icns(tree: &Tree, output: &Path, verbose: bool) -> Result<()> {
+    let mut icon_family = IconFamily::new();
+
+    // macOS icon sizes and their corresponding IconType
+    // (size, icon_type for 1x, icon_type for 2x retina)
+    let sizes: &[(u32, IconType, Option<IconType>)] = &[
+        (16, IconType::RGBA32_16x16, Some(IconType::RGBA32_16x16_2x)),
+        (32, IconType::RGBA32_32x32, Some(IconType::RGBA32_32x32_2x)),
+        (
+            128,
+            IconType::RGBA32_128x128,
+            Some(IconType::RGBA32_128x128_2x),
+        ),
+        (
+            256,
+            IconType::RGBA32_256x256,
+            Some(IconType::RGBA32_256x256_2x),
+        ),
+        (
+            512,
+            IconType::RGBA32_512x512,
+            Some(IconType::RGBA32_512x512_2x),
+        ),
+    ];
+
+    for &(size, icon_type_1x, icon_type_2x) in sizes {
+        let pixmap = render_svg(tree, size)?;
+
+        // Convert to RGBA (un-premultiply)
+        let rgba = pixmap_to_rgba(&pixmap);
+
+        // Add 1x version
+        let image = IcnsImage::from_data(PixelFormat::RGBA, size, size, rgba.clone())
+            .context("Failed to create ICNS image")?;
+        icon_family
+            .add_icon_with_type(&image, icon_type_1x)
+            .context("Failed to add icon to ICNS")?;
+
+        if verbose {
+            println!("  Added {}x{} to ICNS", size, size);
+        }
+
+        // Add 2x retina version if applicable
+        if let Some(icon_type_2x) = icon_type_2x {
+            let retina_size = size * 2;
+            let retina_pixmap = render_svg(tree, retina_size)?;
+            let retina_rgba = pixmap_to_rgba(&retina_pixmap);
+
+            let retina_image =
+                IcnsImage::from_data(PixelFormat::RGBA, retina_size, retina_size, retina_rgba)
+                    .context("Failed to create ICNS retina image")?;
+            icon_family
+                .add_icon_with_type(&retina_image, icon_type_2x)
+                .context("Failed to add retina icon to ICNS")?;
+
+            if verbose {
+                println!("  Added {}x{} (@2x) to ICNS", retina_size, retina_size);
+            }
+        }
+    }
+
+    let file = File::create(output).context("Failed to create ICNS file")?;
+    icon_family
+        .write(file)
+        .context("Failed to write ICNS file")?;
+
+    println!("  Created: {}", output.display());
+
+    Ok(())
+}
+
+/// Converts a pixmap to RGBA data (un-premultiplied).
+fn pixmap_to_rgba(pixmap: &Pixmap) -> Vec<u8> {
+    let data = pixmap.data();
+    let mut rgba = Vec::with_capacity(data.len());
+
+    for chunk in data.chunks(4) {
+        let r = chunk[0];
+        let g = chunk[1];
+        let b = chunk[2];
+        let a = chunk[3];
+
+        if a == 0 {
+            rgba.extend_from_slice(&[0, 0, 0, 0]);
+        } else {
+            let alpha = a as f32 / 255.0;
+            rgba.push((r as f32 / alpha).min(255.0) as u8);
+            rgba.push((g as f32 / alpha).min(255.0) as u8);
+            rgba.push((b as f32 / alpha).min(255.0) as u8);
+            rgba.push(a);
+        }
+    }
+
+    rgba
 }
 
 /// Generates tray icons with status indicator overlays.

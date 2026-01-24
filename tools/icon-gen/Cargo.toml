@@ -15,8 +15,11 @@ resvg = "0.46"
 usvg = "0.46"
 tiny-skia = "0.11"
 
-# ICO file generation
+# ICO file generation (Windows)
 ico = "0.5"
+
+# ICNS file generation (macOS)
+icns = "0.3"
 
 # PNG encoding (resvg uses tiny-skia which gives us raw pixels)
 png = "0.18"
