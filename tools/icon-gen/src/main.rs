@@ -4,8 +4,8 @@
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use ico::{IconDir, IconDirEntry, IconImage, ResourceType};
 use icns::{IconFamily, IconType, Image as IcnsImage, PixelFormat};
+use ico::{IconDir, IconDirEntry, IconImage, ResourceType};
 use png::{BitDepth, ColorType, Encoder};
 use resvg::usvg::{Options, Tree};
 use std::fs::{self, File};
@@ -239,9 +239,21 @@ fn generate_icns(tree: &Tree, output: &Path, verbose: bool) -> Result<()> {
     let sizes: &[(u32, IconType, Option<IconType>)] = &[
         (16, IconType::RGBA32_16x16, Some(IconType::RGBA32_16x16_2x)),
         (32, IconType::RGBA32_32x32, Some(IconType::RGBA32_32x32_2x)),
-        (128, IconType::RGBA32_128x128, Some(IconType::RGBA32_128x128_2x)),
-        (256, IconType::RGBA32_256x256, Some(IconType::RGBA32_256x256_2x)),
-        (512, IconType::RGBA32_512x512, Some(IconType::RGBA32_512x512_2x)),
+        (
+            128,
+            IconType::RGBA32_128x128,
+            Some(IconType::RGBA32_128x128_2x),
+        ),
+        (
+            256,
+            IconType::RGBA32_256x256,
+            Some(IconType::RGBA32_256x256_2x),
+        ),
+        (
+            512,
+            IconType::RGBA32_512x512,
+            Some(IconType::RGBA32_512x512_2x),
+        ),
     ];
 
     for &(size, icon_type_1x, icon_type_2x) in sizes {
@@ -253,7 +265,9 @@ fn generate_icns(tree: &Tree, output: &Path, verbose: bool) -> Result<()> {
         // Add 1x version
         let image = IcnsImage::from_data(PixelFormat::RGBA, size, size, rgba.clone())
             .context("Failed to create ICNS image")?;
-        icon_family.add_icon_with_type(&image, icon_type_1x).context("Failed to add icon to ICNS")?;
+        icon_family
+            .add_icon_with_type(&image, icon_type_1x)
+            .context("Failed to add icon to ICNS")?;
 
         if verbose {
             println!("  Added {}x{} to ICNS", size, size);
@@ -265,14 +279,12 @@ fn generate_icns(tree: &Tree, output: &Path, verbose: bool) -> Result<()> {
             let retina_pixmap = render_svg(tree, retina_size)?;
             let retina_rgba = pixmap_to_rgba(&retina_pixmap);
 
-            let retina_image = IcnsImage::from_data(
-                PixelFormat::RGBA,
-                retina_size,
-                retina_size,
-                retina_rgba,
-            )
-            .context("Failed to create ICNS retina image")?;
-            icon_family.add_icon_with_type(&retina_image, icon_type_2x).context("Failed to add retina icon to ICNS")?;
+            let retina_image =
+                IcnsImage::from_data(PixelFormat::RGBA, retina_size, retina_size, retina_rgba)
+                    .context("Failed to create ICNS retina image")?;
+            icon_family
+                .add_icon_with_type(&retina_image, icon_type_2x)
+                .context("Failed to add retina icon to ICNS")?;
 
             if verbose {
                 println!("  Added {}x{} (@2x) to ICNS", retina_size, retina_size);
@@ -281,7 +293,9 @@ fn generate_icns(tree: &Tree, output: &Path, verbose: bool) -> Result<()> {
     }
 
     let file = File::create(output).context("Failed to create ICNS file")?;
-    icon_family.write(file).context("Failed to write ICNS file")?;
+    icon_family
+        .write(file)
+        .context("Failed to write ICNS file")?;
 
     println!("  Created: {}", output.display());
 
