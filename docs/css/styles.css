@@ -1102,6 +1102,99 @@ section {
 }
 
 /* ============================================
+   Image Filtering Section
+   ============================================ */
+.image-filtering {
+  background: linear-gradient(180deg, var(--color-bg-dark) 0%, #0c1222 100%);
+}
+
+.image-filtering-content {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-2xl);
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .image-filtering-content {
+    grid-template-columns: 1fr 1.2fr;
+    gap: var(--spacing-3xl);
+  }
+}
+
+.image-filtering-description {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.filtering-feature {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+
+.filtering-feature:hover {
+  transform: translateX(4px);
+  box-shadow: var(--shadow-md);
+}
+
+.filtering-feature h3 {
+  font-size: var(--font-size-lg);
+  margin-bottom: var(--spacing-sm);
+  color: var(--color-primary-light);
+}
+
+.filtering-feature p {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin-bottom: 0;
+}
+
+.image-filtering-screenshots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.screenshot-card {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+
+.screenshot-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-xl);
+}
+
+.screenshot-card .screenshot {
+  width: 100%;
+  display: block;
+}
+
+.screenshot-caption {
+  text-align: center;
+  padding: var(--spacing-md);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  margin-bottom: 0;
+  background: var(--color-bg-card);
+  border-top: 1px solid var(--color-border);
+}
+
+/* Platforms grid with 3 columns on larger screens */
+@media (min-width: 1024px) {
+  .platforms-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* ============================================
    Utility Classes
    ============================================ */
 .visually-hidden {

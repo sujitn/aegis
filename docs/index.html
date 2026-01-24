@@ -117,6 +117,14 @@
           "@type": "Answer",
           "text": "Currently, Aegis is a desktop application for Windows, macOS, and Linux. Mobile support is on our roadmap. For now, you can use the proxy mode to filter traffic from any device on your home network."
         }
+      },
+      {
+        "@type": "Question",
+        "name": "Does Aegis block AI-generated images?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes, Aegis includes NSFW image filtering that blocks explicit content from AI image generators like DALL-E, Stable Diffusion, Grok Aurora, and more. It uses a local ML model to classify images in real-time with age-appropriate sensitivity levels (Child, Teen, Adult)."
+        }
       }
     ]
   }
@@ -151,6 +159,7 @@
 
       <nav class="nav" role="navigation" aria-label="Main navigation">
         <a href="#features">Features</a>
+        <a href="#image-filtering">Image Filtering</a>
         <a href="privacy.html">Privacy</a>
         <a href="#download">Download</a>
         <a href="https://github.com/sujitn/aegis" class="nav-github" aria-label="View on GitHub" target="_blank" rel="noopener">
@@ -170,6 +179,7 @@
     <!-- Mobile Navigation -->
     <nav class="mobile-nav" id="mobile-nav" role="navigation" aria-label="Mobile navigation">
       <a href="#features">Features</a>
+      <a href="#image-filtering">Image Filtering</a>
       <a href="privacy.html">Privacy</a>
       <a href="#download">Download</a>
       <a href="https://github.com/sujitn/aegis" target="_blank" rel="noopener">GitHub</a>
@@ -383,6 +393,60 @@
             <h3>Parent Dashboard</h3>
             <p>Review activity logs, manage profiles, and configure rules from a clean, intuitive interface. Export data anytime.</p>
           </div>
+
+          <!-- Feature 9: Image Content Filtering -->
+          <div class="feature-card">
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <circle cx="8.5" cy="8.5" r="1.5"></circle>
+              <polyline points="21 15 16 10 5 21"></polyline>
+              <line x1="2" y1="2" x2="22" y2="22" stroke-width="2.5"></line>
+            </svg>
+            <h3>NSFW Image Filtering</h3>
+            <p>Block explicit images from AI image generators like DALL-E, Stable Diffusion, and Grok. ML-powered detection runs locally with age-appropriate sensitivity levels.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Image Filtering Showcase -->
+    <section class="image-filtering" id="image-filtering" aria-labelledby="image-filtering-heading">
+      <div class="container">
+        <div class="section-header">
+          <h2 id="image-filtering-heading">AI Image Generation Protection</h2>
+          <p>Block explicit and NSFW content from AI image generators before it reaches your child</p>
+        </div>
+
+        <div class="image-filtering-content">
+          <div class="image-filtering-description">
+            <div class="filtering-feature">
+              <h3>ML-Powered Detection</h3>
+              <p>Uses a Vision Transformer (ViT) neural network to classify images in real-time. All processing happens locally on your device &mdash; no images are ever sent to external servers.</p>
+            </div>
+            <div class="filtering-feature">
+              <h3>Age-Appropriate Thresholds</h3>
+              <p>Choose sensitivity levels based on your child's age: <strong>Child</strong> (aggressive blocking), <strong>Teen</strong> (balanced), or <strong>Adult</strong> (permissive). Customize thresholds per profile.</p>
+            </div>
+            <div class="filtering-feature">
+              <h3>Comprehensive Coverage</h3>
+              <p>Protects against explicit prompts, generated images, and uploaded images across DALL-E, Stable Diffusion, Grok Aurora, Leonardo.ai, Midjourney API, and more.</p>
+            </div>
+            <div class="filtering-feature">
+              <h3>Complete Activity Logging</h3>
+              <p>Every blocked image is logged with timestamp, category, and action taken. Review what was blocked without exposing explicit content.</p>
+            </div>
+          </div>
+
+          <div class="image-filtering-screenshots">
+            <div class="screenshot-card">
+              <img src="images/screenshots/image-filtering-settings.png" alt="Image Filtering Settings - Configure NSFW filtering with age-appropriate sensitivity levels" class="screenshot">
+              <p class="screenshot-caption">Configure filtering sensitivity per profile</p>
+            </div>
+            <div class="screenshot-card">
+              <img src="images/screenshots/image-filtering-logs.png" alt="Activity Logs showing blocked NSFW images with category and action" class="screenshot">
+              <p class="screenshot-caption">Review blocked content in Activity Logs</p>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -425,7 +489,7 @@
 
         <div class="platforms-grid">
           <div class="platform-group">
-            <h3>Supported AI Platforms</h3>
+            <h3>AI Chat Platforms</h3>
             <div class="platform-list">
               <span class="platform-tag">ChatGPT</span>
               <span class="platform-tag">Claude</span>
@@ -434,6 +498,18 @@
               <span class="platform-tag">Perplexity</span>
               <span class="platform-tag">Poe</span>
               <span class="platform-tag">Bing Chat</span>
+            </div>
+          </div>
+          <div class="platform-group">
+            <h3>AI Image Generators</h3>
+            <div class="platform-list">
+              <span class="platform-tag">OpenAI DALL-E</span>
+              <span class="platform-tag">Grok Aurora</span>
+              <span class="platform-tag">Stable Diffusion</span>
+              <span class="platform-tag">Leonardo.ai</span>
+              <span class="platform-tag">Ideogram</span>
+              <span class="platform-tag">Replicate</span>
+              <span class="platform-tag">Runway ML</span>
             </div>
           </div>
           <div class="platform-group">
@@ -564,6 +640,18 @@
             </button>
             <div class="faq-answer">
               <p>Currently, Aegis is a desktop application for Windows, macOS, and Linux. Mobile support is on our roadmap. For now, you can use the proxy mode to filter traffic from any device on your home network.</p>
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question" aria-expanded="false">
+              Does Aegis block AI-generated images?
+              <svg class="faq-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </button>
+            <div class="faq-answer">
+              <p>Yes, Aegis includes NSFW image filtering that blocks explicit content from AI image generators like DALL-E, Stable Diffusion, Grok Aurora, and more. It uses a local ML model to classify images in real-time with age-appropriate sensitivity levels (Child, Teen, Adult). All processing happens on your device &mdash; images are never sent to external servers.</p>
             </div>
           </div>
         </div>
